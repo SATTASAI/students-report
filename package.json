@@ -1,15 +1,11 @@
 {
   "name": "students-report",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "directories": {
-    "test": "tests"
-  },
+  "private": true,
+  "type": "module",
+  "description": "ระบบรายงานผลการเรียน โรงเรียนบ้านป่าเด็ง",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+    "test": "node --no-warnings --test tests/*.test.mjs",
+    "dev": "node --no-warnings dev/server.mjs 8787"
+  }
 }

@@ -1,0 +1,20 @@
+{
+  "name": "students-report",
+  "keep_vars": true,
+  "compatibility_date": "2024-09-23",
+  "main": "src/index.js",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page"
+  },
+  // ใช้ฐานข้อมูลเดียวกับ banpadeng-school-db (ต้องประกาศไว้ที่นี่ ไม่เช่นนั้น binding จะหายทุกครั้งที่ deploy)
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "banpadeng_school_db",
+      "database_id": "870fa9ec-122f-4161-a1ca-cc9979dcfa30"
+    }
+  ],
+  "observability": { "enabled": true }
+}

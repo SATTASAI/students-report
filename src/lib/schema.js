@@ -111,11 +111,11 @@ export const SCHEMA_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_gr_bank_lookup ON gr_indicator_bank(grade_level, learning_area)`,
 ];
 
-let ensured = null;
+const ensured = new WeakMap();
 
 export async function ensureSchema(env) {
-  if (ensured) return ensured;
-  ensured = (async () => {
+  if (ensured.has(env.DB)) return ensured.get(env.DB);
+  const job = (async () => {
     const marker = await env.DB.prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'students_report_schema'")
       .first().catch(() => null);
     if (marker?.setting_value === SCHEMA_VERSION) return;
@@ -124,6 +124,7 @@ export async function ensureSchema(env) {
       VALUES ('students_report_schema', ?, datetime('now'))
       ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = datetime('now')`)
       .bind(SCHEMA_VERSION).run();
-  })().catch((err) => { ensured = null; throw err; });
-  return ensured;
+  })().catch((err) => { ensured.delete(env.DB); throw err; });
+  ensured.set(env.DB, job);
+  return job;
 }
