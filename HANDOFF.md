@@ -29,18 +29,17 @@
 - ผู้ดูแล: superadmin/executive และผู้ที่ได้รับสิทธิ์ `grade_admin` (ตาราง `gr_staff_roles`)
 - โทนสีน้ำเงิน/คราม ฟอนต์ Sarabun ส่วนเอกสารพิมพ์ใช้ TH Sarabun PSK (ไฟล์ฟอนต์อยู่ใน public/fonts)
 
-## งานที่เสร็จแล้ว
-- `public/js/grading.js`: กติกาคิดคะแนน/ตัดเกรด/สอบแก้ตัว/GPA ถ่วงชั่วโมง/สรุปการประเมินครูประจำชั้น ใช้ร่วมกันทั้ง server และหน้าเว็บ
-- `src/lib/schema.js`: ตาราง gr_* ทั้งหมด
-- `src/lib/http.js`: json, currentUser, requireAdmin, audit, batchAll
-- `src/lib/data.js`: ปี/ตั้งค่า/ห้อง/รายชื่อ/courseBundle/yearResultsForStudents/assessments
-- `src/routes/auth.js`: login/logout ใช้กติกาล็อกบัญชีชุดเดียวกับ school-db
-- `src/lib/crypto.js`: คัดลอกมาจาก school-db
+## สถานะ (7 ต.ค. 2569)
+ทำเฟส 1 ครบทุกส่วนแล้ว ได้แก่ API, หน้าเว็บ, เอกสารพิมพ์ และการส่งออก มีชุดทดสอบ `npm test` (15 รายการ) และ `dev/run-e2e.sh` (ทดสอบหน้าเว็บแบบใช้งานจริง)
+ทดลองรัน SQL รายชื่อ/ห้องกับ D1 จริงแบบอ่านอย่างเดียวแล้ว ผลถูกต้อง: 24 ห้อง ป.1–6
 
-## งานที่เหลือ
-1. `src/index.js` (router + ensureSchema + ASSETS) และ `wrangler.jsonc`
-2. routes: me/years, admin (ตั้งค่า, วิชา + ปุ่มสร้างโครงวิชาพื้นฐาน, สร้างรายวิชาตามห้อง, มอบหมายครู, ครูประจำชั้น, สิทธิ์ grade_admin, นำเข้าคลังตัวชี้วัด), course (items CRUD/bulk/copy, scores batch, results, submit/lock), homeroom (assessments, absences), reports/export
-3. หน้าเว็บ: login, แดชบอร์ด, course (grid), homeroom, admin, reports
-4. หน้าพิมพ์ใน `public/print/`: pp5, pp6, pp1, summary, absence-letter
-5. tests (node:test + node:sqlite) และทดสอบหน้าเว็บด้วย Playwright (/opt/pw-browsers)
-6. README ขั้นตอน deploy (ตั้ง JWT_SECRET, ผูก Worker กับ Git)
+## รอข้อมูลจากผู้ใช้
+- แบบฟอร์ม บค. ทางการ (ตอนนี้ใช้หนังสือแจ้งผู้ปกครองรูปแบบทั่วไป)
+- ไฟล์ตัวอย่างสำหรับนำเข้า SGS / Q-info (ตอนนี้เป็น CSV รูปแบบทั่วไป)
+- การเรียงเลขที่ในห้อง (ค่าเริ่มต้น: ชายก่อนหญิง แล้วตามเลขประจำตัว — เปลี่ยนได้ในหน้าตั้งค่า)
+- เวลาเรียนรายวิชาตามหลักสูตรสถานศึกษา (โครงที่สร้างให้ใช้ชั่วโมงตามหลักสูตรแกนกลางฯ 2551)
+- รายการตัวชี้วัดสำหรับคลังกลาง
+
+## เฟสถัดไป
+- ผู้ปกครองดูผลการเรียนออนไลน์
+- อนุบาล (ประเมินพัฒนาการ 4 ด้าน)

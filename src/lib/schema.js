@@ -1,24 +1,27 @@
 // ตารางของระบบรายงานผลการเรียน — ขึ้นต้นด้วย gr_ ทั้งหมด เพื่อไม่ชนกับตารางเดิมของ banpadeng-school-db
 // สร้างอัตโนมัติครั้งแรกที่ Worker ทำงาน (CREATE ... IF NOT EXISTS ไม่แตะข้อมูลเดิม)
+// ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
+// เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
 export const SCHEMA_VERSION = "gr-1";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
-    academic_year_id INTEGER PRIMARY KEY REFERENCES academic_years(id),
+    academic_year_id INTEGER PRIMARY KEY,
     collect_ratio INTEGER NOT NULL DEFAULT 70 CHECK (collect_ratio BETWEEN 0 AND 100),
     indicator_pass_pct INTEGER NOT NULL DEFAULT 50 CHECK (indicator_pass_pct BETWEEN 0 AND 100),
     attendance_pass_pct INTEGER NOT NULL DEFAULT 80 CHECK (attendance_pass_pct BETWEEN 0 AND 100),
     school_name TEXT, school_area TEXT, director_name TEXT, academic_head_name TEXT, measurement_head_name TEXT,
     entry_open INTEGER NOT NULL DEFAULT 1,
+    roster_order TEXT NOT NULL DEFAULT 'gender' CHECK (roster_order IN ('gender','code')),
     updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS gr_staff_roles (
-    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    user_id INTEGER PRIMARY KEY,
     role TEXT NOT NULL CHECK (role IN ('grade_admin')),
     granted_by INTEGER, granted_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS gr_subjects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    academic_year_id INTEGER NOT NULL REFERENCES academic_years(id),
+    academic_year_id INTEGER NOT NULL,
     grade_level TEXT NOT NULL,
     code TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -39,7 +42,7 @@ export const SCHEMA_SQL = [
     UNIQUE (subject_id, classroom))`,
   `CREATE TABLE IF NOT EXISTS gr_course_teachers (
     course_id INTEGER NOT NULL REFERENCES gr_courses(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id),
+    user_id INTEGER NOT NULL,
     PRIMARY KEY (course_id, user_id))`,
   `CREATE TABLE IF NOT EXISTS gr_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,13 +56,13 @@ export const SCHEMA_SQL = [
     created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS gr_scores (
     item_id INTEGER NOT NULL REFERENCES gr_items(id) ON DELETE CASCADE,
-    student_id INTEGER NOT NULL REFERENCES students(id),
+    student_id INTEGER NOT NULL,
     score REAL,
     updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (item_id, student_id))`,
   `CREATE TABLE IF NOT EXISTS gr_results (
     course_id INTEGER NOT NULL REFERENCES gr_courses(id) ON DELETE CASCADE,
-    student_id INTEGER NOT NULL REFERENCES students(id),
+    student_id INTEGER NOT NULL,
     hours_attended REAL,
     special TEXT CHECK (special IN ('ร','มส') OR special IS NULL),
     special_note TEXT,
@@ -76,22 +79,22 @@ export const SCHEMA_SQL = [
     created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (grade_level, learning_area, code, title))`,
   `CREATE TABLE IF NOT EXISTS gr_homerooms (
-    academic_year_id INTEGER NOT NULL REFERENCES academic_years(id),
+    academic_year_id INTEGER NOT NULL,
     grade_level TEXT NOT NULL,
     classroom TEXT NOT NULL,
-    user_id INTEGER NOT NULL REFERENCES users(id),
+    user_id INTEGER NOT NULL,
     PRIMARY KEY (academic_year_id, grade_level, classroom, user_id))`,
   `CREATE TABLE IF NOT EXISTS gr_assessments (
-    academic_year_id INTEGER NOT NULL REFERENCES academic_years(id),
-    student_id INTEGER NOT NULL REFERENCES students(id),
+    academic_year_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
     item_key TEXT NOT NULL,
     value TEXT NOT NULL,
     updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (academic_year_id, student_id, item_key))`,
   `CREATE TABLE IF NOT EXISTS gr_absences (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    academic_year_id INTEGER NOT NULL REFERENCES academic_years(id),
-    student_id INTEGER NOT NULL REFERENCES students(id),
+    academic_year_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
     absence_date TEXT NOT NULL,
     reason TEXT NOT NULL DEFAULT 'unknown' CHECK (reason IN ('sick','personal','unknown','other')),
     note TEXT,

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เข้าสู่ระบบ — รายงานผลการเรียน</title>
+<link rel="icon" href="/logo.jpg">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<main class="auth">
+  <div class="auth-card">
+    <img src="/logo.jpg" alt="ตราโรงเรียนบ้านป่าเด็ง">
+    <h1>ระบบรายงานผลการเรียน</h1>
+    <p class="muted">ใช้อีเมลและรหัสผ่านเดียวกับระบบบริหารโรงเรียนบ้านป่าเด็ง</p>
+    <form id="f">
+      <div class="err" id="err" hidden></div>
+      <label class="field">อีเมล<input type="email" name="email" required autocomplete="email" autofocus></label>
+      <label class="field">รหัสผ่าน<input type="password" name="password" required autocomplete="current-password"></label>
+      <button class="btn primary" id="go">เข้าสู่ระบบ</button>
+    </form>
+  </div>
+</main>
+<script type="module">
+import { api } from "/js/app.js";
+const f = document.getElementById("f"), err = document.getElementById("err"), go = document.getElementById("go");
+f.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  err.hidden = true; go.disabled = true; go.textContent = "กำลังเข้าสู่ระบบ…";
+  try {
+    await api("/api/auth/login", { method: "POST", body: Object.fromEntries(new FormData(f)) });
+    const next = new URLSearchParams(location.search).get("next");
+    location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  } catch (ex) {
+    err.textContent = ex.message; err.hidden = false;
+    go.disabled = false; go.textContent = "เข้าสู่ระบบ";
+  }
+});
+</script>
+</body>
+</html>

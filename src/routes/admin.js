@@ -56,17 +56,18 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         school_name: text(b.school_name, 120), school_area: text(b.school_area, 160),
         director_name: text(b.director_name, 120), academic_head_name: text(b.academic_head_name, 120),
         measurement_head_name: text(b.measurement_head_name, 120), entry_open: b.entry_open ? 1 : 0,
+        roster_order: b.roster_order === "code" ? "code" : "gender",
       };
       await env.DB.prepare(`INSERT INTO gr_settings (academic_year_id, collect_ratio, indicator_pass_pct, attendance_pass_pct,
-          school_name, school_area, director_name, academic_head_name, measurement_head_name, entry_open, updated_by, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+          school_name, school_area, director_name, academic_head_name, measurement_head_name, entry_open, roster_order, updated_by, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
         ON CONFLICT(academic_year_id) DO UPDATE SET collect_ratio=excluded.collect_ratio, indicator_pass_pct=excluded.indicator_pass_pct,
           attendance_pass_pct=excluded.attendance_pass_pct, school_name=excluded.school_name, school_area=excluded.school_area,
           director_name=excluded.director_name, academic_head_name=excluded.academic_head_name,
-          measurement_head_name=excluded.measurement_head_name, entry_open=excluded.entry_open,
+          measurement_head_name=excluded.measurement_head_name, entry_open=excluded.entry_open, roster_order=excluded.roster_order,
           updated_by=excluded.updated_by, updated_at=datetime('now')`)
         .bind(year.id, s.collect_ratio, s.indicator_pass_pct, s.attendance_pass_pct, s.school_name, s.school_area,
-          s.director_name, s.academic_head_name, s.measurement_head_name, s.entry_open, user.id).run();
+          s.director_name, s.academic_head_name, s.measurement_head_name, s.entry_open, s.roster_order, user.id).run();
       await audit(env, user, "settings.update", { year: year.id, ...s });
       return json({ ok: true, settings: await getSettings(env, year.id) });
     }
@@ -168,6 +169,8 @@ export async function handleAdmin(request, env, user, parts, method, url) {
           WHERE c.subject_id = ? AND sc.score IS NOT NULL`
       ).bind(id).first();
       if (used.n > 0) fail(409, `ลบไม่ได้ — มีคะแนนที่ครูกรอกแล้ว ${used.n} ช่อง`);
+      const res = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_results r JOIN gr_courses c ON c.id = r.course_id WHERE c.subject_id = ?").bind(id).first();
+      if (res.n > 0) fail(409, `ลบไม่ได้ — มีข้อมูลเวลาเรียน/ผลพิเศษของนักเรียนแล้ว ${res.n} คน`);
       const subject = await env.DB.prepare("SELECT * FROM gr_subjects WHERE id = ?").bind(id).first();
       if (!subject) fail(404, "ไม่พบรายวิชา");
       // ลบลูกก่อนเพื่อไม่พึ่งการตั้งค่า foreign key
@@ -245,6 +248,8 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       const id = intParam(idPart);
       const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id = ? AND sc.score IS NOT NULL").bind(id).first();
       if (used.n > 0) fail(409, `ลบไม่ได้ — มีคะแนนแล้ว ${used.n} ช่อง`);
+      const res = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_results WHERE course_id = ?").bind(id).first();
+      if (res.n > 0) fail(409, `ลบไม่ได้ — มีข้อมูลเวลาเรียน/ผลพิเศษของนักเรียนแล้ว ${res.n} คน`);
       await env.DB.batch([
         env.DB.prepare("DELETE FROM gr_scores WHERE item_id IN (SELECT id FROM gr_items WHERE course_id = ?)").bind(id),
         env.DB.prepare("DELETE FROM gr_items WHERE course_id = ?").bind(id),
@@ -345,15 +350,16 @@ async function assertTeacher(env, id) {
 }
 
 // ภาพรวมรายวิชาทุกห้อง + ความคืบหน้าการกรอก (ใช้หน้า admin)
-export async function courseOverview(env, yearId) {
+export async function courseOverview(env, yearId, { teacherId = null } = {}) {
+  const teacherFilter = teacherId ? " AND c.id IN (SELECT course_id FROM gr_course_teachers WHERE user_id = ?)" : "";
   const { results: courses } = await env.DB.prepare(
     `SELECT c.id, c.classroom, c.locked, c.submitted_at, s.id AS subject_id, s.grade_level, s.code, s.name, s.learning_area,
-            s.subject_type, s.hours_per_year,
+            s.subject_type, s.hours_per_year, s.sort_order,
             (SELECT COUNT(*) FROM gr_items i WHERE i.course_id = c.id) AS item_count,
             (SELECT COUNT(*) FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id = c.id AND sc.score IS NOT NULL) AS filled
        FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
-      WHERE s.academic_year_id = ?`
-  ).bind(yearId).all();
+      WHERE s.academic_year_id = ?${teacherFilter}`
+  ).bind(...(teacherId ? [yearId, teacherId] : [yearId])).all();
   const { results: teachers } = await env.DB.prepare(
     `SELECT ct.course_id, u.id, u.full_name FROM gr_course_teachers ct JOIN users u ON u.id = ct.user_id
        JOIN gr_courses c ON c.id = ct.course_id JOIN gr_subjects s ON s.id = c.subject_id WHERE s.academic_year_id = ?`
@@ -366,5 +372,5 @@ export async function courseOverview(env, yearId) {
     const expected = c.item_count * c.students;
     c.progress = expected ? Math.min(100, Math.round((c.filled / expected) * 100)) : 0;
   }
-  return courses.sort((a, b) => compareRoom(a, b) || (a.subject_type === "additional") - (b.subject_type === "additional") || a.code.localeCompare(b.code));
+  return courses.sort((a, b) => compareRoom(a, b) || (a.subject_type === "additional") - (b.subject_type === "additional") || a.sort_order - b.sort_order || a.code.localeCompare(b.code));
 }

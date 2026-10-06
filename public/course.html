@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สมุดคะแนน — รายงานผลการเรียน</title>
+<link rel="icon" href="/logo.jpg">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<main class="page wide" id="main" hidden>
+  <div class="page-head">
+    <div>
+      <div class="crumb"><a href="/" id="backLink">งานของฉัน</a></div>
+      <h1 id="title"></h1>
+      <p id="meta"></p>
+    </div>
+    <div class="actions">
+      <a class="btn" id="printBtn" target="_blank" rel="noopener"></a>
+      <button class="btn primary" id="submitBtn"></button>
+    </div>
+  </div>
+  <div class="note warn" id="lockNote" hidden></div>
+  <div class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="t1">ภาคเรียนที่ 1</button>
+    <button role="tab" data-tab="t2">ภาคเรียนที่ 2</button>
+    <button role="tab" data-tab="sum">สรุปผล / เวลาเรียน</button>
+    <button role="tab" data-tab="setup">โครงสร้างคะแนน</button>
+  </div>
+  <section id="view"></section>
+</main>
+<script type="module" src="/js/course.js"></script>
+</body>
+</html>

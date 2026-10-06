@@ -4,7 +4,7 @@ import { computeStudentResult } from "../../public/js/grading.js";
 export const DEFAULT_SETTINGS = {
   collect_ratio: 70, indicator_pass_pct: 50, attendance_pass_pct: 80,
   school_name: "โรงเรียนบ้านป่าเด็ง", school_area: "", director_name: "", academic_head_name: "",
-  measurement_head_name: "", entry_open: 1,
+  measurement_head_name: "", entry_open: 1, roster_order: "gender",
 };
 
 export async function listYears(env) {
@@ -32,13 +32,13 @@ export async function getSettings(env, yearId) {
   return { ...DEFAULT_SETTINGS, ...(row || {}), academic_year_id: yearId };
 }
 
-// ห้องเรียนทั้งหมดของปี (จากการลงทะเบียนรายภาคใน banpadeng-school-db)
+// ห้องเรียนทั้งหมดของปี: นับจากภาคเรียนล่าสุดที่นักเรียนแต่ละคนลงทะเบียน (เฉพาะที่ยังเรียนอยู่)
 export async function listRooms(env, yearId) {
   const { results } = await env.DB.prepare(
-    `SELECT se.grade_level, se.classroom, COUNT(DISTINCT se.student_id) AS students
-       FROM student_enrollments se JOIN academic_terms t ON t.id = se.academic_term_id
-      WHERE t.academic_year_id = ? AND se.grade_level IS NOT NULL AND se.classroom IS NOT NULL
-      GROUP BY se.grade_level, se.classroom`
+    `${ROSTER_CTE}
+     SELECT grade_level, classroom, SUM(CASE WHEN status = 'enrolled' THEN 1 ELSE 0 END) AS students
+       FROM ranked WHERE rn = 1 AND grade_level IS NOT NULL AND classroom IS NOT NULL
+      GROUP BY grade_level, classroom`
   ).bind(yearId).all();
   return results.sort(compareRoom);
 }
@@ -71,7 +71,7 @@ export async function roomRoster(env, yearId, grade, room) {
        LEFT JOIN student_details d ON d.student_id = s.id
       WHERE r.rn = 1 AND r.grade_level = ? AND r.classroom = ?`
   ).bind(yearId, grade, room).all();
-  return sortRoster(results);
+  return sortRoster(results, (await getSettings(env, yearId)).roster_order);
 }
 
 // รายชื่อของรายวิชา = นักเรียนในห้อง + คนที่ย้ายออกจากห้องแต่มีคะแนนในรายวิชานี้แล้ว
@@ -85,14 +85,20 @@ export async function courseRoster(env, course) {
                      UNION SELECT student_id FROM gr_results WHERE course_id = ?)`
   ).bind(course.id, course.id).all();
   for (const s of extra) if (!ids.has(s.id)) roster.push(s);
-  return sortRoster(roster);
+  return sortRoster(roster, (await getSettings(env, course.academic_year_id)).roster_order);
 }
 
-function sortRoster(rows) {
-  rows.sort((a, b) => (a.enrollment_status === "moved") - (b.enrollment_status === "moved") ||
+// เลขที่ในห้อง: นักเรียนที่ยังเรียนอยู่ขึ้นก่อน (ชายก่อนหญิง แล้วตามเลขประจำตัว หรือตามเลขประจำตัวอย่างเดียว
+// ตามที่ตั้งค่า) แล้วตามด้วยคนที่ย้ายออก/ย้ายห้อง (ไม่มีเลขที่)
+// สำคัญ: ลำดับนี้ต้องตรงกับรายชื่อในห้อง เพราะครูวางคะแนนจาก Excel ตามลำดับเลขที่
+const genderRank = (g) => (/^(ช|ชาย|M)/i.test(g || "") ? 0 : /^(ญ|หญิง|F)/i.test(g || "") ? 1 : 2);
+function sortRoster(rows, order = "gender") {
+  const active = (r) => (r.enrollment_status || "enrolled") === "enrolled";
+  rows.sort((a, b) => active(b) - active(a) ||
+    (order === "gender" ? genderRank(a.gender) - genderRank(b.gender) : 0) ||
     String(a.student_code).localeCompare(String(b.student_code), "th", { numeric: true }));
   let n = 0;
-  for (const r of rows) r.number = r.enrollment_status === "moved" ? null : ++n;
+  for (const r of rows) r.number = active(r) ? ++n : null;
   return rows;
 }
 

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ปพ.1 (ฉบับตรวจทาน)</title>
+<link rel="stylesheet" href="/print/print.css">
+</head>
+<body>
+<div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
+<script type="module">
+import { esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDate } from "/print/print.js";
+import { ASSESSMENT_GROUPS, LEVEL_LABEL, summarizeGroup } from "/js/grading.js";
+
+const p = params();
+let ids = [];
+try {
+  if (p.get("student")) ids = [p.get("student")];
+  else {
+    const q = new URLSearchParams({ grade: p.get("grade") || "", room: p.get("room") || "" });
+    if (p.get("year")) q.set("year", p.get("year"));
+    const room = await get(`/api/reports/room?${q}`);
+    ids = room.students.filter((x) => x.enrollment_status === "enrolled").map((x) => x.id);
+  }
+} catch (e) { status(e.message); throw e; }
+toolbar(`ปพ.1 ฉบับตรวจทาน — ${ids.length} คน`);
+if (!ids.length) { status("ไม่มีนักเรียน"); throw new Error("empty"); }
+
+const docs = [];
+for (const id of ids) {
+  try { docs.push(await get(`/api/reports/pp1?student=${encodeURIComponent(id)}`)); } catch (e) { status(e.message); throw e; }
+}
+
+function page(d) {
+  const st = d.student, s = d.settings;
+  const parent = (pre, f, l) => [pre, f, l].filter(Boolean).join(" ").trim();
+  const years = d.years;
+  const allSubjects = years.flatMap((y) => y.subjects.map((x) => ({ ...x, year_be: y.year_be, grade_level: y.grade_level })));
+  const hours = (type) => allSubjects.filter((x) => x.subject_type === type).reduce((a, x) => a + x.hours_per_year, 0);
+  let w = 0, sum = 0;
+  for (const x of allSubjects) { const g = Number(x.grade); if (x.grade != null && !Number.isNaN(g) && /^[0-4](\.5)?$/.test(x.grade)) { w += x.hours_per_year; sum += g * x.hours_per_year; } }
+  const gpa = w ? Math.floor((sum / w) * 100) / 100 : null;
+  const last = years[years.length - 1];
+  return `<section class="sheet">
+    <div class="draft-mark"><span>ฉบับตรวจทาน</span></div>
+    <div class="form-no">ปพ.1 : ป</div>
+    <img class="garuda" src="/assets/garuda.png" alt="" style="width:20mm;height:22mm;border-radius:0">
+    <h2 class="center">ระเบียนแสดงผลการเรียนหลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน ระดับประถมศึกษา</h2>
+    <div class="info">
+      <div>โรงเรียน ${esc(s.school_name || "โรงเรียนบ้านป่าเด็ง")}</div><div>สังกัด ${esc(s.school_area || "")}</div>
+      <div>ชื่อ ${esc(st.name)}</div><div>เลขประจำตัวนักเรียน ${esc(td(st.student_code))}</div>
+      <div>เลขประจำตัวประชาชน ${esc(td(st.national_id || ""))}</div><div>วันเกิด ${thaiDate(st.birth_date)}</div>
+      <div>สัญชาติ ${esc(st.nationality || "")} ศาสนา ${esc(st.religion || "")}</div><div>เพศ ${esc(st.gender || "")}</div>
+      <div>ชื่อ–สกุลบิดา ${esc(parent(st.father_prefix, st.father_first_name, st.father_last_name))}</div><div>ชื่อ–สกุลมารดา ${esc(parent(st.mother_prefix, st.mother_first_name, st.mother_last_name))}</div>
+    </div>
+    <table class="t tiny">
+      <thead><tr><th style="width:20mm">ปีการศึกษา / ชั้น</th><th style="width:20mm">รหัสวิชา</th><th>รายวิชา</th><th style="width:16mm">เวลาเรียน</th><th style="width:14mm">ผลการเรียน</th></tr></thead>
+      <tbody>${years.length ? years.map((y) => y.subjects.map((x, i) => `<tr>${i === 0 ? `<td class="c" rowspan="${y.subjects.length}">${td(y.year_be)}<br>${esc(td(y.grade_level))}</td>` : ""}
+        <td class="c">${esc(td(x.code))}</td><td>${esc(x.name)}${x.subject_type === "additional" ? " (เพิ่มเติม)" : ""}</td><td class="c">${td(x.hours_per_year)}</td><td class="c">${gradeOut(x.grade)}</td></tr>`).join("")).join("")
+        : `<tr><td colspan="5" class="c">ยังไม่มีผลการเรียนในระบบ</td></tr>`}</tbody>
+    </table>
+    <table class="t small">
+      <tr><th>สรุปผลการประเมิน</th><th>ผล</th><th>สรุปผลการเรียน</th><th>ผล</th></tr>
+      <tr><td>เวลาเรียนรายวิชาพื้นฐาน</td><td class="c">${td(hours("basic"))} ชม.</td><td>ผลการเรียนเฉลี่ย (ทุกปีที่มีในระบบ)</td><td class="c">${gpa == null ? "" : fmt(gpa)}</td></tr>
+      <tr><td>เวลาเรียนรายวิชาเพิ่มเติม</td><td class="c">${td(hours("additional"))} ชม.</td><td>ผลการตัดสิน</td><td class="c">ผ่าน / ไม่ผ่าน</td></tr>
+      ${last ? ASSESSMENT_GROUPS.map((g) => `<tr><td colspan="2">${g.title} (ปีล่าสุด)</td><td colspan="2" class="c">${(() => { const v = summarizeGroup(g, last.assessments); return v == null ? "" : g.type === "pass" ? (v === "ผ" ? "ผ่าน" : "ไม่ผ่าน") : LEVEL_LABEL[v]; })()}</td></tr>`).join("") : ""}
+    </table>
+    <div class="note">ฉบับนี้ใช้ตรวจทานข้อมูลก่อนออก ปพ.1 จากแบบพิมพ์ทางราชการ/ระบบ SGS เท่านั้น — แสดงเฉพาะปีที่มีข้อมูลในระบบนี้ ปีที่ยังไม่ได้บันทึกต้องตรวจจากระเบียนเดิม</div>
+    <div class="signs">
+      <div class="sign"><div class="line"></div>(${esc(s.registrar_name || s.measurement_head_name || "................................................")})<br>นายทะเบียน</div>
+      <div class="sign"><div class="line"></div>(${esc(s.director_name || "................................................")})<br>ผู้อำนวยการโรงเรียน</div>
+    </div>
+  </section>`;
+}
+document.getElementById("doc").innerHTML = docs.map(page).join("");
+</script>
+</body>
+</html>

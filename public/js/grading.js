@@ -122,13 +122,16 @@ export function gradePoint(grade) {
   return NUMERIC_GRADES.includes(String(grade)) ? Number(grade) : null;
 }
 
-// ผลการเรียนเฉลี่ย ถ่วงน้ำหนักด้วยเวลาเรียน (ชม./ปี) — วิชาที่ยังเป็น ร/มส ไม่นำมาคิด
+// ผลการเรียนเฉลี่ย ถ่วงน้ำหนักด้วยเวลาเรียน (ชม./ปี) ทศนิยม 2 ตำแหน่งไม่ปัด
+// คำนวณเมื่อทุกวิชามีผลเป็นตัวเลขแล้วเท่านั้น — ถ้ายังมี ร / มส / ไม่มีผล จะคืน null
+// เพื่อไม่ให้ผลเฉลี่ยที่คิดจากบางวิชาไปปรากฏในเอกสาร
 export function weightedGPA(rows) {
+  if (!rows.length) return null;
   let w = 0, s = 0;
   for (const r of rows) {
     const p = gradePoint(r.grade);
+    if (p == null) return null;
     const h = Number(r.hours_per_year) || 0;
-    if (p == null || h <= 0) continue;
     w += h; s += p * h;
   }
   return w > 0 ? floor2(s / w) : null;

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>รายงานสรุปผลสัมฤทธิ์ทางการเรียน</title>
+<link rel="stylesheet" href="/print/print.css">
+</head>
+<body>
+<div id="doc"><div class="status">กำลังรวบรวมผลการเรียนทั้งโรงเรียน…</div></div>
+<script type="module">
+import { esc, params, get, toolbar, status, fmt, td, gradeOut } from "/print/print.js";
+const y = params().get("year");
+let d;
+try { d = await get(`/api/reports/summary${y ? `?year=${encodeURIComponent(y)}` : ""}`); } catch (e) { status(e.message); throw e; }
+toolbar(`สรุปผลสัมฤทธิ์ ปีการศึกษา ${d.year.year_be}`);
+const cols = ["4", "3.5", "3", "2.5", "2", "1.5", "1", "0", "ร", "มส"];
+const grades = [...new Set(d.subjects.map((x) => x.grade_level))];
+const s = d.settings;
+const pct = (n, total) => total ? td((Math.round((n / total) * 1000) / 10).toFixed(1)) : "";
+
+const pages = grades.map((g) => {
+  const list = d.subjects.filter((x) => x.grade_level === g);
+  const rooms = d.rooms.filter((r) => r.grade_level === g);
+  const tot = Object.fromEntries(cols.map((c) => [c, list.reduce((a, x) => a + (x.counts[c] || 0), 0)]));
+  const all = list.reduce((a, x) => a + x.n, 0);
+  return `<section class="sheet land">
+    <div class="center"><b>รายงานผลสัมฤทธิ์ทางการเรียน ชั้น ${esc(td(g))} ปีการศึกษา ${td(d.year.year_be)}</b><br>${esc(s.school_name || "")}</div>
+    <table class="t small">
+      <thead><tr><th rowspan="2">รหัสวิชา</th><th rowspan="2">รายวิชา</th><th rowspan="2">จำนวน<br>นักเรียน</th><th colspan="${cols.length}">จำนวนนักเรียนที่ได้ผลการเรียน</th><th rowspan="2">เฉลี่ย</th><th rowspan="2">ร้อยละ<br>3 ขึ้นไป</th></tr>
+        <tr>${cols.map((c) => `<th>${gradeOut(c)}</th>`).join("")}</tr></thead>
+      <tbody>${list.map((x) => `<tr><td class="c">${esc(td(x.code))}</td><td>${esc(x.name)}</td><td class="c">${td(x.n)}</td>
+        ${cols.map((c) => `<td class="c">${x.counts[c] ? td(x.counts[c]) : ""}</td>`).join("")}<td class="c">${x.mean == null ? "" : fmt(x.mean)}</td><td class="c">${x.good_pct == null ? "" : td(x.good_pct.toFixed(1))}</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="2" class="r"><b>รวม</b></td><td class="c">${td(all)}</td>${cols.map((c) => `<td class="c">${td(tot[c])}</td>`).join("")}<td></td><td></td></tr>
+        <tr><td colspan="3" class="r"><b>ร้อยละ</b></td>${cols.map((c) => `<td class="c">${pct(tot[c], all)}</td>`).join("")}<td></td><td></td></tr></tfoot>
+    </table>
+    <div style="margin-top:3mm">ผลการเรียนเฉลี่ยรายห้อง: ${rooms.map((r) => `${esc(td(r.grade_level))}/${esc(td(r.classroom))} = ${r.avg_gpa == null ? "–" : fmt(r.avg_gpa)} (${td(r.students)} คน)`).join(" &nbsp; ")}</div>
+  </section>`;
+});
+document.getElementById("doc").innerHTML = pages.join("") || `<div class="status">ยังไม่มีผลการเรียน</div>`;
+</script>
+</body>
+</html>

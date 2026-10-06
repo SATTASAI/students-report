@@ -12,8 +12,8 @@ export async function handleMe(request, env, user, url) {
   const years = await listYears(env);
   const year = await resolveYear(env, url.searchParams.get("year"));
   const settings = await getSettings(env, year.id);
-  const all = await courseOverview(env, year.id);
-  const mine = all.filter((c) => c.teachers.some((t) => t.id === user.id));
+  const all = user.is_admin ? await courseOverview(env, year.id) : null;
+  const mine = all ? all.filter((c) => c.teachers.some((t) => t.id === user.id)) : await courseOverview(env, year.id, { teacherId: user.id });
   const { results: homerooms } = await env.DB.prepare(
     "SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?"
   ).bind(year.id, user.id).all();

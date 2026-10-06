@@ -33,7 +33,7 @@ export async function seed(d1) {
         firsts[(sid * 7) % firsts.length], lasts[sid % lasts.length], `1${String(500000000000 + sid)}`, "2017-06-15").run();
       await d1.prepare("UPDATE students SET full_name = name_prefix || first_name || ' ' || last_name WHERE id = ?").bind(sid).run();
       await d1.prepare(`INSERT INTO student_details (student_id, gender, guardian_prefix, guardian_first_name, guardian_last_name, guardian_relationship, house_number, village_no, subdistrict, district, province)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(sid, male ? "ชาย" : "หญิง", "นาง", "ผู้ปกครอง", lasts[sid % lasts.length], "มารดา", "12", "3", "ตำบลทดสอบ", "อำเภอทดสอบ", "จังหวัดทดสอบ").run();
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(sid, male ? "ช" : "ญ", "นาง", "ผู้ปกครอง", lasts[sid % lasts.length], "มารดา", "12", "3", "ตำบลทดสอบ", "อำเภอทดสอบ", "จังหวัดทดสอบ").run();
       await d1.prepare("INSERT INTO student_enrollments (student_id, academic_year_id, academic_term_id, grade_level, classroom) VALUES (?,?,?,?,?)").bind(sid, 1, 1, grade, room).run();
       sid++;
     }
