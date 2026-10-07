@@ -215,7 +215,8 @@ export async function courseBundle(env, course) {
   for (const s of roster) if (allCarry[s.id]?.[course.code]) carry[s.id] = allCarry[s.id][course.code];
   const computed = {};
   for (const s of roster) computed[s.id] = computeStudentResult(items, scores[s.id] || {}, results[s.id] || {}, calcSettings, remedials[s.id] || {}, carry[s.id]);
-  return { course, settings, items, units, roster, scores, remedials, results, computed, carry };
+  const attendance = await attendanceSummary(env, course.academic_year_id, roster.map((s) => s.id));
+  return { course, settings, items, units, roster, scores, remedials, results, computed, carry, attendance };
 }
 
 export function gradeSettings(course, settings) {
@@ -312,15 +313,23 @@ export async function assessmentsFor(env, yearId, studentIds) {
   return out;
 }
 
+// วันขาด/ลา (ไม่นับมาสาย) จากบันทึกการมาเรียนของครูประจำชั้น — ใช้กับหนังสือแจ้งผู้ปกครองและ ปพ.6
+export const ABSENT_CODES = ["ข", "ล", "ป"];
 export async function absenceCounts(env, yearId, studentIds) {
-  if (!studentIds.length) return {};
+  const sum = await attendanceSummary(env, yearId, studentIds);
+  return Object.fromEntries(Object.entries(sum).map(([sid, c]) => [sid, ABSENT_CODES.reduce((a, k) => a + (c[k] || 0), 0)]));
+}
+
+// { student_id: { ข: n, ล: n, ป: n, มส: n } }
+export async function attendanceSummary(env, yearId, studentIds) {
   const out = {};
   for (let i = 0; i < studentIds.length; i += 90) {
     const chunk = studentIds.slice(i, i + 90);
+    if (!chunk.length) continue;
     const { results } = await env.DB.prepare(
-      `SELECT student_id, COUNT(*) AS days FROM gr_absences WHERE academic_year_id = ? AND student_id IN (${chunk.map(() => "?").join(",")}) GROUP BY student_id`
+      `SELECT student_id, code, COUNT(*) AS n FROM gr_attendance WHERE academic_year_id = ? AND student_id IN (${chunk.map(() => "?").join(",")}) GROUP BY student_id, code`
     ).bind(yearId, ...chunk).all();
-    for (const r of results) out[r.student_id] = r.days;
+    for (const r of results) (out[r.student_id] ||= {})[r.code] = r.n;
   }
   return out;
 }

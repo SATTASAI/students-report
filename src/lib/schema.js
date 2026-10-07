@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-6";
+export const SCHEMA_VERSION = "gr-7";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -158,6 +158,18 @@ export const SCHEMA_SQL = [
     total REAL NOT NULL CHECK (total >= 0 AND total <= 50),
     updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (academic_year_id, student_id, subject_code, term_number))`,
+  // gr-7: บันทึกการมาเรียนรายวัน (ครูประจำชั้น) — เก็บเฉพาะวันที่ไม่ได้มาเรียนปกติ: ข ขาด · ล ลากิจ · ป ลาป่วย · มส มาสาย
+  `CREATE TABLE IF NOT EXISTS gr_attendance (
+    academic_year_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    att_date TEXT NOT NULL,
+    code TEXT NOT NULL CHECK (code IN ('ข','ล','ป','มส')),
+    recorded_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (student_id, att_date))`,
+  `CREATE INDEX IF NOT EXISTS idx_gr_attendance_year ON gr_attendance(academic_year_id, student_id, att_date)`,
+  // ย้ายข้อมูลวันขาดเรียนแบบเดิม (gr_absences) มาเป็นรหัสใหม่ — ทำซ้ำได้ไม่ซ้ำข้อมูล
+  `INSERT OR IGNORE INTO gr_attendance (academic_year_id, student_id, att_date, code, recorded_by)
+     SELECT academic_year_id, student_id, absence_date, CASE reason WHEN 'sick' THEN 'ป' WHEN 'personal' THEN 'ล' ELSE 'ข' END, recorded_by FROM gr_absences`,
   `CREATE TABLE IF NOT EXISTS gr_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER, action TEXT NOT NULL, detail TEXT,

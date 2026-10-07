@@ -185,8 +185,23 @@ test("ครูประจำชั้น: ประเมินคุณลั
   await call("t1", "PUT", "/api/homeroom/assessments?grade=ป.1&room=1", { changes: [{ student_id: sid, item_key: "hack", value: "1" }] }, { expect: 400 });
   // นักเรียนห้องอื่น
   await call("t1", "PUT", "/api/homeroom/assessments?grade=ป.1&room=1", { changes: [{ student_id: 25, item_key: "trait_1", value: "1" }] }, { expect: 400 });
-  const ab = await call("t1", "POST", "/api/homeroom/absences?grade=ป.1&room=1", { student_id: sid, dates: ["2026-11-03", "2026-11-04"], reason: "unknown" }, { expect: 200 });
-  assert.equal(ab.data.absences[sid].length, 2);
+  // บันทึกการมาเรียน: ตารางรายเดือน มาเรียนปกติไม่ต้องใส่
+  const AQ = "/api/homeroom/attendance?grade=ป.1&room=1";
+  const month = (await call("t1", "GET", `${AQ}&month=2026-11`, null, { expect: 200 })).data;
+  assert.equal(month.days[0], "2026-11-02"); // วันจันทร์แรกของเดือน (เสาร์อาทิตย์ไม่แสดง)
+  assert.ok(!month.days.includes("2026-11-07"));
+  assert.deepEqual(month.codes.map(([k]) => k), ["ข", "ล", "ป", "มส"]);
+  await call("t1", "PUT", AQ, { changes: [{ student_id: sid, date: "2026-11-03", code: "x" }] }, { expect: 400 });
+  await call("t1", "PUT", AQ, { changes: [{ student_id: sid, date: "2026-10-20", code: "ข" }] }, { expect: 400 }); // ปิดภาค
+  await call("t1", "PUT", AQ, { changes: [{ student_id: 25, date: "2026-11-03", code: "ข" }] }, { expect: 400 });
+  await call("t2", "PUT", AQ, { changes: [] }, { expect: 403 });
+  await call("t1", "PUT", AQ, { changes: [
+    { student_id: sid, date: "2026-11-03", code: "ข" }, { student_id: sid, date: "2026-11-04", code: "ป" },
+    { student_id: sid, date: "2026-11-05", code: "มส" }, { student_id: sid, date: "2026-11-06", code: "ล" },
+  ] }, { expect: 200 });
+  await call("t1", "PUT", AQ, { changes: [{ student_id: sid, date: "2026-11-06", code: "" }] }, { expect: 200 }); // ลบ = มาเรียน
+  const rec = (await call("t1", "GET", `${AQ}&month=2026-11`, null, { expect: 200 })).data.records[sid];
+  assert.deepEqual(rec, { "2026-11-03": "ข", "2026-11-04": "ป", "2026-11-05": "มส" });
   const letter = (await call("t1", "GET", `/api/reports/absence?grade=ป.1&room=1&student=${sid}`, null, { expect: 200 })).data;
   assert.equal(letter.absences.length, 2);
   const room = (await call("t1", "GET", "/api/reports/room?grade=ป.1&room=1", null, { expect: 200 })).data;

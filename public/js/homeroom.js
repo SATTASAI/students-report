@@ -13,6 +13,7 @@ let cterm = Number(sessionStorage.getItem("sr-hr-cterm")) || 2;
 const pending = new Map();      // การประเมิน "sid|key" → value
 const pendingC = new Map();     // ความคิดเห็น "term|sid|field" → body
 const pendingB = new Map();     // น้ำหนักส่วนสูง "sid|round" → {weight,height}
+const pendingA = new Map();     // การมาเรียน "sid|date" → "" | ข | ล | ป | มส
 let saving = false, timer;
 
 try { data = await api(`/api/homeroom?${q}`); }
@@ -33,10 +34,11 @@ pp6.href = `/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}`;
 
 const hasMovers = data.students.some((s) => s.transfer_in_term > 1);
 const TABS = [...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["act", "กิจกรรมพัฒนาผู้เรียน"], ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"],
-  ...(hasMovers ? [["carry", "คะแนนยกมา (ย้ายเข้า)"]] : []), ["grades", "ผลการเรียนรวม"], ["absence", "ขาดเรียน (บค.)"]];
+  ...(hasMovers ? [["carry", "คะแนนยกมา (ย้ายเข้า)"]] : []), ["grades", "ผลการเรียนรวม"], ["attend", "บันทึกการมาเรียน"]];
 if (location.hash === "#carry" && hasMovers) tab = "carry";
 const tabs = document.getElementById("tabs");
 tabs.innerHTML = TABS.map(([k, label]) => `<button role="tab" data-tab="${k}">${label}</button>`).join("");
+if (tab === "absence") tab = "attend";
 if (!TABS.some(([k]) => k === tab)) tab = "trait";
 function renderTabs() {
   for (const b of tabs.querySelectorAll("button")) {
@@ -44,7 +46,7 @@ function renderTabs() {
     b.onclick = async () => { await flush(); tab = b.dataset.tab; sessionStorage.setItem("sr-hr-tab", tab); renderTabs(); render(); };
   }
 }
-window.addEventListener("beforeunload", (e) => { if (pending.size || pendingC.size || pendingB.size || saving) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (pending.size || pendingC.size || pendingB.size || pendingA.size || saving) { e.preventDefault(); e.returnValue = ""; } });
 
 function render() {
   const group = ASSESSMENT_GROUPS.find((g) => g.key === tab);
@@ -54,7 +56,7 @@ function render() {
   else if (tab === "body") renderBody();
   else if (tab === "carry") renderCarry().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
   else if (tab === "grades") renderGrades();
-  else renderAbsence();
+  else renderAttendance().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
 }
 
 // ---------- คะแนนยกมาจาก ปพ.6 ของโรงเรียนเดิม (นักเรียนย้ายเข้าระหว่างปี) ----------
@@ -313,10 +315,10 @@ function renderBody() {
 function schedule() { showState(); clearTimeout(timer); timer = setTimeout(flush, 700); }
 
 async function flush() {
-  if (saving || (!pending.size && !pendingC.size && !pendingB.size)) return;
+  if (saving || (!pending.size && !pendingC.size && !pendingB.size && !pendingA.size)) return;
   saving = true;
-  const a = [...pending.entries()], c = [...pendingC.entries()], b = [...pendingB.entries()];
-  pending.clear(); pendingC.clear(); pendingB.clear();
+  const a = [...pending.entries()], c = [...pendingC.entries()], b = [...pendingB.entries()], at = [...pendingA.entries()];
+  pending.clear(); pendingC.clear(); pendingB.clear(); pendingA.clear();
   showState();
   try {
     if (a.length) await api(`/api/homeroom/assessments?${q}`, { method: "PUT", body: { changes: a.map(([k, value]) => { const [sid, item_key] = k.split("|"); return { student_id: Number(sid), item_key, value }; }) } });
@@ -325,15 +327,17 @@ async function flush() {
       if (list.length) await api(`/api/homeroom/comments?${q}`, { method: "PUT", body: { term: t, changes: list.map(([k, body]) => { const [, sid, field] = k.split("|"); return { student_id: Number(sid), field, body }; }) } });
     }
     if (b.length) await api(`/api/homeroom/body?${q}`, { method: "PUT", body: { changes: b.map(([k, v]) => { const [sid, round] = k.split("|").map(Number); return { student_id: sid, round, weight: v.weight, height: v.height }; }) } });
+    if (at.length) await api(`/api/homeroom/attendance?${q}`, { method: "PUT", body: { changes: at.map(([k, code]) => { const [sid, date] = k.split("|"); return { student_id: Number(sid), date, code }; }) } });
     saving = false; showState();
   } catch (err) {
+    for (const [k, v] of at) if (!pendingA.has(k)) pendingA.set(k, v);
     for (const [k, v] of a) if (!pending.has(k)) pending.set(k, v);
     for (const [k, v] of c) if (!pendingC.has(k)) pendingC.set(k, v);
     for (const [k, v] of b) if (!pendingB.has(k)) pendingB.set(k, v);
     saving = false; showState(err); showError(err);
     return;
   }
-  if (pending.size || pendingC.size || pendingB.size) flush();
+  if (pending.size || pendingC.size || pendingB.size || pendingA.size) flush();
 }
 
 function showState(err) {
@@ -341,7 +345,7 @@ function showState(err) {
   if (!el) return;
   el.className = "save-state";
   if (err) { el.classList.add("error"); el.innerHTML = `บันทึกไม่สำเร็จ <button class="btn small" id="retry">ลองอีกครั้ง</button>`; document.getElementById("retry").onclick = flush; }
-  else if (saving || pending.size || pendingC.size || pendingB.size) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
+  else if (saving || pending.size || pendingC.size || pendingB.size || pendingA.size) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
   else el.textContent = "บันทึกแล้ว";
 }
 
@@ -360,57 +364,90 @@ function renderGrades() {
     <p class="muted small" style="margin-top:10px">ผลการเรียนดึงจากสมุดคะแนนของครูผู้สอนแต่ละวิชาแบบทันที — ช่องที่เป็น ร คือคะแนนยังไม่ครบ</p>`;
 }
 
-const REASON = { sick: "ป่วย", personal: "ลากิจ", unknown: "ไม่ทราบสาเหตุ", other: "อื่น ๆ" };
-function renderAbsence() {
-  const rows = data.students.map((s) => ({ s, list: data.absences[s.id] || [] }));
+// ---------- บันทึกการมาเรียน (ตารางรายเดือน) ----------
+// มาเรียนปกติเว้นว่าง · ใส่ ข ขาด / ล ลากิจ / ป ลาป่วย / มส มาสาย · บันทึกอัตโนมัติ
+const ATT = { "ข": "ขาดเรียน", "ล": "ลากิจ", "ป": "ลาป่วย", "มส": "มาสาย" };
+const ATT_ALIAS = { "ข": "ข", "ล": "ล", "ป": "ป", "มส": "มส", "ส": "มส" };
+let attMonth = sessionStorage.getItem("sr-hr-month") || "";
+let att;
+const WD = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+const monthName = (m) => new Date(`${m}-01T00:00:00`).toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+
+async function renderAttendance() {
+  view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
+  att = await api(`/api/homeroom/attendance?${q}${attMonth ? `&month=${attMonth}` : ""}`);
+  attMonth = att.month;
+  const idx = att.months.indexOf(att.month);
+  const codeOf = (sid, d) => att.records[sid]?.[d] || "";
+  const counts = (sid) => { const c = { "ข": 0, "ล": 0, "ป": 0, "มส": 0 }; for (const v of Object.values(att.records[sid] || {})) c[v]++; return c; };
   view.innerHTML = `
-    <div class="note" style="margin-bottom:14px">บันทึกเฉพาะนักเรียนที่ขาดเรียนบ่อยหรือขาดติดต่อกัน (การเช็กชื่อรายวันยังใช้ Q-info ตามเดิม) · พิมพ์หนังสือแจ้งผู้ปกครองได้ที่ <a href="/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}">คลังเอกสาร</a></div>
-    <div class="table-wrap"><table class="list">
-      <thead><tr><th class="num">เลขที่</th><th>ชื่อ–สกุล</th><th class="num">วันที่ขาด</th><th>รายการ</th><th></th></tr></thead>
-      <tbody>${rows.map(({ s, list }) => `<tr>
-        <td class="num">${s.number ?? ""}</td><td>${esc(s.name)}</td><td class="num">${list.length || ""}</td>
-        <td class="small">${list.map((a) => `<span class="tag ${a.reason === "unknown" ? "bad" : ""}" title="${esc(a.note || "")}">${thaiDate(a.absence_date)} ${REASON[a.reason]} <button class="linkish" style="color:inherit" data-del="${a.id}" aria-label="ลบ">×</button></span>`).join(" ")}</td>
-        <td class="actions"><button class="btn small" data-add="${s.id}">บันทึกวันขาด</button></td>
-      </tr>`).join("")}</tbody></table></div>`;
-  for (const b of view.querySelectorAll("[data-add]")) b.onclick = () => addAbsence(Number(b.dataset.add));
-  for (const b of view.querySelectorAll("[data-del]")) b.onclick = async () => {
-    if (!(await confirmBox("ลบวันขาดเรียน", "ลบรายการนี้ใช่หรือไม่", "ลบ", true))) return;
-    try { const r = await api(`/api/homeroom/absences/${b.dataset.del}?${q}`, { method: "DELETE" }); data.absences = r.absences; renderAbsence(); } catch (err) { showError(err); }
-  };
-}
-
-function thaiDate(iso) {
-  const d = new Date(`${iso}T00:00:00`);
-  return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" });
-}
-
-async function addAbsence(sid) {
-  const s = data.students.find((x) => x.id === sid);
-  const n = new Date();
-  const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
-  const res = await dialog({
-    title: `บันทึกวันขาดเรียน — ${s.name}`,
-    body: `<div class="form-grid">
-      <label class="field">ตั้งแต่วันที่<input type="date" name="from" value="${today}" required></label>
-      <label class="field">ถึงวันที่<input type="date" name="to" value="${today}" required></label>
-      <label class="field">สาเหตุ<select name="reason">${Object.entries(REASON).map(([k, v]) => `<option value="${k}" ${k === "unknown" ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+    <div class="sheet-tools">
+      <span class="actions">
+        <button class="btn small" id="mPrev" ${idx <= 0 ? "disabled" : ""} aria-label="เดือนก่อน">‹</button>
+        <select id="mSel" aria-label="เดือน">${(att.months.length ? att.months : [att.month]).map((m) => `<option value="${m}" ${m === att.month ? "selected" : ""}>${monthName(m)}</option>`).join("")}</select>
+        <button class="btn small" id="mNext" ${idx < 0 || idx >= att.months.length - 1 ? "disabled" : ""} aria-label="เดือนถัดไป">›</button>
+        <span class="att-legend small">${Object.entries(ATT).map(([k, v]) => `<span><b class="att-code c-${k}">${k}</b> ${v}</span>`).join("")} <span class="muted">ว่าง = มาเรียน</span></span>
+      </span>
+      <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
-    <label class="check" style="margin-top:12px"><input type="checkbox" name="weekdays" checked> นับเฉพาะวันจันทร์–ศุกร์</label>
-    <label class="field" style="margin-top:12px">หมายเหตุ<input name="note" maxlength="300"></label>`,
+    ${att.days.length ? `<div class="sheet-wrap"><table class="sheet att-sheet" id="sheet">
+      <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
+        ${att.days.map((d) => { const dt = new Date(`${d}T00:00:00`); return `<th class="col-head att-day ${d === att.today ? "today" : ""}"><span class="wd">${WD[dt.getDay()]}</span><b>${dt.getDate()}</b></th>`; }).join("")}
+        ${Object.keys(ATT).map((k) => `<th class="col-head att-sum" data-tip="${ATT[k]} (วัน) ในเดือนนี้">${k}</th>`).join("")}</tr></thead>
+      <tbody>${data.students.map((s) => { const c = counts(s.id); return `<tr data-sid="${s.id}">
+        <td class="stick no">${s.number ?? ""}</td><td class="stick name" title="${esc(s.name)}">${esc(s.name)}</td>
+        ${att.days.map((d) => { const v = codeOf(s.id, d); return `<td class="cell att ${v ? `c-${v}` : ""} ${d === att.today ? "today" : ""}"><input data-date="${d}" value="${esc(v)}" maxlength="2" autocomplete="off" aria-label="${esc(s.name)} ${d}"></td>`; }).join("")}
+        ${Object.keys(ATT).map((k) => `<td class="calc att-sum" data-n="${k}">${c[k] || ""}</td>`).join("")}</tr>`; }).join("")}</tbody>
+    </table></div>
+    <p class="muted small" style="margin-top:10px">พิมพ์ ข ล ป หรือ มส (พิมพ์ ส ก็ได้ = มาสาย) แล้วกด Enter ลงไปคนถัดไป · ลูกศรเลื่อนช่อง · ลบตัวอักษร = มาเรียน · วันหยุดราชการไม่ต้องใส่อะไร
+      · หนังสือแจ้งผู้ปกครองกรณีขาดเรียน (บค.) พิมพ์ได้ที่ <a href="/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}">คลังเอกสาร</a></p>`
+    : `<div class="panel empty"><strong>เดือนนี้ไม่มีวันเรียน</strong>อยู่นอกช่วงภาคเรียน</div>`}`;
+  const go = async (m) => { await flush(); attMonth = m; sessionStorage.setItem("sr-hr-month", m); renderAttendance().catch(showError); };
+  document.getElementById("mSel").onchange = (e) => go(e.target.value);
+  document.getElementById("mPrev").onclick = () => go(att.months[idx - 1]);
+  document.getElementById("mNext").onclick = () => go(att.months[idx + 1]);
+  const table = document.getElementById("sheet");
+  if (!table) return;
+  const inputs = () => [...table.querySelectorAll("tbody input")];
+  const cols = att.days.length;
+  const move = (inp, dr, dc) => {
+    const all = inputs(), i = all.indexOf(inp), r = Math.floor(i / cols) + dr, c = (i % cols) + dc;
+    if (c < 0 || c >= cols) return;
+    const t = all[r * cols + c]; if (t) { t.focus(); t.select(); }
+  };
+  const accept = (inp) => {
+    const raw = inp.value.trim();
+    const code = raw === "" ? "" : ATT_ALIAS[raw];
+    const td = inp.parentElement;
+    if (code === undefined) { td.classList.add("invalid"); inp.title = "ใส่ได้เฉพาะ ข ล ป มส"; return; }
+    td.classList.remove("invalid"); inp.title = "";
+    if (raw !== code) inp.value = code;
+    const tr = inp.closest("tr"), sid = Number(tr.dataset.sid), d = inp.dataset.date;
+    if ((att.records[sid]?.[d] || "") === code) return;
+    if (code) (att.records[sid] ||= {})[d] = code; else delete att.records[sid]?.[d];
+    td.className = `cell att ${code ? `c-${code}` : ""} ${d === att.today ? "today" : ""}`;
+    const c = counts(sid);
+    for (const el of tr.querySelectorAll("[data-n]")) el.textContent = c[el.dataset.n] || "";
+    pendingA.set(`${sid}|${d}`, code);
+    showState(); clearTimeout(timer); timer = setTimeout(flush, 700);
+  };
+  table.addEventListener("focusin", (e) => { if (e.target.matches("input")) e.target.select(); });
+  table.addEventListener("input", (e) => {
+    const inp = e.target, v = inp.value.trim();
+    if (!inp.matches("input")) return;
+    if (v === "ม") return; // รอพิมพ์ "มส"
+    accept(inp);
   });
-  if (!res.ok) return;
-  const { from, to, reason, note, weekdays } = res.data;
-  const dates = [];
-  for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`) && dates.length <= 60; d.setUTCDate(d.getUTCDate() + 1)) {
-    const wd = d.getUTCDay();
-    if (weekdays && (wd === 0 || wd === 6)) continue;
-    dates.push(d.toISOString().slice(0, 10));
-  }
-  if (!dates.length) { toast("ช่วงวันที่ไม่มีวันเรียน", "bad"); return; }
-  try {
-    const r = await api(`/api/homeroom/absences?${q}`, { method: "POST", body: { student_id: sid, dates, reason, note } });
-    data.absences = r.absences; toast(`บันทึก ${dates.length} วันแล้ว`); renderAbsence();
-  } catch (err) { showError(err); }
+  table.addEventListener("change", (e) => { if (e.target.matches("input")) accept(e.target); });
+  table.addEventListener("keydown", (e) => {
+    const t = e.target;
+    if (!t.matches("input")) return;
+    if (e.key === "Enter" || e.key === "ArrowDown") { e.preventDefault(); accept(t); move(t, 1, 0); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); accept(t); move(t, -1, 0); }
+    else if (e.key === "ArrowRight" || e.key === "Tab" && !e.shiftKey) { if (e.key === "ArrowRight") { e.preventDefault(); accept(t); move(t, 0, 1); } }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); accept(t); move(t, 0, -1); }
+  });
+  table.querySelector("th.today")?.scrollIntoView({ block: "nearest", inline: "center" });
 }
 
 renderTabs();

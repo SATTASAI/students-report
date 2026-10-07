@@ -17,7 +17,7 @@ let d;
 try { d = await get(`/api/reports/absence?${q}`); } catch (e) { status(e.message); throw e; }
 toolbar(`หนังสือแจ้งผู้ปกครอง ${d.student.name}`);
 const s = d.settings, g = d.guardian;
-const REASON = { sick: "ป่วย", personal: "ลากิจ", unknown: "ไม่ทราบสาเหตุ", other: "อื่น ๆ" };
+const REASON = { sick: "ป่วย", personal: "ลากิจ", unknown: "ขาดเรียน", other: "อื่น ๆ" };
 const guardianName = [g.guardian_prefix, g.guardian_first_name, g.guardian_last_name].filter(Boolean).join(" ").trim();
 // เติมคำนำหน้า (ตำบล/อำเภอ/จังหวัด) เฉพาะเมื่อข้อมูลยังไม่มี
 const pre = (label, v) => !v ? "" : String(v).trim().startsWith(label) ? String(v).trim() : `${label}${String(v).trim()}`;

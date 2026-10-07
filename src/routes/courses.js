@@ -21,6 +21,7 @@ function serializeBundle(b, user) {
       gender: s.gender || null, enrollment_status: s.enrollment_status, transfer_in_term: s.transfer_in_term || null,
     })),
     carry: b.carry || {},
+    attendance: b.attendance || {},
     scores: b.scores,
     results: b.results,
     computed: b.computed,

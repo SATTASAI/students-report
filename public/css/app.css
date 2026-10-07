@@ -345,3 +345,20 @@ table.sheet { border-collapse: separate; border-spacing: 0; font-size: 14px; }
 .tip-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 2px 4px; margin: 0; font: inherit; color: inherit; cursor: help; border-radius: 6px; }
 .tip-btn:hover, .tip-btn:focus-visible { background: rgba(57, 73, 171, .1); }
 .tip-btn .i { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--ink-3); color: var(--ink-2); font-size: 10px; font-weight: 700; font-style: normal; line-height: 1; }
+
+/* บันทึกการมาเรียน */
+.att-legend { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-left: 6px; }
+.att-code { display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 4px; border-radius: 5px; font-size: 12px; }
+.att-sheet th.att-day { min-width: 38px; width: 38px; padding: 4px 2px; height: auto; text-align: center; }
+.att-sheet th.att-day .wd { display: block; font-size: 11px; color: var(--ink-3); font-weight: 500; }
+.att-sheet th.att-day b { font-size: 14px; }
+.att-sheet th.today, .att-sheet td.today { box-shadow: inset 0 0 0 2px rgba(57, 73, 171, .35); }
+.att-sheet td.att { padding: 0; width: 38px; min-width: 38px; }
+.att-sheet td.att input { width: 100%; min-width: 0; text-align: center; padding: 8px 0; font-weight: 700; }
+.att-sheet .att-sum { min-width: 34px; width: 34px; text-align: center; }
+.c-ข { background: #fde8e8; color: #b42318; }
+.c-ล { background: #fff4e0; color: #9a5b00; }
+.c-ป { background: #e8f1fd; color: #1d4f9c; }
+.c-มส { background: #f1ecfb; color: #6b3fb5; }
+td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-มส input { color: inherit; background: transparent; }
+#mSel { width: auto; min-width: 170px; }

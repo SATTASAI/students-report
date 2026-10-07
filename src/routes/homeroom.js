@@ -2,7 +2,7 @@ import { json, readJson, fail, requireUser, intParam, text, audit, batchAll } fr
 import { resolveYear, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isPrimaryGrade, carryoverFor } from "../lib/data.js";
 import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
 
-const REASONS = ["sick", "personal", "unknown", "other"];
+export const ATT_CODES = [["ข", "ขาดเรียน"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]];
 export const COMMENT_FIELDS = ["learn", "habit", "health", "other"];
 
 async function roomContext(env, user, url) {
@@ -130,32 +130,58 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     return json({ ok: true, saved: stmts.length });
   }
 
-  if (sub === "absences" && method === "POST") {
-    const { year, grade, room } = await roomContext(env, user, url);
-    const roster = new Set((await roomRoster(env, year.id, grade, room)).map((s) => s.id));
-    const b = await readJson(request);
-    const sid = intParam(b.student_id, "นักเรียน");
-    if (!roster.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
-    const dates = [...new Set((Array.isArray(b.dates) ? b.dates : [b.absence_date]).filter(Boolean))];
-    if (!dates.length || dates.length > 60) fail(400, "กรุณาเลือกวันที่ขาดเรียน (ไม่เกิน 60 วันต่อครั้ง)");
-    for (const d of dates) if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) fail(400, `วันที่ ${d} ไม่ถูกต้อง`);
-    const reason = REASONS.includes(b.reason) ? b.reason : "unknown";
-    const note = text(b.note, 300) || null;
-    await batchAll(env, dates.map((d) => env.DB.prepare(`INSERT INTO gr_absences (academic_year_id, student_id, absence_date, reason, note, recorded_by) VALUES (?,?,?,?,?,?)
-      ON CONFLICT(student_id, absence_date) DO UPDATE SET reason = excluded.reason, note = excluded.note, recorded_by = excluded.recorded_by`)
-      .bind(year.id, sid, d, reason, note, user.id)));
-    await audit(env, user, "absence.add", { sid, dates, reason });
-    return json({ ok: true, absences: await listAbsences(env, year.id, [...roster]) });
-  }
-
-  if (sub === "absences" && parts[3] && method === "DELETE") {
+  // ---------- บันทึกการมาเรียนรายวัน (ครูประจำชั้น) ----------
+  // ตารางรายเดือน นักเรียน × วันเรียน (จันทร์–ศุกร์ในช่วงภาคเรียน) — มาเรียนปกติไม่ต้องใส่ เก็บเฉพาะ ข ล ป มส
+  if (sub === "attendance") {
     const { year, grade, room } = await roomContext(env, user, url);
     const roster = await roomRoster(env, year.id, grade, room);
-    const row = await env.DB.prepare("SELECT * FROM gr_absences WHERE id = ?").bind(intParam(parts[3])).first();
-    if (!row || !roster.some((s) => s.id === row.student_id)) fail(404, "ไม่พบรายการ");
-    await env.DB.prepare("DELETE FROM gr_absences WHERE id = ?").bind(row.id).run();
-    await audit(env, user, "absence.delete", row);
-    return json({ ok: true, absences: await listAbsences(env, year.id, roster.map((s) => s.id)) });
+    const ids = new Set(roster.map((s) => s.id));
+    const { results: terms } = await env.DB.prepare("SELECT term_number, start_date, end_date FROM academic_terms WHERE academic_year_id = ? ORDER BY term_number").bind(year.id).all();
+    const inTerm = (d) => terms.some((t) => d >= t.start_date && d <= t.end_date);
+    if (method === "GET") {
+      const first = terms[0]?.start_date, last = terms.at(-1)?.end_date;
+      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); // เวลาไทย
+      let month = /^\d{4}-\d{2}$/.test(url.searchParams.get("month") || "") ? url.searchParams.get("month")
+        : (first && today < first ? first : last && today > last ? last : today).slice(0, 7);
+      const days = [];
+      for (let d = new Date(`${month}-01T00:00:00Z`); d.toISOString().slice(0, 7) === month; d.setUTCDate(d.getUTCDate() + 1)) {
+        const iso = d.toISOString().slice(0, 10), wd = d.getUTCDay();
+        if (wd !== 0 && wd !== 6 && (!terms.length || inTerm(iso))) days.push(iso);
+      }
+      const records = {};
+      if (ids.size) {
+        const { results } = await env.DB.prepare(
+          `SELECT student_id, att_date, code FROM gr_attendance WHERE academic_year_id = ? AND att_date LIKE ? AND student_id IN (${[...ids].map(() => "?").join(",")})`
+        ).bind(year.id, `${month}-%`, ...ids).all();
+        for (const r of results) (records[r.student_id] ||= {})[r.att_date] = r.code;
+      }
+      const months = [];
+      if (first && last) for (let m = first.slice(0, 7); m <= last.slice(0, 7);) {
+        months.push(m);
+        const [y, mm] = m.split("-").map(Number);
+        m = mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, "0")}`;
+      }
+      return json({ year, grade, room, month, months, days, today, records, codes: ATT_CODES, terms });
+    }
+    if (method === "PUT") {
+      const b = await readJson(request);
+      const changes = Array.isArray(b.changes) ? b.changes.slice(0, 3000) : [];
+      const stmts = [];
+      for (const c of changes) {
+        const sid = Number(c.student_id), d = String(c.date || ""), code = String(c.code ?? "").trim();
+        if (!ids.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) fail(400, `วันที่ ${d} ไม่ถูกต้อง`);
+        if (terms.length && !inTerm(d)) fail(400, `${d} อยู่นอกช่วงภาคเรียน`);
+        if (code && !ATT_CODES.some(([k]) => k === code)) fail(400, "ใส่ได้เฉพาะ ข ล ป มส (มาเรียนปกติเว้นว่าง)");
+        stmts.push(code
+          ? env.DB.prepare(`INSERT INTO gr_attendance (academic_year_id, student_id, att_date, code, recorded_by, updated_at) VALUES (?,?,?,?,?,datetime('now'))
+              ON CONFLICT(student_id, att_date) DO UPDATE SET code = excluded.code, recorded_by = excluded.recorded_by, updated_at = datetime('now')`).bind(year.id, sid, d, code, user.id)
+          : env.DB.prepare("DELETE FROM gr_attendance WHERE student_id = ? AND att_date = ?").bind(sid, d));
+      }
+      await batchAll(env, stmts);
+      await audit(env, user, "attendance.update", { grade, room, changes: stmts.length });
+      return json({ ok: true, saved: stmts.length });
+    }
   }
 
   // ---------- คะแนนยกมาจาก ปพ.6 ของโรงเรียนเดิม (นักเรียนย้ายเข้าระหว่างปี) ----------
@@ -224,15 +250,17 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   fail(404, "ไม่พบเส้นทาง API");
 }
 
+// วันขาด/ลา (สำหรับหนังสือแจ้งผู้ปกครอง) จากบันทึกการมาเรียน — ไม่รวมมาสาย
+const CODE_REASON = { "ข": "unknown", "ล": "personal", "ป": "sick" };
 export async function listAbsences(env, yearId, ids) {
   const out = {};
   for (let i = 0; i < ids.length; i += 90) {
     const chunk = ids.slice(i, i + 90);
     if (!chunk.length) continue;
     const { results } = await env.DB.prepare(
-      `SELECT id, student_id, absence_date, reason, note FROM gr_absences WHERE academic_year_id = ? AND student_id IN (${chunk.map(() => "?").join(",")}) ORDER BY absence_date`
+      `SELECT student_id, att_date, code FROM gr_attendance WHERE academic_year_id = ? AND code IN ('ข','ล','ป') AND student_id IN (${chunk.map(() => "?").join(",")}) ORDER BY att_date`
     ).bind(yearId, ...chunk).all();
-    for (const r of results) (out[r.student_id] ||= []).push(r);
+    for (const r of results) (out[r.student_id] ||= []).push({ student_id: r.student_id, absence_date: r.att_date, code: r.code, reason: CODE_REASON[r.code], note: null });
   }
   return out;
 }

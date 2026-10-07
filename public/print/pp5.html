@@ -256,22 +256,24 @@ function book(d) {
     </table>
   </section>`;
 
-  // ---------- 3. บันทึกเวลาเรียน (สรุปรายวิชา) ----------
-  // เวลาเรียนรายวัน/รายชั่วโมงจะมาเมื่อเลิกเช็คชื่อใน Q-Info — ตอนนี้พิมพ์ยอดที่ครูบันทึกในแท็บสรุปผล (ว่าง = มาครบ)
+  // ---------- 3. บันทึกเวลาเรียน ----------
+  // ครูผู้สอนไม่เช็กชื่อ — ใช้บันทึกการมาเรียนรายวันของครูประจำชั้น (ข ขาด · ล ลากิจ · ป ลาป่วย · มส มาสาย)
   const attendance = `<section class="sheet">${mark}
     ${head("บันทึกเวลาเรียน")}
     <table class="t small">
-      <thead><tr><th style="width:10mm">เลขที่</th><th style="width:16mm">เลข<br>ประจำตัว</th><th>ชื่อ–สกุล</th><th style="width:20mm">เวลาเรียน<br>เต็ม (ชม.)</th>
-        <th style="width:20mm">มาเรียน<br>(ชม.)</th><th style="width:16mm">ร้อยละ</th><th style="width:22mm">ผล</th><th style="width:20mm">สถานะ</th></tr></thead>
+      <thead><tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2" style="width:16mm">เลข<br>ประจำตัว</th><th rowspan="2">ชื่อ–สกุล</th>
+        <th colspan="5">จำนวนวัน (จากบันทึกการมาเรียนของครูประจำชั้น)</th><th rowspan="2" style="width:22mm">ผล</th><th rowspan="2" style="width:20mm">สถานะ</th></tr>
+        <tr><th style="width:13mm">ขาด</th><th style="width:13mm">ลากิจ</th><th style="width:13mm">ลาป่วย</th><th style="width:13mm">มาสาย</th><th style="width:15mm">รวมขาด/ลา</th></tr></thead>
       <tbody>${d.students.map((x) => {
-        const k = d.computed[x.id];
-        const pct = c.hours_per_year ? Math.floor((k.hours / c.hours_per_year) * 10000) / 100 : null;
+        const k = d.computed[x.id], a = d.attendance?.[x.id] || {}, n = (c) => a[c] ? td(a[c]) : "";
+        const off = (a["ข"] || 0) + (a["ล"] || 0) + (a["ป"] || 0);
+        const ms = k.low_attendance || (d.results[x.id] || {}).special === "มส";
         return `<tr><td class="c">${td(x.number ?? "")}</td><td class="c">${esc(td(x.student_code))}</td><td class="nm">${esc(x.name)}</td>
-          <td class="c">${fmt(c.hours_per_year)}</td><td class="c">${fmt(k.hours)}</td><td class="c">${pct == null ? "" : td(pct.toFixed(2))}</td>
-          <td class="c">${k.low_attendance ? "มส" : "มีสิทธิ์สอบ"}</td><td class="c">${statusNote(x)}</td></tr>`;
+          <td class="c">${n("ข")}</td><td class="c">${n("ล")}</td><td class="c">${n("ป")}</td><td class="c">${n("มส")}</td><td class="c">${off ? td(off) : ""}</td>
+          <td class="c">${ms ? "มส" : "มีสิทธิ์สอบ"}</td><td class="c">${statusNote(x)}</td></tr>`;
       }).join("")}</tbody>
     </table>
-    <div class="note">ต้องมีเวลาเรียนไม่น้อยกว่าร้อยละ ${td(s.attendance_pass_pct)} (${fmt(c.hours_per_year * s.attendance_pass_pct / 100)} ชั่วโมง) จึงมีสิทธิ์รับการประเมิน · ระหว่างนำร่อง เวลาเรียนรายวันใช้แบบบันทึกจาก Q-Info</div>
+    <div class="note">เวลาเรียนรายวิชา ${td(c.hours_per_year)} ชั่วโมงต่อปี · ต้องมีเวลาเรียนไม่น้อยกว่าร้อยละ ${td(s.attendance_pass_pct)} จึงมีสิทธิ์รับการประเมิน · ช่องว่าง = มาเรียนปกติ</div>
   </section>`;
 
   return cover + structure + attendance + assessPage("rtw") + assessPage("trait") + indicatorPages + termSummary + yearSummary;

@@ -138,8 +138,9 @@ await t.waitForSelector("table.list");
 const firstGrade = await t.locator("table.list tbody tr").first().locator("td").nth(9).innerText();
 // 20+18+15+15+14 = 82/85 ×70 = 67.52 ; 28+19 = 47/50 ×30 = 28.2 → 95.72 → 4
 if (firstGrade.trim() !== "4") errors.push(`เกรดคนแรกควรเป็น 4 แต่ได้ ${firstGrade}`);
-await t.locator("table.list tbody tr").nth(1).locator("[data-hours]").fill("150");
-await t.locator("table.list tbody tr").nth(1).locator("[data-hours]").dispatchEvent("change");
+// ครูผู้สอนไม่บันทึกเวลาเรียนแล้ว — เวลาเรียนไม่ถึงเกณฑ์ให้เลือกผลพิเศษ มส
+if (await t.$("table.list [data-hours]")) errors.push("ครูผู้สอนไม่ต้องมีช่องบันทึกเวลาเรียน");
+await t.locator("table.list tbody tr").nth(1).locator("[data-special]").selectOption("มส");
 await t.waitForFunction(() => document.querySelector("table.list tbody tr:nth-child(2)").innerText.includes("มส"));
 await shot(t, "07-summary");
 
@@ -149,10 +150,18 @@ await t.waitForSelector("#sheet");
 await t.selectOption('select[data-fill="trait_1"]', "2");
 await t.waitForFunction(() => document.getElementById("saveState").textContent === "บันทึกแล้ว");
 await shot(t, "08-homeroom");
-await t.click('#tabs button[data-tab=absence]');
-await t.click("[data-add]");
-await okDialog(t);
-await t.waitForSelector("[data-del]");
+// บันทึกการมาเรียน: ตารางรายเดือน พิมพ์ ข / ส(=มส) แล้ว Enter
+await t.click('#tabs button[data-tab=attend]');
+await t.waitForSelector("#mSel");
+await t.selectOption("#mSel", "2026-11");
+await t.waitForSelector('#sheet input[data-date="2026-11-03"]');
+const cell = t.locator('#sheet tbody tr').first().locator('input[data-date="2026-11-03"]');
+await cell.click(); await t.keyboard.type("ข"); await t.keyboard.press("Enter");
+await t.keyboard.type("ส"); await t.keyboard.press("Enter");
+await t.waitForFunction(() => document.getElementById("saveState").textContent === "บันทึกแล้ว");
+if ((await t.locator('#sheet tbody tr').nth(1).locator('input[data-date="2026-11-03"]').inputValue()) !== "มส") errors.push("พิมพ์ ส ต้องกลายเป็น มส");
+if ((await t.locator('#sheet tbody tr').first().locator('[data-n="ข"]').innerText()) !== "1") errors.push("ยอดขาดรายเดือนไม่อัปเดต");
+await shot(t, "08a-attendance");
 // คลังเอกสาร: ครูประจำชั้นเห็นเอกสารของห้อง และรายชื่อหนังสือแจ้งผู้ปกครอง
 await t.click('.side-nav a[href="/docs.html"]');
 await t.waitForSelector(".room-docs");

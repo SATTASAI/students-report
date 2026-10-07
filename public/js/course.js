@@ -323,7 +323,15 @@ function showSaveState(err) {
   else el.textContent = "บันทึกแล้ว";
 }
 
-// ---------------- สรุปผล / เวลาเรียน / ร มส / แก้ตัว ----------------
+// การมาเรียนจากบันทึกของครูประจำชั้น: แสดงจำนวนวันขาด/ลา ชี้แล้วเห็นรายละเอียด
+function attText(sid) {
+  const a = data.attendance?.[sid] || {};
+  const off = (a["ข"] || 0) + (a["ล"] || 0) + (a["ป"] || 0);
+  const detail = [["ข", "ขาด"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]].filter(([k]) => a[k]).map(([k, l]) => `${l} ${a[k]}`).join(" · ");
+  return detail ? `<span data-tip="${esc(detail)} (วัน)" tabindex="0">${off || 0}</span>` : "–";
+}
+
+// ---------------- สรุปผล / ร มส / แก้ตัว ----------------
 function renderSummary() {
   const c = data.course;
   const can = editable();
@@ -333,20 +341,20 @@ function renderSummary() {
   view.innerHTML = `
     <div class="panel" style="margin-bottom:14px">
       <div class="actions">${[...NUMERIC_GRADES, "ร", "มส"].map((g) => `<span>${gradeBadge(g)} <span class="num">${counts[g] || 0}</span></span>`).join("")}</div>
-      <p class="muted small" style="margin:10px 0 0">เวลาเรียนเต็ม ${c.hours_per_year} ชม. ต้องมาเรียนอย่างน้อย ${fmt(need, 1)} ชม. (${data.settings.attendance_pass_pct}%) — ช่องเวลาเรียนที่เว้นว่างถือว่ามาเรียนครบ
+      <p class="muted small" style="margin:10px 0 0">การมาเรียนดึงจากบันทึกของครูประจำชั้น (ครูผู้สอนไม่ต้องเช็กชื่อ) · ถ้านักเรียนเวลาเรียนไม่ถึง ${data.settings.attendance_pass_pct}% ให้เลือกผลพิเศษ มส
         · คะแนนรวมไม่ปัดเศษ เช่น 79.99 ได้เกรด 3.5</p>
     </div>
     <div class="table-wrap">
       <table class="list">
         <thead><tr><th class="num">เลขที่</th><th>ชื่อ–สกุล</th><th class="num">ระหว่างภาค (${c.collect_ratio})</th><th class="num">ปลายภาค (${100 - c.collect_ratio})</th>
-          <th class="num">รวม</th><th>เวลาเรียน (ชม.)</th><th>ผลพิเศษ</th><th>ผลเดิม</th><th>แก้ไข/ซ่อม</th><th>ผลการเรียน</th><th>หมายเหตุ</th></tr></thead>
+          <th class="num">รวม</th><th class="num">ขาด/ลา (วัน)</th><th>ผลพิเศษ</th><th>ผลเดิม</th><th>แก้ไข/ซ่อม</th><th>ผลการเรียน</th><th>หมายเหตุ</th></tr></thead>
         <tbody>${data.students.map((s) => {
           const k = data.computed[s.id], r = data.results[s.id] || {};
           const failed = k.failed_indicators.length;
           return `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "muted" : ""}">
             <td class="num">${s.number ?? ""}</td><td>${esc(s.name)}${statusTag(s)}</td>
             <td class="num">${fmt(k.collect_scaled)}</td><td class="num">${fmt(k.final_scaled)}</td><td class="num"><b>${yearTotalText(k)}</b></td>
-            <td><input style="width:86px" inputmode="decimal" data-hours value="${r.hours_attended ?? ""}" placeholder="${c.hours_per_year}" ${can ? "" : "disabled"} aria-label="เวลาเรียน ${esc(s.name)}"></td>
+            <td class="num">${attText(s.id)}</td>
             <td><select data-special style="width:80px" ${can ? "" : "disabled"} aria-label="ผลพิเศษ ${esc(s.name)}"><option value="">–</option><option ${r.special === "ร" ? "selected" : ""}>ร</option><option ${r.special === "มส" ? "selected" : ""}>มส</option></select></td>
             <td>${gradeBadge(k.original_grade)}</td>
             <td>${r.remedial_grade ? `<span class="tag">${r.remedial_type === "repeat" ? "เรียนซ้ำ" : "แก้ตัว"} → ${esc(r.remedial_grade)}</span> ` : ""}
@@ -360,7 +368,6 @@ function renderSummary() {
   if (!can) return;
   for (const tr of view.querySelectorAll("tbody tr")) {
     const sid = Number(tr.dataset.sid);
-    tr.querySelector("[data-hours]").onchange = (e) => saveResult({ student_id: sid, hours_attended: e.target.value.trim() });
     tr.querySelector("[data-special]").onchange = (e) => saveResult({ student_id: sid, special: e.target.value || null });
     const rb = tr.querySelector("[data-remedial]");
     if (rb) rb.onclick = () => remedialDialog(sid);
