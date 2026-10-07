@@ -8,7 +8,7 @@
 //   เพราะระบบทะเบียนจะยกรายชื่อขึ้นภาคใหม่ก็ต่อเมื่อภาคนั้นยังว่างอยู่
 // - อัปเดต students.status/grade_level/classroom ให้ตรงกัน (ระบบทะเบียนมี trigger ซิงก์ภาคที่เปิดใช้อยู่ให้เอง)
 import { json, readJson, fail, requireImporter, intParam, text, audit } from "../lib/http.js";
-import { resolveYear, listRooms, studentName, isPrimaryGrade, getSettings, LEFT_STATUSES } from "../lib/data.js";
+import { resolveYear, listRooms, studentName, isSchoolGrade, getSettings, LEFT_STATUSES } from "../lib/data.js";
 
 const OUT_REASONS = { transfer: "transferred", dropout: "withdrawn" };
 export const MOVE_LABEL = { new: "ย้ายเข้า (นักเรียนใหม่)", return: "รับกลับเข้าเรียน", transfer: "ย้ายออก", dropout: "ออกกลางคัน / ติดตามไม่ได้" };
@@ -92,7 +92,7 @@ export async function handleMoves(request, env, user, parts, method, url) {
     ]);
     return json({
       year, term_number: term?.term_number || 1,
-      rooms: rooms.filter((r) => isPrimaryGrade(r.grade_level)).map((r) => ({ grade_level: r.grade_level, classroom: r.classroom })),
+      rooms: rooms.filter((r) => isSchoolGrade(r.grade_level)).map((r) => ({ grade_level: r.grade_level, classroom: r.classroom })),
       pilot_rooms: settings.pilot_rooms,
       next_code: maxCode?.n ? String(maxCode.n + 1) : "",
       moves: list.map((m) => ({
@@ -129,7 +129,7 @@ export async function handleMoves(request, env, user, parts, method, url) {
   if (sub === "in" && method === "POST") {
     const b = await readJson(request);
     const grade = text(b.grade_level, 10), room = text(b.classroom, 10);
-    if (!isPrimaryGrade(grade) || !room) fail(400, "เลือกห้องเรียนที่จะเข้าเรียน");
+    if (!isSchoolGrade(grade) || !room) fail(400, "เลือกห้องเรียนที่จะเข้าเรียน");
     const termNo = Number(b.term_number) || term.term_number;
     if (![1, 2].includes(termNo)) fail(400, "ภาคเรียนไม่ถูกต้อง");
     let sid, reason;

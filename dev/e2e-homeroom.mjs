@@ -100,6 +100,20 @@ d = await api(t, `/api/homeroom?${Q}`);
 if (d.body[st[0].id]?.[1]?.weight !== 32.5) errors.push("น้ำหนักไม่ถูกบันทึก");
 await t.screenshot({ path: `${OUT}/h4-body.png` });
 
+// อนุบาล: ครูประจำชั้นเห็นเฉพาะบันทึกการมาเรียนและน้ำหนักส่วนสูง
+await a.evaluate(() => fetch("/api/admin/homerooms", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ grade_level: "อ.3", classroom: "1", user_ids: [2] }) }));
+await t.goto(`${BASE}/homeroom.html?grade=${encodeURIComponent("อ.3")}&room=1`);
+await t.waitForSelector("#tabs button");
+await t.click('#tabs button[data-tab="attend"]');
+await t.waitForSelector("#mSel");
+const ktabs = await t.$$eval("#tabs button", (b) => b.map((x) => x.dataset.tab));
+if (JSON.stringify(ktabs) !== JSON.stringify(["attend", "body"])) errors.push(`แท็บอนุบาลไม่ถูก ${ktabs}`);
+await t.selectOption("#mSel", "2026-11");
+await t.waitForSelector('#sheet input[data-date="2026-11-02"]');
+await t.locator('#sheet tbody tr').first().locator('input[data-date="2026-11-02"]').fill("ล");
+await saved(t);
+await t.screenshot({ path: `${OUT}/h7-kinder-attendance.png` });
+
 // มือถือ: หน้าความคิดเห็นไม่ล้นจอ
 const m = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, storageState: await t.context().storageState() })).newPage();
 await m.goto(`${BASE}/homeroom.html?${Q}`);

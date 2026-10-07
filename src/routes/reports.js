@@ -1,7 +1,7 @@
 import { json, fail, requireUser, requireAdmin, intParam, text } from "../lib/http.js";
 import {
   resolveYear, listYears, getSettings, listRooms, roomRoster, isHomeroomTeacher, yearResultsForStudents,
-  assessmentsFor, absenceCounts, studentName, isPrimaryGrade, compareGrade,
+  assessmentsFor, absenceCounts, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, compareGrade,
 } from "../lib/data.js";
 import { courseOverview } from "./admin.js";
 import { listAbsences, commentsFor } from "./homeroom.js";
@@ -36,7 +36,7 @@ async function roomParams(env, user, url, { allowHomeroom = true } = {}) {
   const year = await resolveYear(env, url.searchParams.get("year"));
   const grade = text(url.searchParams.get("grade"), 10);
   const room = text(url.searchParams.get("room"), 10);
-  if (!isPrimaryGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
+  if (!isSchoolGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
   if (!user.is_admin && !(allowHomeroom && await isHomeroomTeacher(env, user, year.id, grade, room))) fail(403, "ดูได้เฉพาะครูประจำชั้นของห้องนี้หรือผู้ดูแล");
   return { year, grade, room };
 }
@@ -82,7 +82,7 @@ export async function handleReports(request, env, user, parts, method, url) {
   if (kind === "docs") {
     const year = await resolveYear(env, url.searchParams.get("year"));
     const [all, rooms, settings] = await Promise.all([courseOverview(env, year.id), listRooms(env, year.id), getSettings(env, year.id)]);
-    const primary = rooms.filter((r) => isPrimaryGrade(r.grade_level));
+    const primary = rooms.filter((r) => isSchoolGrade(r.grade_level)); // อนุบาลมีเฉพาะหนังสือแจ้งผู้ปกครอง
     const key = (g, r) => `${g}/${r}`;
     // ครูผู้สอน (หรือผู้ดูแลที่สลับมาดูในบทบาทครู ?scope=mine) เห็นเฉพาะห้องที่เป็นครูประจำชั้น + รายวิชาที่ตัวเองสอน
     const asAdmin = user.is_admin && url.searchParams.get("scope") !== "mine";
@@ -97,7 +97,7 @@ export async function handleReports(request, env, user, parts, method, url) {
       const k = key(r.grade_level, r.classroom);
       const mine = all.filter((c) => c.grade_level === r.grade_level && c.classroom === r.classroom && (full.has(k) || c.teachers.some((t) => t.id === user.id)));
       if (!full.has(k) && !mine.length) continue;
-      out.push({ grade_level: r.grade_level, classroom: r.classroom, students: r.students, full: full.has(k),
+      out.push({ grade_level: r.grade_level, classroom: r.classroom, students: r.students, full: full.has(k), kinder: isKinderGrade(r.grade_level),
         courses: mine.map((c) => ({ id: c.id, code: c.code, name: c.name, status: c.status, item_count: c.item_count })) });
     }
     return json({ year, rooms: out, school: asAdmin, scope: asAdmin ? "all" : "mine" });

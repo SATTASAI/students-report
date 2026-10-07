@@ -33,7 +33,9 @@ view.innerHTML = `
   <div id="rooms">${data.rooms.map((r, i) => `<div class="panel room-docs" data-i="${i}" data-grade="${esc(r.grade_level)}" data-text="${esc(`${r.grade_level}/${r.classroom} ${r.courses.map((c) => `${c.code} ${c.name}`).join(" ")}`)}" id="room-${esc(r.grade_level)}-${esc(r.classroom)}">
     <div class="panel-head"><h2>${esc(r.grade_level)}/${esc(r.classroom)} <span class="muted small">${r.students} คน</span></h2>
       ${r.full ? '' : '<span class="tag">เฉพาะวิชาที่สอน</span>'}</div>
-    <div class="doc-grid">
+    <div class="doc-grid">${r.kinder ? `
+      <div class="doc-item"><b>หนังสือแจ้งผู้ปกครอง (บค.)</b><span class="muted small">เฉพาะนักเรียนที่ครูประจำชั้นบันทึกวันขาด</span><button class="btn small" data-letters="${i}">แสดงรายชื่อ</button><div class="letters" id="letters-${i}"></div></div>
+      <div class="doc-item"><b>รายงานพัฒนาการ (อนุบาล)</b><span class="muted small">อยู่ระหว่างพัฒนา — ประเมินพัฒนาการ 4 ด้าน</span></div>` : `
       <div class="doc-item wide"><b>ปพ.5 แบบบันทึกผลการพัฒนาคุณภาพผู้เรียน</b>
         <span class="muted small">ปก → โครงสร้างรายวิชา → เวลาเรียน → อ่านคิดฯ → คุณลักษณะ → ตัวชี้วัด → สรุปผล · ยังไม่อนุมัติ = มีลายน้ำฉบับร่าง</span>
         <div class="actions">${r.full && r.courses.some((c) => c.item_count) ? link(`/print/pp5.html?${roomQ(r)}`, "ทุกวิชาของห้อง (ไฟล์เดียว)", "primary") : ""}
@@ -44,12 +46,12 @@ view.innerHTML = `
       ${r.grade_level === "ป.6" ? `<div class="doc-item"><b>ปพ.1 (ฉบับตรวจทาน)</b><span class="muted small">ระเบียนแสดงผลการเรียน ป.6</span>${link(`/print/pp1.html?${roomQ(r)}`, "ปพ.1 ทั้งห้อง")}</div>` : ""}
       <div class="doc-item"><b>หนังสือแจ้งผู้ปกครอง (บค.)</b><span class="muted small">เฉพาะนักเรียนที่ครูประจำชั้นบันทึกวันขาด</span><button class="btn small" data-letters="${i}">แสดงรายชื่อ</button><div class="letters" id="letters-${i}"></div></div>
       <div class="doc-item"><b>ผลการเรียนของห้อง</b><span class="muted small">Excel ตารางสรุป · CSV 1 แถวต่อ 1 วิชา (สำหรับนำเข้าระบบอื่น)</span>
-        <div class="actions"><button class="btn small" data-x="${i}">${ICONS.download} Excel</button><button class="btn small" data-c="${i}">${ICONS.download} CSV</button></div></div>` : ""}
+        <div class="actions"><button class="btn small" data-x="${i}">${ICONS.download} Excel</button><button class="btn small" data-c="${i}">${ICONS.download} CSV</button></div></div>` : ""}`}
     </div></div>`).join("") || `<div class="panel empty"><strong>ยังไม่มีเอกสาร</strong>เมื่อได้รับมอบหมายรายวิชาหรือเป็นครูประจำชั้น เอกสารของห้องจะขึ้นที่นี่</div>`}</div>`;
 
 const busy = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (err) { showError(err); } btn.disabled = false; };
 const all = document.getElementById("allXlsx");
-if (all) all.onclick = () => busy(all, () => exportRoomsExcel(Y, data.rooms.filter((r) => r.full), `ผลการเรียน_${me.year.year_be}_ทุกห้อง.xlsx`));
+if (all) all.onclick = () => busy(all, () => exportRoomsExcel(Y, data.rooms.filter((r) => r.full && !r.kinder), `ผลการเรียน_${me.year.year_be}_ทุกห้อง.xlsx`));
 for (const b of view.querySelectorAll("[data-x]")) b.onclick = () => { const r = data.rooms[Number(b.dataset.x)]; busy(b, () => exportRoomsExcel(Y, [r], `ผลการเรียน_${me.year.year_be}_${r.grade_level}-${r.classroom}.xlsx`)); };
 for (const b of view.querySelectorAll("[data-c]")) b.onclick = () => { const r = data.rooms[Number(b.dataset.c)]; busy(b, () => exportRoomCsv(Y, r.grade_level, r.classroom)); };
 for (const b of view.querySelectorAll("[data-letters]")) b.onclick = () => busy(b, async () => {

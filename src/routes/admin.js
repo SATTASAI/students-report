@@ -1,5 +1,5 @@
 import { json, readJson, fail, requireAdmin, intParam, text, audit, batchAll, HttpError, requireImporter } from "../lib/http.js";
-import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade } from "../lib/data.js";
+import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade, isSchoolGrade } from "../lib/data.js";
 
 export const LEARNING_AREAS = [
   "ภาษาไทย", "คณิตศาสตร์", "วิทยาศาสตร์และเทคโนโลยี", "สังคมศึกษา ศาสนาและวัฒนธรรม",
@@ -146,7 +146,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
 
     if (idPart === "teachers" || idPart === "homerooms") {
       const findTeacher = await teacherMatcher(env);
-      const rooms = new Set((await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level)).map((r) => `${r.grade_level}/${r.classroom}`));
+      const rooms = new Set((await listRooms(env, year.id)).filter((r) => (idPart === "homerooms" ? isSchoolGrade : isPrimaryGrade)(r.grade_level)).map((r) => `${r.grade_level}/${r.classroom}`));
       const { results: subjects } = await env.DB.prepare("SELECT id, grade_level, code FROM gr_subjects WHERE academic_year_id = ?").bind(year.id).all();
       const subjectOf = Object.fromEntries(subjects.map((x) => [`${x.grade_level}|${x.code}`, x.id]));
       const seen = new Set();
@@ -396,7 +396,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
   if (section === "homerooms") {
     if (method === "GET") {
       const year = await resolveYear(env, url.searchParams.get("year"));
-      const rooms = (await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level));
+      const rooms = (await listRooms(env, year.id)).filter((r) => isSchoolGrade(r.grade_level));
       const { results } = await env.DB.prepare(
         `SELECT h.grade_level, h.classroom, u.id, u.full_name FROM gr_homerooms h JOIN users u ON u.id = h.user_id WHERE h.academic_year_id = ?`
       ).bind(year.id).all();
@@ -407,7 +407,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       const b = await readJson(request);
       const year = await resolveYear(env, b.year);
       const grade = text(b.grade_level, 10), room = text(b.classroom, 10);
-      if (!PRIMARY_GRADES.includes(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
+      if (!isSchoolGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
       const ids = [...new Set((Array.isArray(b.user_ids) ? b.user_ids : []).map((v) => intParam(v, "ครู")))];
       if (ids.length > 4) fail(400, "ครูประจำชั้นได้ไม่เกิน 4 คนต่อห้อง");
       for (const t of ids) await assertTeacher(env, t);
@@ -427,7 +427,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
          SELECT DISTINCT t.academic_year_id, a.grade_level, a.classroom, a.teacher_user_id
            FROM learner_class_assignments a JOIN academic_terms t ON t.id = a.academic_term_id
            JOIN users u ON u.id = a.teacher_user_id AND u.status = 'active'
-          WHERE t.academic_year_id = ? AND a.grade_level LIKE 'ป.%'`
+          WHERE t.academic_year_id = ? AND (a.grade_level LIKE 'ป.%' OR a.grade_level LIKE 'อ.%')`
       ).bind(year.id).run().catch(() => ({ meta: { changes: 0 } }));
       await audit(env, user, "homeroom.import", { year: year.id, added: r.meta?.changes ?? 0 });
       return json({ ok: true, added: r.meta?.changes ?? 0 });

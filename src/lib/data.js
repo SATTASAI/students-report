@@ -66,6 +66,9 @@ export function compareRoom(a, b) {
     String(a.classroom).localeCompare(String(b.classroom), "th", { numeric: true });
 }
 export const isPrimaryGrade = (g) => /^ป\.[1-6]$/.test(g);
+// อนุบาล: ใช้ระบบส่วนงานครูประจำชั้น (บันทึกการมาเรียน น้ำหนักส่วนสูง ย้ายเข้า/ออก) — ยังไม่มีรายวิชา/ปพ.5/ปพ.6
+export const isKinderGrade = (g) => /^อ\.[1-3]$/.test(g);
+export const isSchoolGrade = (g) => isPrimaryGrade(g) || isKinderGrade(g);
 
 const ROSTER_CTE = `WITH ranked AS (
   SELECT se.student_id, se.grade_level, se.classroom, se.status,

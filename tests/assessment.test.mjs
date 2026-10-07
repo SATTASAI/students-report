@@ -147,3 +147,23 @@ test("คลังเอกสาร: ครูเห็นเฉพาะห้
   assert.equal(asTeacher.school, false);
   assert.equal(asTeacher.rooms.length, 0);
 });
+
+test("อนุบาล: ครูประจำชั้นบันทึกการมาเรียนและน้ำหนักส่วนสูงได้ พิมพ์หนังสือแจ้งผู้ปกครองได้", async () => {
+  const { call } = await setup();
+  const KQ = `grade=${encodeURIComponent("อ.3")}&room=1`;
+  await call("t1", "GET", `/api/homeroom?${KQ}`, null, { expect: 403 });
+  const rooms = (await call("admin", "GET", "/api/admin/homerooms", null, { expect: 200 })).data.rooms;
+  assert.ok(rooms.some((r) => r.grade_level === "อ.3"));
+  await call("admin", "PUT", "/api/admin/homerooms", { grade_level: "อ.3", classroom: "1", user_ids: [2] }, { expect: 200 });
+  const hr = (await call("t1", "GET", `/api/homeroom?${KQ}`, null, { expect: 200 })).data;
+  assert.equal(hr.students.length, 6);
+  const sid = hr.students[0].id;
+  await call("t1", "PUT", `/api/homeroom/attendance?${KQ}`, { changes: [{ student_id: sid, date: "2026-11-03", code: "ป" }, { student_id: sid, date: "2026-11-04", code: "มส" }] }, { expect: 200 });
+  await call("t1", "PUT", `/api/homeroom/body?${KQ}`, { changes: [{ student_id: sid, round: 1, weight: 18, height: 105 }] }, { expect: 200 });
+  const letter = (await call("t1", "GET", `/api/reports/absence?${KQ}&student=${sid}`, null, { expect: 200 })).data;
+  assert.equal(letter.absences.length, 1); // มาสายไม่นับเป็นวันขาด
+  const docs = (await call("t1", "GET", "/api/reports/docs", null, { expect: 200 })).data;
+  const k = docs.rooms.find((r) => r.grade_level === "อ.3");
+  assert.equal(k.kinder, true);
+  assert.equal(k.full, true);
+});
