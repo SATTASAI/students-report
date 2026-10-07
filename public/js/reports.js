@@ -49,6 +49,7 @@ async function renderRooms() {
     <div class="table-wrap"><table class="list"><thead><tr><th>ห้อง</th><th class="num">นักเรียน</th><th>เอกสาร</th></tr></thead>
     <tbody>${primary.map((r, i) => `<tr><td>${esc(r.grade_level)}/${esc(r.classroom)}</td><td class="num">${r.students}</td>
       <td class="actions">
+        <a class="btn small" target="_blank" rel="noopener" href="/print/pp5.html?year=${Y}&grade=${encodeURIComponent(r.grade_level)}&room=${encodeURIComponent(r.classroom)}">${ICONS.print} ปพ.5 ทุกวิชา</a>
         <a class="btn small" target="_blank" rel="noopener" href="/print/pp6.html?year=${Y}&grade=${encodeURIComponent(r.grade_level)}&room=${encodeURIComponent(r.classroom)}">${ICONS.print} ปพ.6</a>
         ${r.grade_level === "ป.6" ? `<a class="btn small" target="_blank" rel="noopener" href="/print/pp1.html?year=${Y}&grade=${encodeURIComponent(r.grade_level)}&room=${encodeURIComponent(r.classroom)}">${ICONS.print} ปพ.1 (ร่าง)</a>` : ""}
         <button class="btn small" data-x="${i}">${ICONS.download} Excel</button>
