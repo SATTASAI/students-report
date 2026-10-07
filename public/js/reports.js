@@ -33,7 +33,7 @@ async function renderProgress() {
     name, list, avg: Math.round(list.reduce((a, c) => a + c.progress, 0) / list.length), locked: list.filter((c) => c.locked).length,
   })).sort((a, b) => a.avg - b.avg);
   view.innerHTML = `<div class="panel"><div class="panel-head"><h2>ความคืบหน้ารายครู</h2><span class="muted small">เรียงจากกรอกน้อยที่สุด</span></div>
-    <div class="table-wrap"><table class="list"><thead><tr><th>ครู</th><th class="num">รายวิชา</th><th>กรอกแล้ว</th><th class="num">ยืนยันผล</th><th>รายวิชา</th></tr></thead>
+    <div class="table-wrap"><table class="list"><thead><tr><th>ครู</th><th class="num">รายวิชา</th><th>กรอกแล้ว</th><th class="num">ส่งผลแล้ว</th><th>รายวิชา</th></tr></thead>
     <tbody>${rows.map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${r.list.length}</td>
       <td style="min-width:140px"><span class="small muted">${r.avg}%</span><div class="meter ${r.avg >= 100 ? "done" : ""}"><i style="width:${r.avg}%"></i></div></td>
       <td class="num">${r.locked}/${r.list.length}</td>

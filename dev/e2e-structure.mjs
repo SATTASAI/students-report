@@ -100,6 +100,15 @@ await t.waitForSelector("#sheet");
 const after = await t.locator("#sheet tbody tr").first().locator("[data-termsum]").innerText();
 if (after !== "35.5") errors.push(`รวมภาค 2 หลังแก้ตัวควรเป็น 35.5 ได้ ${after}`);
 
+// ส่งผล: มีช่องว่าง → กล่องตรวจก่อนส่ง → ยกเลิก
+await t.click("#submitBtn");
+await t.waitForSelector("dialog[open]");
+await text(t, "ตรวจก่อนส่งผล");
+await text(t, "คะแนนยังไม่ครบ");
+await shot(t, "r6-submit-check");
+await t.click('dialog[open] button[value=cancel]');
+await t.waitForSelector("dialog[open]", { state: "detached" });
+
 // วิชาการบันทึกแม่แบบ
 await admin.goto(`${BASE}/course.html?id=${cid}`);
 await admin.waitForSelector("#main:not([hidden])");

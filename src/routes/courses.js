@@ -1,13 +1,15 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll } from "../lib/http.js";
 import { assertCourseAccess, courseBundle, loadCourse, canViewCourse, studentName } from "../lib/data.js";
-import { computeStudentResult, validateRemedial, structureIssues, indicatorWord, indicatorResult } from "../../public/js/grading.js";
+import { computeStudentResult, validateRemedial, structureIssues, indicatorWord, indicatorResult, submissionChecks } from "../../public/js/grading.js";
 import { gradeSettings, getSettings, assessmentsFor } from "../lib/data.js";
+import { ADMIN_ROLES } from "../lib/http.js";
 
 const MAX_ITEMS_PER_COURSE = 80;
 
 function serializeBundle(b, user) {
   return {
     course: { ...b.course, can_edit: !b.course.locked && (b.settings.entry_open || user.is_admin) },
+    can_approve: ADMIN_ROLES.includes(user.role),
     structure_issues: structureIssues(b.items, b.course.collect_ratio, indicatorWord(b.course.grade_level)),
     assessments: b.assessments || {},
     settings: b.settings,
@@ -404,13 +406,16 @@ export async function handleCourses(request, env, user, parts, method, url) {
     if (!bundle.items.length) fail(400, "ยังไม่ได้ตั้งโครงสร้างคะแนน");
     const issues = structureIssues(bundle.items, course.collect_ratio, indicatorWord(course.grade_level));
     if (issues.length) return json({ error: `ยืนยันผลไม่ได้: ${issues.join(" และ ")}`, structure_issues: issues }, 400);
-    const pending = bundle.roster.filter((s) => s.enrollment_status === "enrolled" &&bundle.computed[s.id].missing > 0 && !bundle.results[s.id]?.special);
     const b = await readJson(request);
-    if (pending.length && !b.force) {
-      return json({ error: `ยังมีนักเรียน ${pending.length} คนที่คะแนนไม่ครบ (จะได้ผล ร)`, needs_confirm: true, pending: pending.map((s) => studentName(s)) }, 409);
+    // ตรวจก่อนส่ง: ครูต้องเห็นและยืนยันเอง (ไม่บล็อก ยกเว้นโครงสร้างไม่ตรงสัดส่วน)
+    const checks = submissionChecks(bundle.roster.map((s) => ({ id: s.id, name: studentName(s), enrollment_status: s.enrollment_status })), bundle.computed);
+    const pending = checks.blanks.filter((x) => !bundle.results[x.id]?.special);
+    const warn = pending.length + checks.decimals.length + checks.borderline.length + checks.ms.length;
+    if (warn && !b.force) {
+      return json({ error: "ตรวจพบรายการที่ควรดูก่อนส่ง", needs_confirm: true, checks, pending: pending.map((x) => x.name) }, 409);
     }
-    await env.DB.prepare("UPDATE gr_courses SET locked = 1, submitted_at = datetime('now'), submitted_by = ? WHERE id = ?").bind(user.id, course.id).run();
-    await audit(env, user, "course.submit", { course: course.id, pending: pending.length });
+    await env.DB.prepare("UPDATE gr_courses SET locked = 1, submitted_at = datetime('now'), submitted_by = ?, approved_at = NULL, approved_by = NULL WHERE id = ?").bind(user.id, course.id).run();
+    await audit(env, user, "course.submit", { course: course.id, blanks: pending.length, decimals: checks.decimals.length, borderline: checks.borderline.length, ms: checks.ms.length });
     return json(serializeBundle(await courseBundle(env, await loadCourse(env, course.id)), user));
   }
 

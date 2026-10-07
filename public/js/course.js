@@ -39,18 +39,34 @@ function renderHeader() {
   pb.href = `/print/pp5.html?course=${c.id}`;
   const sb = document.getElementById("submitBtn");
   const note = document.getElementById("lockNote");
-  if (c.locked) {
-    sb.innerHTML = data.is_admin ? `${ICONS.lock} ปลดล็อกให้แก้ไข` : `${ICONS.lock} ยืนยันผลแล้ว`;
-    sb.disabled = !data.is_admin;
-    sb.onclick = unlock;
+  const when = (t) => t ? ` เมื่อ ${String(t).slice(0, 16).replace("T", " ")}` : "";
+  note.className = "note";
+  if (c.status === "approved") {
+    sb.innerHTML = data.is_admin ? `${ICONS.lock} ส่งคืนเพื่อแก้ผลย้อนหลัง` : `${ICONS.lock} อนุมัติผลแล้ว`;
+    sb.disabled = !data.is_admin; sb.onclick = returnCourse;
+    note.hidden = false; note.classList.add("ok");
+    note.textContent = `อนุมัติผลแล้ว${c.approved_by_name ? ` โดย ${c.approved_by_name}` : ""}${when(c.approved_at)} — แก้ไขได้เมื่อฝ่ายวิชาการส่งคืนพร้อมเหตุผล`;
+  } else if (c.status === "submitted") {
+    sb.innerHTML = data.can_approve ? `${ICONS.lock} อนุมัติผล` : data.is_admin ? `${ICONS.lock} ส่งคืนให้ครูแก้` : `${ICONS.lock} ส่งแล้ว รออนุมัติ`;
+    sb.disabled = !data.is_admin && !data.can_approve;
+    sb.onclick = data.can_approve ? approveCourse : returnCourse;
     note.hidden = false;
-    note.textContent = data.is_admin ? "รายวิชานี้ยืนยันผลแล้ว ครูแก้ไขไม่ได้จนกว่าผู้ดูแลจะปลดล็อก" : "รายวิชานี้ยืนยันผลแล้ว หากต้องแก้ไขให้ติดต่อฝ่ายวัดผล";
+    note.innerHTML = `ส่งผลแล้ว${c.submitted_by_name ? ` โดย ${esc(c.submitted_by_name)}` : ""}${esc(when(c.submitted_at))} รอผู้บริหารอนุมัติ — ครูแก้ไขไม่ได้จนกว่าฝ่ายวิชาการจะส่งคืน
+      ${data.can_approve ? ' <button class="btn small" id="returnLink">ส่งคืนให้ครูแก้</button>' : ""}`;
+    const rl = document.getElementById("returnLink");
+    if (rl) rl.onclick = returnCourse;
   } else {
-    sb.innerHTML = `${ICONS.lock} ยืนยันผลการเรียน`;
+    sb.innerHTML = `${ICONS.lock} ส่งผลการเรียน`;
     sb.disabled = !c.can_edit;
     sb.onclick = submitCourse;
-    note.hidden = c.can_edit;
-    note.textContent = "ปิดระบบการกรอกคะแนนของปีการศึกษานี้แล้ว";
+    if (c.return_note) {
+      note.hidden = false; note.classList.add("warn");
+      note.textContent = `ส่งคืนให้แก้${c.returned_by_name ? `โดย ${c.returned_by_name}` : ""}${when(c.returned_at)}: "${c.return_note}" — แก้แล้วกดส่งผลอีกครั้ง`;
+    } else {
+      note.hidden = c.can_edit;
+      note.classList.add("warn");
+      note.textContent = "ปิดระบบการกรอกคะแนนของปีการศึกษานี้แล้ว";
+    }
   }
 }
 
@@ -652,29 +668,57 @@ async function loadSiblings() {
   } catch (err) { box.textContent = err.message; }
 }
 
-// ---------------- ยืนยันผล / ปลดล็อก ----------------
+// ---------------- ส่งผล / ส่งคืน / อนุมัติ ----------------
 async function submitCourse() {
   await flush();
   if (pending.size || saving) { toast("รอให้บันทึกคะแนนเสร็จก่อน", "bad"); return; }
-  if (!(await confirmBox("ยืนยันผลการเรียน", "เมื่อยืนยันแล้ว ระบบจะล็อกรายวิชานี้ แก้ไขคะแนนไม่ได้จนกว่าฝ่ายวัดผลจะปลดล็อก", "ยืนยันผล"))) return;
+  if (data.structure_issues?.length) { toast(`ส่งไม่ได้: ${data.structure_issues[0]}`, "bad"); tab = "setup"; renderTabs(); render(); return; }
+  let res;
   try {
-    data = await api(`/api/courses/${courseId}/submit`, { method: "POST", body: {} });
+    res = await api(`/api/courses/${courseId}/submit`, { method: "POST", body: {} });
   } catch (err) {
     if (!err.data?.needs_confirm) { showError(err); return; }
-    const names = err.data.pending.slice(0, 8).map(esc).join(", ") + (err.data.pending.length > 8 ? " …" : "");
-    if (!(await confirmBox("คะแนนยังไม่ครบ", `${esc(err.message)}: ${names}<br><br>ยืนยันผลทั้งที่นักเรียนกลุ่มนี้ได้ ร ใช่หรือไม่`, "ยืนยันผล", true))) return;
-    try { data = await api(`/api/courses/${courseId}/submit`, { method: "POST", body: { force: true } }); } catch (e2) { showError(e2); return; }
+    const ch = err.data.checks;
+    const list = (arr, fn) => arr.slice(0, 10).map((x) => `<li>${fn(x)}</li>`).join("") + (arr.length > 10 ? `<li>… อีก ${arr.length - 10} คน</li>` : "");
+    const block = (title, arr, fn, cls = "warn") => arr.length ? `<div class="note ${cls}" style="margin-top:10px"><b>${title} (${arr.length})</b><ul style="margin:4px 0 0;padding-left:20px">${list(arr, fn)}</ul></div>` : "";
+    const ok = await dialog({
+      title: "ตรวจก่อนส่งผล", okText: "ส่งผลตามนี้", okClass: "primary", wide: true,
+      body: `<p class="muted" style="margin-top:0">ระบบไม่ปัดเศษและไม่แก้คะแนนให้ ตรวจรายการต่อไปนี้ ถ้าถูกต้องแล้วกด "ส่งผลตามนี้" หรือกดยกเลิกเพื่อกลับไปแก้</p>
+        ${block("คะแนนยังไม่ครบ (จะได้ ร เมื่อปิดปี)", ch.blanks, (x) => `${esc(x.name)} — ว่าง ${x.missing} ช่อง`, "bad")}
+        ${block("คะแนนรวมมีทศนิยม — ครูตัดสินใจปัดเองได้", ch.decimals, (x) => `${esc(x.name)} — ${esc(x.detail)}`)}
+        ${block("ขาดอีกไม่ถึง 1 คะแนนจะได้เกรดถัดไป", ch.borderline, (x) => `${esc(x.name)} — ${fmt(x.total)} (เกรด ${esc(x.grade)} ต้องได้ ${x.need})`)}
+        ${block("ได้ มส", ch.ms, (x) => esc(x.name), "bad")}`,
+    });
+    if (!ok.ok) return;
+    try { res = await api(`/api/courses/${courseId}/submit`, { method: "POST", body: { force: true } }); } catch (e2) { showError(e2); return; }
   }
-  toast("ยืนยันผลการเรียนแล้ว");
+  data = res;
+  toast("ส่งผลการเรียนแล้ว");
   renderHeader(); render();
 }
 
-async function unlock() {
-  if (!(await confirmBox("ปลดล็อกรายวิชา", "ครูผู้สอนจะกลับมาแก้ไขคะแนนได้อีกครั้ง", "ปลดล็อก"))) return;
+async function returnCourse() {
+  const approved = data.course.status === "approved";
+  const r = await dialog({
+    title: approved ? "ส่งคืนเพื่อแก้ผลย้อนหลัง" : "ส่งคืนให้ครูแก้",
+    body: `<p class="muted" style="margin-top:0">${approved ? "ผลที่อนุมัติแล้วจะถูกยกเลิก ต้องส่งและอนุมัติใหม่ " : ""}ครูผู้สอนจะเห็นข้อความนี้ที่หน้ารายวิชา และระบบบันทึกไว้ในประวัติ</p>
+      <label class="field">เหตุผล / สิ่งที่ต้องแก้<textarea name="note" required minlength="3" maxlength="500"></textarea></label>`,
+    okText: "ส่งคืน", okClass: "danger",
+  });
+  if (!r.ok) return;
   try {
-    await api(`/api/admin/courses/${courseId}/lock`, { method: "POST", body: { locked: false } });
+    await api(`/api/admin/courses/${courseId}/return`, { method: "POST", body: { note: r.data.note } });
     data = await api(`/api/courses/${courseId}`);
-    toast("ปลดล็อกแล้ว"); renderHeader(); render();
+    toast("ส่งคืนแล้ว"); renderHeader(); render();
+  } catch (err) { showError(err); }
+}
+
+async function approveCourse() {
+  if (!(await confirmBox("อนุมัติผลการเรียน", `อนุมัติผล ${esc(data.course.code)} ${esc(data.course.name)} ${esc(data.course.grade_level)}/${esc(data.course.classroom)}`, "อนุมัติ"))) return;
+  try {
+    await api("/api/admin/courses/approve", { method: "POST", body: { course_ids: [Number(courseId)] } });
+    data = await api(`/api/courses/${courseId}`);
+    toast("อนุมัติแล้ว"); renderHeader(); render();
   } catch (err) { showError(err); }
 }
 

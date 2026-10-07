@@ -76,6 +76,18 @@ export async function handleReports(request, env, user, parts, method, url) {
     return json(await roomReport(env, year, grade, room, student));
   }
 
+  // รายวิชาของห้องที่ผู้ใช้พิมพ์ ปพ.5 ได้ (ผู้ดูแล/ครูประจำชั้น = ทุกวิชา, ครูผู้สอน = วิชาที่สอน)
+  if (kind === "room-courses") {
+    const year = await resolveYear(env, url.searchParams.get("year"));
+    const grade = text(url.searchParams.get("grade"), 10), room = text(url.searchParams.get("room"), 10);
+    if (!isPrimaryGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
+    const all = (await courseOverview(env, year.id)).filter((c) => c.grade_level === grade && c.classroom === room);
+    const full = user.is_admin || await isHomeroomTeacher(env, user, year.id, grade, room);
+    const list = full ? all : all.filter((c) => c.teachers.some((t) => t.id === user.id));
+    if (!list.length && !full) fail(403, "ไม่มีรายวิชาของห้องนี้ที่คุณสอน");
+    return json({ year, grade, room, courses: list.map((c) => ({ id: c.id, code: c.code, name: c.name, status: c.status, item_count: c.item_count })) });
+  }
+
   if (kind === "absence") {
     const { year, grade, room } = await roomParams(env, user, url);
     const sid = intParam(url.searchParams.get("student"), "นักเรียน");

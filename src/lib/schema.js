@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-3";
+export const SCHEMA_VERSION = "gr-4";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -136,6 +136,13 @@ export const ADDED_COLUMNS = [
   ["gr_scores", "remedial", "REAL"], // คะแนนสอบแก้ตัวรายตัวชี้วัด (คะแนนจริง) — นับได้ไม่เกินเกณฑ์ผ่าน
   ["gr_subjects", "template", "TEXT"], // แม่แบบโครงสร้าง (JSON) ที่วิชาการตั้งให้ทุกห้องของวิชานี้
   ["gr_subjects", "template_updated_at", "TEXT"],
+  // gr-4: ส่ง → ส่งคืน / อนุมัติ
+  ["gr_courses", "approved_at", "TEXT"],
+  ["gr_courses", "approved_by", "INTEGER"],
+  ["gr_courses", "return_note", "TEXT"],
+  ["gr_courses", "returned_at", "TEXT"],
+  ["gr_courses", "returned_by", "INTEGER"],
+  ["gr_settings", "school_address", "TEXT"], // บรรทัดที่อยู่บนปก ปพ.5 เช่น อำเภอแก่งกระจาน จังหวัดเพชรบุรี
 ];
 
 async function addMissingColumns(env) {

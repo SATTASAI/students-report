@@ -1,0 +1,92 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import worker from "../src/index.js";
+import { makeEnv } from "../dev/server.mjs";
+import { PASSWORD } from "../dev/seed.mjs";
+import { submissionChecks } from "../public/js/grading.js";
+
+const ORIGIN = "http://school.test";
+async function setup() {
+  const env = await makeEnv();
+  const cookies = {};
+  async function call(who, method, path, body, { expect } = {}) {
+    const headers = { "Content-Type": "application/json", Origin: ORIGIN };
+    if (who && cookies[who]) headers.Cookie = cookies[who];
+    const res = await worker.fetch(new Request(ORIGIN + path, { method, headers, body: body ? JSON.stringify(body) : undefined }), env);
+    const data = await res.json().catch(() => null);
+    if (expect !== undefined) assert.equal(res.status, expect, `${method} ${path} → ${res.status} ${JSON.stringify(data)}`);
+    return { status: res.status, data };
+  }
+  for (const [who, email] of [["admin", "admin@test.local"], ["t1", "teacher1@test.local"], ["t2", "teacher2@test.local"]]) {
+    const r = await worker.fetch(new Request(ORIGIN + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json", Origin: ORIGIN }, body: JSON.stringify({ email, password: PASSWORD }) }), env);
+    cookies[who] = r.headers.get("Set-Cookie").split(";")[0];
+  }
+  await call("admin", "POST", "/api/admin/subjects/template", { grades: ["ป.4"] }, { expect: 200 });
+  await call("admin", "POST", "/api/admin/courses/generate", {}, { expect: 200 });
+  const { courses } = (await call("admin", "GET", "/api/admin/courses", null, { expect: 200 })).data;
+  const c = courses.find((x) => x.code === "ท14101");
+  await call("admin", "PUT", `/api/admin/courses/${c.id}/teachers`, { user_ids: [2] }, { expect: 200 });
+  const d = (await call("t1", "POST", `/api/courses/${c.id}/items`, { items: [
+    { term_number: 2, kind: "indicator", title: "อ่าน", max_score: 35 }, { term_number: 2, kind: "final", title: "สอบ", max_score: 15 },
+  ] }, { expect: 200 })).data;
+  return { env, call, c, d };
+}
+
+test("ตรวจก่อนส่ง: ช่องว่าง ทศนิยม รอยต่อเกรด มส", () => {
+  const st = [{ id: 1, name: "ก" }, { id: 2, name: "ข" }, { id: 3, name: "ค" }, { id: 4, name: "ง", enrollment_status: "transferred" }];
+  const k = {
+    1: { missing: 2, term_scores: { 2: { total: 30 } }, total: 30, total_max: 50 },
+    2: { missing: 0, term_scores: { 1: { total: 39.5 }, 2: { total: 40 } }, total: 79.5, total_max: 100, grade: "3.5" },
+    3: { missing: 0, term_scores: { 1: { total: 20 }, 2: { total: 20 } }, total: 40, total_max: 100, grade: "มส", original_grade: "มส" },
+    4: { missing: 5, term_scores: {}, total: null },
+  };
+  const r = submissionChecks(st, k);
+  assert.deepEqual(r.blanks.map((x) => x.id), [1]);
+  assert.deepEqual(r.decimals.map((x) => x.id), [2]);
+  assert.deepEqual(r.borderline.map((x) => [x.id, x.need]), [[2, 80]]);
+  assert.deepEqual(r.ms.map((x) => x.id), [3]);
+});
+
+test("ส่ง → ส่งคืนพร้อมเหตุผล → ส่งใหม่ → ผู้บริหารอนุมัติ → แก้ย้อนหลังต้องส่งคืนก่อน", async () => {
+  const { call, c, d } = await setup();
+  const [ind, fin] = d.items;
+  const s = d.students.filter((x) => x.enrollment_status === "enrolled");
+  await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: s.flatMap((x) => [{ item_id: ind.id, student_id: x.id, score: 30 }, { item_id: fin.id, student_id: x.id, score: 12 }]) }, { expect: 200 });
+  // อนุมัติก่อนส่งไม่ได้ (ข้ามรายการที่ยังไม่ส่ง)
+  assert.equal((await call("admin", "POST", "/api/admin/courses/approve/x", { course_ids: [c.id] })).status, 404);
+  let r = await call("admin", "POST", "/api/admin/courses/approve", { course_ids: [c.id] }, { expect: 200 });
+  assert.equal(r.data.approved, 0);
+  // ส่ง (ไม่มีอะไรต้องเตือน)
+  let dd = (await call("t1", "POST", `/api/courses/${c.id}/submit`, {}, { expect: 200 })).data;
+  assert.equal(dd.course.status, "submitted");
+  assert.equal(dd.course.submitted_by_name, "ครูสมใจ ใจดี");
+  await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: ind.id, student_id: s[0].id, score: 1 }] }, { expect: 409 });
+  // ครูส่งคืนตัวเองไม่ได้, ส่งคืนต้องมีเหตุผล
+  await call("t1", "POST", `/api/admin/courses/${c.id}/return`, { note: "แก้" }, { expect: 403 });
+  await call("admin", "POST", `/api/admin/courses/${c.id}/return`, { note: "" }, { expect: 400 });
+  await call("admin", "POST", `/api/admin/courses/${c.id}/return`, { note: "คะแนนสอบคนที่ 1 ผิด" }, { expect: 200 });
+  dd = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
+  assert.equal(dd.course.status, "draft");
+  assert.equal(dd.course.return_note, "คะแนนสอบคนที่ 1 ผิด");
+  await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: fin.id, student_id: s[0].id, score: 12.5 }] }, { expect: 200 });
+  // ส่งใหม่: มีทศนิยม → ต้องยืนยัน
+  const warn = await call("t1", "POST", `/api/courses/${c.id}/submit`, {}, { expect: 409 });
+  assert.equal(warn.data.checks.decimals.length, 1);
+  await call("t1", "POST", `/api/courses/${c.id}/submit`, { force: true }, { expect: 200 });
+  // ครูประเภท teacher อนุมัติไม่ได้ (แม้ได้สิทธิ์ทีมวัดผล)
+  await call("t1", "POST", "/api/admin/courses/approve", { course_ids: [c.id] }, { expect: 403 });
+  r = await call("admin", "POST", "/api/admin/courses/approve", { course_ids: [c.id] }, { expect: 200 });
+  assert.equal(r.data.approved, 1);
+  dd = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
+  assert.equal(dd.course.status, "approved");
+  const { courses } = (await call("admin", "GET", "/api/admin/courses", null, { expect: 200 })).data;
+  assert.equal(courses.find((x) => x.id === c.id).status, "approved");
+  // แก้ย้อนหลัง: ต้องส่งคืนพร้อมเหตุผล แล้วสถานะอนุมัติถูกล้าง
+  const e = await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: fin.id, student_id: s[0].id, score: 13 }] }, { expect: 409 });
+  assert.ok(e.data.error.includes("อนุมัติ"));
+  await call("admin", "POST", `/api/admin/courses/${c.id}/return`, { note: "ผู้ปกครองขอตรวจสอบคะแนน" }, { expect: 200 });
+  dd = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
+  assert.equal(dd.course.approved_at, null);
+  const audit = (await call("admin", "GET", "/api/admin/audit", null, { expect: 200 })).data.entries.map((x) => x.action);
+  for (const a of ["course.submit", "course.return", "course.approve", "course.reopen_approved"]) assert.ok(audit.includes(a), a);
+});

@@ -227,6 +227,11 @@ async function renderSubjects() {
   };
 }
 
+const statusTag = (c) => c.status === "approved" ? '<span class="tag ok">อนุมัติแล้ว</span>'
+  : c.status === "submitted" ? '<span class="tag">ส่งแล้ว รออนุมัติ</span>'
+  : c.return_note ? `<span class="tag warn" title="${esc(c.return_note)}">ส่งคืนให้แก้</span>`
+  : c.item_count ? '<span class="tag">กำลังกรอก</span>' : '<span class="tag warn">ยังไม่ตั้งโครงสร้าง</span>';
+
 // ---------- ครูผู้สอน ----------
 let selRoom = sessionStorage.getItem("sr-admin-room") || "";
 async function renderCourses() {
@@ -238,13 +243,21 @@ async function renderCourses() {
   const missing = (r) => courses.filter((c) => `${c.grade_level}/${c.classroom}` === r && !c.teachers.length).length;
   view.innerHTML = `<div class="panel">
     <div class="panel-head"><div class="actions">${rooms.map((r) => `<button class="btn small ${r === selRoom ? "primary" : ""}" data-room="${r}">${r}${missing(r) ? ` <span class="tag warn">${missing(r)}</span>` : ""}</button>`).join("")}</div></div>
-    <div class="actions" style="margin-bottom:12px"><button class="btn" id="assignAll">ให้ครู 1 คนสอนหลายวิชาในห้อง ${selRoom}</button></div>
+    <div class="actions" style="margin-bottom:12px"><button class="btn" id="assignAll">ให้ครู 1 คนสอนหลายวิชาในห้อง ${selRoom}</button>
+      <a class="btn" target="_blank" rel="noopener" href="/print/pp5.html?grade=${encodeURIComponent(selRoom.split("/")[0])}&room=${encodeURIComponent(selRoom.split("/")[1])}&year=${Y}">พิมพ์ ปพ.5 ทุกวิชาของห้อง ${selRoom}</a></div>
     <div class="table-wrap"><table class="list"><thead><tr><th>รหัส</th><th>วิชา</th><th>ครูผู้สอน</th><th>ความคืบหน้า</th><th>สถานะ</th><th></th></tr></thead>
     <tbody>${inRoom.map((c) => `<tr><td>${esc(c.code)}</td><td><a href="/course.html?id=${c.id}&year=${Y}">${esc(c.name)}</a></td>
       <td>${c.teachers.length ? c.teachers.map((t) => esc(t.full_name)).join(", ") : '<span class="tag warn">ยังไม่กำหนด</span>'}</td>
       <td style="min-width:120px"><span class="small muted">${c.progress}%</span><div class="meter ${c.progress >= 100 ? "done" : ""}"><i style="width:${c.progress}%"></i></div></td>
-      <td>${c.locked ? '<span class="tag ok">ยืนยันผลแล้ว</span>' : c.item_count ? '<span class="tag">กำลังกรอก</span>' : '<span class="tag warn">ยังไม่ตั้งโครงสร้าง</span>'}</td>
-      <td class="actions"><button class="btn small" data-teach="${c.id}">ครูผู้สอน</button>${c.locked ? `<button class="btn small" data-unlock="${c.id}">ปลดล็อก</button>` : ""}</td></tr>`).join("")}</tbody></table></div></div>`;
+      <td>${statusTag(c)}</td>
+      <td class="actions"><button class="btn small" data-teach="${c.id}">ครูผู้สอน</button>${c.locked ? `<button class="btn small" data-unlock="${c.id}">ส่งคืน</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
+    ${me.user.is_super && inRoom.some((c) => c.status === "submitted") ? `<div class="actions" style="margin-top:12px"><button class="btn primary" id="approveRoom">อนุมัติทุกวิชาที่ส่งแล้วของห้อง ${selRoom} (${inRoom.filter((c) => c.status === "submitted").length})</button></div>` : ""}</div>`;
+  const ar = document.getElementById("approveRoom");
+  if (ar) ar.onclick = async () => {
+    const ids = inRoom.filter((c) => c.status === "submitted").map((c) => c.id);
+    if (!(await confirmBox("อนุมัติผลการเรียน", `อนุมัติ ${ids.length} รายวิชาที่ส่งแล้วของห้อง ${selRoom}`, "อนุมัติ"))) return;
+    try { const r = await api("/api/admin/courses/approve", { method: "POST", body: { course_ids: ids } }); toast(`อนุมัติ ${r.approved} รายวิชา`); render(); } catch (err) { showError(err); }
+  };
   for (const b of view.querySelectorAll("[data-room]")) b.onclick = () => { selRoom = b.dataset.room; sessionStorage.setItem("sr-admin-room", selRoom); render(); };
   const teacherChecks = (chosen) => `<input type="search" placeholder="ค้นหาชื่อครู" data-filter style="margin-bottom:10px">
     <div style="display:grid;gap:4px;max-height:340px;overflow:auto">${list.map((t) => `<label class="check" data-name="${esc(t.full_name)}"><input type="checkbox" name="t${t.id}" ${chosen.includes(t.id) ? "checked" : ""}> ${esc(t.full_name)}</label>`).join("")}</div>`;
@@ -257,8 +270,10 @@ async function renderCourses() {
     try { await api(`/api/admin/courses/${c.id}/teachers`, { method: "PUT", body: { user_ids: ids } }); toast("บันทึกแล้ว"); render(); } catch (err) { showError(err); }
   };
   for (const b of view.querySelectorAll("[data-unlock]")) b.onclick = async () => {
-    if (!(await confirmBox("ปลดล็อก", "ให้ครูผู้สอนแก้ไขคะแนนรายวิชานี้ได้อีกครั้ง", "ปลดล็อก"))) return;
-    try { await api(`/api/admin/courses/${b.dataset.unlock}/lock`, { method: "POST", body: { locked: false } }); toast("ปลดล็อกแล้ว"); render(); } catch (err) { showError(err); }
+    const r = await dialog({ title: "ส่งคืนให้ครูแก้", okText: "ส่งคืน", okClass: "danger",
+      body: `<label class="field">เหตุผล / สิ่งที่ต้องแก้ (ครูจะเห็นข้อความนี้)<textarea name="note" required minlength="3" maxlength="500"></textarea></label>` });
+    if (!r.ok) return;
+    try { await api(`/api/admin/courses/${b.dataset.unlock}/return`, { method: "POST", body: { note: r.data.note } }); toast("ส่งคืนแล้ว"); render(); } catch (err) { showError(err); }
   };
   document.getElementById("assignAll").onclick = async () => {
     const r = await dialog({
@@ -344,6 +359,7 @@ async function renderSettings() {
       <label class="field">ชื่อโรงเรียน<input name="school_name" value="${esc(s.school_name)}" maxlength="120"></label>
       <label class="field">เขตพื้นที่<input name="school_area" value="${esc(s.school_area)}" maxlength="160" placeholder="สำนักงานเขตพื้นที่การศึกษาประถมศึกษาเพชรบุรี เขต 2"></label>
       <label class="field">สังกัด<input name="affiliation" value="${esc(s.affiliation)}" maxlength="160"></label>
+      <label class="field">ที่อยู่บนปก ปพ.5<input name="school_address" value="${esc(s.school_address)}" maxlength="160" placeholder="อำเภอแก่งกระจาน จังหวัดเพชรบุรี"></label>
       <label class="field">ผู้อำนวยการ<input name="director_name" value="${esc(s.director_name)}" maxlength="120"></label>
       <label class="field">รองผู้อำนวยการ<input name="deputy_director_name" value="${esc(s.deputy_director_name)}" maxlength="120"></label>
       <label class="field">หัวหน้างานวิชาการ<input name="academic_head_name" value="${esc(s.academic_head_name)}" maxlength="120"></label>

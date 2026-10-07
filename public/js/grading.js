@@ -295,3 +295,25 @@ export function summarizeGroup(group, values) {
 export function roomLabel(grade, room) {
   return `${grade}/${room}`;
 }
+
+// ตรวจก่อนส่งผล: ช่องว่าง, คะแนนรวมมีทศนิยม (ครูตัดสินใจปัดเอง), คะแนนรวมใกล้รอยต่อเกรด (ต่ำกว่าเกณฑ์ไม่ถึง 1 คะแนน), มส
+// students: [{id, name, enrollment_status}], computed: {id: computeStudentResult}
+export function submissionChecks(students, computed) {
+  const out = { blanks: [], decimals: [], borderline: [], ms: [] };
+  const hasDec = (v) => v != null && Math.abs(v - Math.round(v)) > 1e-9;
+  for (const s of students) {
+    if ((s.enrollment_status || "enrolled") !== "enrolled") continue;
+    const k = computed[s.id];
+    if (!k) continue;
+    if (k.grade === "มส" || k.original_grade === "มส") out.ms.push({ id: s.id, name: s.name });
+    if (k.missing > 0) out.blanks.push({ id: s.id, name: s.name, missing: k.missing });
+    const terms = Object.entries(k.term_scores || {});
+    const decTerms = terms.filter(([, t]) => hasDec(t.total)).map(([n, t]) => `ภาค ${n} = ${t.total}`);
+    if (decTerms.length) out.decimals.push({ id: s.id, name: s.name, detail: decTerms.join(", ") });
+    if (k.total_max === 100 && k.total != null && k.missing === 0) {
+      const next = GRADE_STEPS.find((g) => g.min > k.total && g.min - k.total < 1 - 1e-9);
+      if (next) out.borderline.push({ id: s.id, name: s.name, total: k.total, need: next.min, grade: next.grade });
+    }
+  }
+  return out;
+}

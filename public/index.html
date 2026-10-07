@@ -49,7 +49,8 @@ cbox.innerHTML = me.courses.length ? me.courses.map((c) => `
   <a class="course-row" href="${withYear(`/course.html?id=${c.id}`, y)}">
     <span class="room-chip">${esc(c.grade_level)}/${esc(c.classroom)}</span>
     <span><span class="title">${esc(c.code)} ${esc(c.name)}</span><span class="sub"> · ${c.hours_per_year} ชม./ปี · ${c.students} คน</span>
-      ${c.locked ? '<br><span class="tag ok">ยืนยันผลแล้ว</span>' : c.item_count ? "" : '<br><span class="tag warn">ยังไม่ได้ตั้งโครงสร้างคะแนน</span>'}</span>
+      ${c.status === "approved" ? '<br><span class="tag ok">อนุมัติแล้ว</span>' : c.status === "submitted" ? '<br><span class="tag">ส่งแล้ว รออนุมัติ</span>'
+        : c.return_note ? '<br><span class="tag warn">ส่งคืนให้แก้</span>' : c.item_count ? "" : '<br><span class="tag warn">ยังไม่ได้ตั้งโครงสร้างคะแนน</span>'}</span>
     <span class="meter-cell"><span class="small muted">กรอกแล้ว ${c.progress}%</span><div class="meter ${c.progress >= 100 ? "done" : ""}"><i style="width:${c.progress}%"></i></div></span>
     <span class="go btn small">เปิดสมุดคะแนน</span>
   </a>`).join("") : `<div class="empty"><strong>ยังไม่มีรายวิชาที่ได้รับมอบหมาย</strong>ให้ฝ่ายวิชาการกำหนดครูผู้สอนในหน้าตั้งค่ารายวิชา</div>`;
@@ -67,7 +68,7 @@ if (me.summary) {
   document.getElementById("adminStats").innerHTML = `
     <div><dt>รายวิชาทุกห้อง</dt><dd>${s.courses}</dd></div>
     <div><dt>ยังไม่มีครูผู้สอน</dt><dd>${s.without_teacher}</dd></div>
-    <div><dt>ยืนยันผลแล้ว</dt><dd>${s.locked}</dd></div>
+    <div><dt>ส่งผลแล้ว</dt><dd>${s.locked}</dd></div>
     <div><dt>กรอกคะแนนเฉลี่ย</dt><dd>${s.avg_progress}%</dd></div>`;
 }
 </script>

@@ -110,6 +110,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink-2); outline:
 .note { background: var(--wash); border-radius: var(--r-md); padding: 12px 14px; font-size: 14px; color: #34407a; }
 .note.warn { background: var(--warn-bg); color: var(--warn); }
 .note.bad { background: var(--bad-bg); color: var(--bad); }
+.note.ok { background: var(--ok-bg); color: var(--ok); }
 .empty { padding: 34px 16px; text-align: center; color: var(--muted); }
 .empty strong { display: block; color: var(--ink); font-size: 16px; margin-bottom: 4px; }
 

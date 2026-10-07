@@ -3,109 +3,260 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ปพ.5 — แบบบันทึกผลการเรียนรายวิชา</title>
+<title>ปพ.5 — แบบบันทึกผลการพัฒนาคุณภาพผู้เรียนรายวิชา</title>
 <link rel="stylesheet" href="/print/print.css">
 </head>
 <body>
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
-import { esc, params, get, toolbar, status, fmt, td, gradeOut, GRADE_TEXT } from "/print/print.js";
+// ปพ.5 ทั้งเล่ม เรียงตามแบบที่โรงเรียนใช้ (จากตัวอย่าง Q-Info):
+// 1 ปก + สรุปผล + การอนุมัติ → 2 ผลการประเมินตัวชี้วัด (รายภาค) → 3 สรุปคะแนนรายภาค → 4 สรุปผลทั้งปี
+// → 5 อ่าน คิดวิเคราะห์ เขียน → 6 คุณลักษณะอันพึงประสงค์ → 7 โครงสร้างรายวิชา
+// ตัวเลขทุกตัวอ่านจากผลที่เซิร์ฟเวอร์คำนวณแล้ว (computed) — ไม่คำนวณคะแนนใหม่ในหน้านี้
+// ?course=ID = 1 วิชา, ?courses=1,2,3 หรือ ?grade=ป.4&room=2&year=ID = ทุกวิชาของห้องเป็นไฟล์เดียว
+import { esc, params, get, toolbar, status, fmt, td, gradeOut } from "/print/print.js";
+import { indicatorResult, effectiveScore, indicatorWord, ASSESSMENT_GROUPS, summarizeGroup, LEVEL_LABEL, NUMERIC_GRADES } from "/js/grading.js";
 
-const id = params().get("course");
-let d;
-try { d = await get(`/api/courses/${encodeURIComponent(id)}`); } catch (e) { status(e.message); throw e; }
-const c = d.course, s = d.settings;
-toolbar(`ปพ.5 ${c.code} ${c.name} ${c.grade_level}/${c.classroom}`);
-document.title = `ปพ.5 ${c.code} ${c.grade_level}-${c.classroom}`;
-const active = d.students.filter((x) => x.enrollment_status === "enrolled");
-const teacherNames = c.teachers.map((t) => t.full_name);
-const cols = ["4", "3.5", "3", "2.5", "2", "1.5", "1", "0", "ร", "มส"];
-const count = Object.fromEntries(cols.map((g) => [g, active.filter((x) => d.computed[x.id].grade === g).length]));
-const pct = (n) => active.length ? td((Math.round((n / active.length) * 1000) / 10).toFixed(1)) : "";
-const statusNote = (x) => x.enrollment_status === "transferred" ? "ย้ายออก" : x.enrollment_status === "withdrawn" ? "ออกกลางคัน" : x.enrollment_status === "moved" ? "ย้ายห้อง" : "";
+const q = params();
+let ids = [];
+try {
+  if (q.get("course")) ids = [q.get("course")];
+  else if (q.get("courses")) ids = q.get("courses").split(",").filter(Boolean);
+  else if (q.get("grade") && q.get("room")) {
+    const r = await get(`/api/reports/room-courses?grade=${encodeURIComponent(q.get("grade"))}&room=${encodeURIComponent(q.get("room"))}${q.get("year") ? `&year=${encodeURIComponent(q.get("year"))}` : ""}`);
+    ids = r.courses.filter((c) => c.item_count > 0).map((c) => c.id);
+    if (!ids.length) throw new Error("ห้องนี้ยังไม่มีรายวิชาที่ตั้งโครงสร้างคะแนน");
+  }
+  if (!ids.length) throw new Error("ไม่ได้ระบุรายวิชา");
+} catch (e) { status(e.message); throw e; }
 
-const cover = `<section class="sheet">
-  <div class="form-no">ปพ.5</div>
-  <img class="garuda" src="/logo.jpg" alt="" style="width:20mm;height:20mm;margin-bottom:2mm">
-  <h1 class="center">แบบบันทึกผลการพัฒนาคุณภาพผู้เรียน</h1>
-  <h2 class="center">${esc(s.school_name || "โรงเรียนบ้านป่าเด็ง")}</h2>
-  ${s.school_area ? `<div class="center">${esc(s.school_area)}</div>` : ""}
-  <div class="info" style="margin-top:4mm">
-    <div>รหัสวิชา ${esc(td(c.code))}</div><div>รายวิชา ${esc(c.name)}</div>
-    <div>กลุ่มสาระการเรียนรู้ ${esc(c.learning_area)}</div><div>ประเภท ${c.subject_type === "basic" ? "รายวิชาพื้นฐาน" : "รายวิชาเพิ่มเติม"}</div>
-    <div>ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))}</div><div>ปีการศึกษา ${td(c.year_be)}</div>
-    <div>เวลาเรียน ${td(c.hours_per_year)} ชั่วโมง/ปี</div><div>คะแนนระหว่างภาค : ปลายภาค ${td(c.collect_ratio)} : ${td(100 - c.collect_ratio)}</div>
-    <div style="grid-column:1/-1">ครูผู้สอน ${esc(teacherNames.join(", ") || "................................................")}</div>
-  </div>
-  <h3 style="margin-top:5mm">สรุปผลการเรียน (นักเรียน ${td(active.length)} คน)</h3>
-  <table class="t">
-    <tr><th>ผลการเรียน</th>${cols.map((g) => `<th>${gradeOut(g)}</th>`).join("")}<th>รวม</th></tr>
-    <tr><td class="c">จำนวน (คน)</td>${cols.map((g) => `<td class="c">${td(count[g])}</td>`).join("")}<td class="c">${td(active.length)}</td></tr>
-    <tr><td class="c">ร้อยละ</td>${cols.map((g) => `<td class="c">${pct(count[g])}</td>`).join("")}<td class="c">${active.length ? td("100.0") : ""}</td></tr>
-  </table>
-  <h3 style="margin-top:5mm">การอนุมัติผลการเรียน</h3>
-  <table class="t">
-    <tr><th style="width:40%">ผู้รับผิดชอบ</th><th>ลงชื่อ</th><th style="width:22%">วันที่</th></tr>
-    <tr><td>ครูผู้สอน<br>(${esc(teacherNames[0] || "................................")})</td><td></td><td></td></tr>
-    <tr><td>หัวหน้างานวัดผล<br>(${esc(s.measurement_head_name || "................................")})</td><td></td><td></td></tr>
-    <tr><td>หัวหน้างานวิชาการ<br>(${esc(s.academic_head_name || "................................")})</td><td></td><td></td></tr>
-  </table>
-  <div style="margin-top:5mm;border:1px solid #000;padding:2mm 5mm;break-inside:avoid">
-    <div>เรียน ผู้อำนวยการ เพื่อโปรดพิจารณาอนุมัติผลการเรียน</div>
-    <div style="margin-top:3mm">☐ อนุมัติ &nbsp;&nbsp; ☐ ไม่อนุมัติ เพราะ ..............................................................</div>
-    <div class="sign" style="margin-top:2mm"><div class="line"></div>(${esc(s.director_name || "................................................")})<br>ผู้อำนวยการ${esc(s.school_name || "โรงเรียนบ้านป่าเด็ง")}<br>วันที่ ........./................./.............</div>
-  </div>
-</section>`;
+const books = [];
+for (const [i, id] of ids.entries()) {
+  status(`กำลังเตรียมเอกสาร ${i + 1}/${ids.length}…`);
+  try { books.push(await get(`/api/courses/${encodeURIComponent(id)}`)); } catch (e) { status(e.message); throw e; }
+}
+const first = books[0].course;
+const title = books.length === 1 ? `ปพ.5 ${first.code} ${first.name} ${first.grade_level}/${first.classroom}` : `ปพ.5 ทุกวิชา ${first.grade_level}/${first.classroom} (${books.length} วิชา)`;
+toolbar(title);
+document.title = books.length === 1 ? `ปพ.5 ${first.code} ${first.grade_level}-${first.classroom}` : `ปพ.5 ${first.grade_level}-${first.classroom} ทุกวิชา`;
 
-function termSheet(term) {
-  const items = d.items.filter((i) => i.term_number === term);
-  if (!items.length) return "";
-  const maxSum = items.reduce((a, i) => a + i.max_score, 0);
-  let n = 0;
-  const label = (i) => i.kind === "final" ? "ปลายภาค" : (i.code ? td(i.code) : `ข้อ ${td(++n)}`);
-  const labels = items.map(label);
-  const rows = d.students.map((x) => {
-    const sc = d.scores[x.id] || {};
-    const sum = items.reduce((a, i) => a + (sc[i.id] == null ? 0 : Number(sc[i.id])), 0);
-    return `<tr><td class="c">${td(x.number ?? "")}</td><td class="c">${esc(td(x.student_code))}</td><td style="white-space:nowrap;overflow:hidden">${esc(x.name)}</td>
-      ${items.map((i) => `<td class="c">${sc[i.id] == null ? "" : fmt(sc[i.id])}</td>`).join("")}<td class="c">${fmt(sum)}</td><td class="c" style="font-size:11pt">${esc(statusNote(x))}</td></tr>`;
-  }).join("");
-  return `<section class="sheet land">
-    <div class="center"><b>บันทึกคะแนน ภาคเรียนที่ ${td(term)} ปีการศึกษา ${td(c.year_be)}</b> &nbsp; ${esc(td(c.code))} ${esc(c.name)} &nbsp; ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))}</div>
-    <table class="t tiny" style="table-layout:fixed">
-      <colgroup><col style="width:9mm"><col style="width:16mm"><col style="width:52mm">${items.map(() => "<col>").join("")}<col style="width:12mm"><col style="width:16mm"></colgroup>
-      <thead>
-        <tr><th rowspan="2">เลขที่</th><th rowspan="2">เลขประจำตัว</th><th rowspan="2">ชื่อ–สกุล</th>
-          ${labels.map((l) => `<th style="font-size:10.5pt;font-weight:400;line-height:1">${esc(l)}</th>`).join("")}
-          <th rowspan="2">รวม</th><th rowspan="2">หมายเหตุ</th></tr>
-        <tr>${items.map((i) => `<th>${fmt(i.max_score)}</th>`).join("")}</tr>
-      </thead>
-      <tbody>${rows}
-        <tr><td colspan="3" class="r">คะแนนเต็ม</td>${items.map((i) => `<td class="c">${fmt(i.max_score)}</td>`).join("")}<td class="c">${fmt(maxSum)}</td><td></td></tr>
-      </tbody>
-    </table>
-    <div class="note">${items.map((i, k) => `<b>${esc(labels[k])}</b> ${esc(i.title)}`).join(" ; ")}</div>
-  </section>`;
+const statusNote = (x) => x.enrollment_status === "transferred" ? "ย้ายออก" : x.enrollment_status === "withdrawn" ? "ออกกลางคัน" : x.enrollment_status === "moved" ? "ย้ายห้อง" : "ปกติ";
+const pctOf = (n, all) => all ? td((Math.round((n / all) * 10000) / 100).toFixed(2)) : td("0.00");
+const dots = (name, w = "................................................") => name ? esc(name) : w;
+const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
+// "ท 1.1 ป.4/2" → { std: "ท 1.1", no: "2" }
+function splitCode(code) {
+  const m = String(code || "").match(/^(.*?)\s*ป\.\s*\d\s*\/\s*(\d+)\s*$/);
+  return m ? { std: m[1].trim(), no: m[2] } : { std: String(code || ""), no: "" };
 }
 
-const summary = `<section class="sheet">
-  <div class="center"><b>สรุปผลการเรียน ${esc(td(c.code))} ${esc(c.name)} ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))} ปีการศึกษา ${td(c.year_be)}</b></div>
-  <table class="t small">
-    <thead><tr><th style="width:10mm">เลขที่</th><th>ชื่อ–สกุล</th><th style="width:15mm">เก็บ<br>(${td(c.collect_ratio)})</th><th style="width:15mm">สอบ<br>(${td(100 - c.collect_ratio)})</th>
-      <th style="width:15mm">รวม<br>(100)</th><th style="width:15mm">เวลาเรียน<br>(${td(c.hours_per_year)})</th><th style="width:14mm">ผล<br>เดิม</th><th style="width:14mm">ผล<br>แก้ไข</th><th style="width:28mm">หมายเหตุ</th></tr></thead>
-    <tbody>${d.students.map((x) => {
-      const k = d.computed[x.id], r = d.results[x.id] || {};
-      const fixed = r.remedial_grade ? `${gradeOut(r.remedial_grade)}` : "";
-      const note = [statusNote(x), r.remedial_type === "repeat" ? "เรียนซ้ำ" : r.remedial_grade ? "แก้ตัว" : "", k.failed_indicators.length ? `ไม่ผ่าน ${td(k.failed_indicators.length)} ตัวชี้วัด` : ""].filter(Boolean).join(", ");
-      return `<tr><td class="c">${td(x.number ?? "")}</td><td style="white-space:nowrap">${esc(x.name)}</td><td class="c">${fmt(k.collect_scaled)}</td><td class="c">${fmt(k.final_scaled)}</td>
-        <td class="c">${k.total == null ? "" : fmt(k.total)}</td><td class="c">${fmt(k.hours)}</td><td class="c">${gradeOut(k.original_grade)}</td><td class="c">${fixed}</td><td style="font-size:12pt">${esc(note)}</td></tr>`;
-    }).join("")}</tbody>
-  </table>
-  <div class="note">เกณฑ์: 80–100 = 4 (${GRADE_TEXT["4"]}), 75–79 = 3.5, 70–74 = 3, 65–69 = 2.5, 60–64 = 2, 55–59 = 1.5, 50–54 = 1, 0–49 = 0 · คะแนนรวมไม่ปัดเศษ · เวลาเรียนต่ำกว่าร้อยละ ${td(s.attendance_pass_pct)} = มส</div>
-  <div class="signs"><div></div><div class="sign"><div class="line"></div>(${esc(teacherNames[0] || "................................................")})<br>ครูผู้สอน</div></div>
-</section>`;
+function book(d) {
+  const c = d.course, s = d.settings;
+  const W = indicatorWord(c.grade_level);
+  const active = d.students.filter((x) => x.enrollment_status === "enrolled");
+  const draft = c.status !== "approved";
+  const mark = draft ? `<div class="draft-mark"><span>ฉบับร่าง ยังไม่อนุมัติ</span></div>` : "";
+  const head = (t) => `<div class="center"><b>${t} ปีการศึกษา ${td(c.year_be)} วิชา ${esc(c.name)} รหัสวิชา ${esc(td(c.code))} ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))}</b></div>`;
+  const band = /^ป\.[123]$/.test(c.grade_level) ? "ประถมศึกษาตอนต้น" : "ประถมศึกษาตอนปลาย";
+  const terms = [1, 2].filter((t) => d.items.some((i) => i.term_number === t));
 
-document.getElementById("doc").innerHTML = cover + termSheet(1) + termSheet(2) + summary;
+  // ---------- 1. ปก + สรุปผล + การอนุมัติ ----------
+  const cols = ["4", "3.5", "3", "2.5", "2", "1.5", "1", "0", "ร", "มส"];
+  const count = Object.fromEntries(cols.map((g) => [g, active.filter((x) => d.computed[x.id].grade === g).length]));
+  const graded = active.map((x) => d.computed[x.id].grade).filter((g) => NUMERIC_GRADES.includes(g)).map(Number);
+  const mean = graded.length ? graded.reduce((a, b) => a + b, 0) / graded.length : null;
+  const sd = graded.length > 1 ? Math.sqrt(graded.reduce((a, g) => a + (g - mean) ** 2, 0) / (graded.length - 1)) : graded.length ? 0 : null;
+  const good = (count["4"] + count["3.5"] + count["3"]);
+  const failN = count["0"] + count["ร"] + count["มส"];
+  const two = (v) => v == null ? "–" : td((Math.floor(v * 100 + 1e-9) / 100).toFixed(2));
+  const assessCount = (key) => {
+    const g = ASSESSMENT_GROUPS.find((x) => x.key === key);
+    const out = { 3: 0, 2: 0, 1: 0, 0: 0 };
+    for (const x of active) { const v = summarizeGroup(g, d.assessments?.[x.id] || {}); if (v != null) out[v]++; }
+    return out;
+  };
+  const tr = assessCount("trait"), rw = assessCount("rtw");
+  const assessRow = (o) => ["3", "2", "1", "0"].map((k) => `<td class="c">${td(o[k])}</td>`).join("");
+  const assessPct = (o) => ["3", "2", "1", "0"].map((k) => `<td class="c">${pctOf(o[k], active.length)}</td>`).join("");
+  const teacherNames = c.teachers.map((t) => t.full_name);
+  const signLine = (role, name) => `<div class="sign-row"><span>ลงชื่อ</span><span class="fill"></span><span>${role}</span></div>${name ? `<div class="sign-name">(${esc(name)})</div>` : '<div class="sign-name">(................................................)</div>'}`;
+  const decision = (role, name, dt) => `<div class="box">
+      <div class="checks"><span>☐ อนุมัติ</span><span>☐ ไม่อนุมัติ/ให้นำไปปรับปรุงแก้ไข</span></div>
+      ${signLine(role, name)}<div class="sign-name">${dt || "........../........../.........."}</div></div>`;
+  const cover = `<section class="sheet pp5">${mark}
+    <div class="form-no">ปพ.5</div>
+    <img class="garuda" src="/logo.jpg" alt="">
+    <h1 class="center">แบบบันทึกผลการพัฒนาคุณภาพผู้เรียนรายวิชา</h1>
+    <h2 class="center">โรงเรียน${esc(s.school_name?.replace(/^โรงเรียน/, "") || "บ้านป่าเด็ง")} ${esc(s.school_address || "")}</h2>
+    <h2 class="center">สังกัด ${esc(s.affiliation || "สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน")}</h2>
+    ${s.school_area ? `<h2 class="center">${esc(s.school_area)}</h2>` : ""}
+    <div class="center" style="margin-top:2mm"><b>ปีการศึกษา ${td(c.year_be)}</b></div>
+    <div class="center"><b>ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))} ระดับชั้น ${band}</b></div>
+    <div class="info2">
+      <div>กลุ่มสาระการเรียนรู้${esc(c.learning_area)}</div><div>สาระการเรียนรู้${c.subject_type === "basic" ? "พื้นฐาน" : "เพิ่มเติม"}</div>
+      <div>รายวิชา ${esc(c.name)}</div><div>รหัสวิชา ${esc(td(c.code))}</div>
+      <div>เวลาเรียน ${td(c.hours_per_year)} ชั่วโมงต่อปี</div><div>เวลาเรียน ${fmt(c.hours_per_year / 40)} ชั่วโมงต่อสัปดาห์</div>
+      <div style="grid-column:1/-1">ครูผู้สอน ${dots(teacherNames.join(", "))}</div>
+      <div style="grid-column:1/-1">ครูประจำชั้น ${dots((c.homeroom_teachers || []).join(", "))}</div>
+    </div>
+    <table class="t small">
+      <tr><th rowspan="3" style="width:20mm">จำนวน<br>นักเรียน<br>ทั้งหมด</th><th colspan="10">สรุปผลการพัฒนาผู้เรียน</th><th rowspan="3" style="width:18mm">หมายเหตุ</th></tr>
+      <tr><th colspan="10">จำนวนนักเรียนที่ได้รับผลการเรียน</th></tr>
+      <tr>${cols.map((g) => `<th>${gradeOut(g === "มส" ? "มส." : g)}</th>`).join("")}</tr>
+      <tr><td class="c">${td(active.length)}</td>${cols.map((g) => `<td class="c">${td(count[g])}</td>`).join("")}<td rowspan="2" class="small-note">${terms.length < 2 ? "ผลการเรียนออกเมื่อครบ 2 ภาค" : ""}</td></tr>
+      <tr><td class="c">คิดเป็นร้อยละ</td>${cols.map((g) => `<td class="c">${pctOf(count[g], active.length)}</td>`).join("")}</tr>
+    </table>
+    <div class="stats">
+      <div>ร้อยละของนักเรียนที่ได้ผลการเรียนระดับดี (3) ขึ้นไป ${pctOf(good, active.length)}</div><div>ผลการเรียนเฉลี่ยของรายวิชา ${two(mean)}</div>
+      <div>ร้อยละของนักเรียนที่ไม่ผ่านการประเมิน ${pctOf(failN, active.length)}</div><div>ส่วนเบี่ยงเบนมาตรฐาน ${two(sd)}</div>
+    </div>
+    <table class="t small">
+      <tr><th rowspan="2">ผลการประเมิน</th><th colspan="4">ผลการประเมินคุณลักษณะอันพึงประสงค์</th><th colspan="4">ผลการประเมินการอ่าน คิด วิเคราะห์ และเขียน</th></tr>
+      <tr><th>ดีเยี่ยม</th><th>ดี</th><th>ผ่าน</th><th>ไม่ผ่าน</th><th>ดีเยี่ยม</th><th>ดี</th><th>ผ่าน</th><th>ไม่ผ่าน</th></tr>
+      <tr><td class="c">จำนวนที่ได้</td>${assessRow(tr)}${assessRow(rw)}</tr>
+      <tr><td class="c">คิดเป็นร้อยละ</td>${assessPct(tr)}${assessPct(rw)}</tr>
+    </table>
+    <div class="center" style="margin-top:3mm"><b>การอนุมัติผลการพัฒนาคุณภาพผู้เรียน</b></div>
+    <div class="grid2">
+      <div>${signLine("ครูผู้สอน", teacherNames[0])}</div><div>${signLine("หัวหน้ากลุ่มสาระการเรียนรู้", "")}</div>
+      <div>${signLine("หัวหน้างานวัดผลและประเมินผล", s.measurement_head_name)}</div><div>${signLine("หัวหน้าฝ่ายวิชาการ", s.academic_head_name)}</div>
+    </div>
+    <div class="grid2" style="margin-top:2mm">
+      <div><b>เรียนเพื่อเสนอโปรดพิจารณา</b>${decision("รองผู้อำนวยการสถานศึกษา", s.deputy_director_name)}</div>
+      <div><b>การพิจารณา/สั่งการ</b>${decision(`ผู้อำนวยการโรงเรียน${esc((s.school_name || "บ้านป่าเด็ง").replace(/^โรงเรียน/, ""))}`, s.director_name)}</div>
+    </div>
+    ${c.status === "approved" ? `<div class="sys-note">อนุมัติในระบบ${c.approved_by_name ? ` โดย ${esc(c.approved_by_name)}` : ""} เมื่อ ${esc(td(String(c.approved_at).slice(0, 10)))}</div>`
+      : c.status === "submitted" ? `<div class="sys-note">ส่งผลในระบบแล้ว รอผู้บริหารอนุมัติ</div>` : ""}
+  </section>`;
+
+  // ---------- 2. ผลการประเมินตัวชี้วัด (รายภาค, หน้าละไม่เกิน 6 ตัว) ----------
+  const indicatorPages = terms.map((term) => {
+    const inds = d.items.filter((i) => i.term_number === term && i.kind === "indicator");
+    if (!inds.length) return "";
+    const order = Object.fromEntries(inds.map((it, k) => [it.id, k + 1]));
+    return chunk(inds, 6).map((part) => `<section class="sheet land">${mark}
+      ${head(`ผลการประเมิน${W} ภาคเรียนที่ ${td(term)}`)}
+      <table class="t tiny" style="table-layout:fixed">
+        <colgroup><col style="width:9mm"><col style="width:15mm"><col style="width:52mm">${part.map(() => '<col><col style="width:11mm"><col style="width:8mm">').join("")}</colgroup>
+        <thead>
+          <tr><th rowspan="4">เลขที่</th><th rowspan="4">เลข<br>ประจำตัว</th><th class="r">${W}ที่</th>${part.map((it) => `<th colspan="3">${td(order[it.id])}</th>`).join("")}</tr>
+          <tr><th class="r">สาระ, มาตรฐาน</th>${part.map((it) => `<th colspan="3">${esc(td(splitCode(it.code).std || "–"))}</th>`).join("")}</tr>
+          <tr><th class="r">${W}ข้อที่</th>${part.map((it) => `<th colspan="3">${esc(td(splitCode(it.code).no || "–"))}</th>`).join("")}</tr>
+          <tr><th class="r">คะแนนเต็ม</th>${part.map((it) => `<th>${fmt(it.max_score)}</th><th class="xs">แก้ตัว</th><th class="xs">ผล</th>`).join("")}</tr>
+        </thead>
+        <tbody>${d.students.map((x) => {
+          const sc = d.scores[x.id] || {}, rem = d.remedials?.[x.id] || {};
+          return `<tr><td class="c">${td(x.number ?? "")}</td><td class="c">${esc(td(x.student_code))}</td><td class="nm">${esc(x.name)}</td>
+            ${part.map((it) => {
+              const eff = effectiveScore(it, sc[it.id] ?? null, rem[it.id] ?? null, d.settings);
+              const res = eff == null ? "" : indicatorResult(it, eff, d.settings);
+              return `<td class="c">${sc[it.id] == null ? "" : fmt(sc[it.id])}</td><td class="c">${rem[it.id] == null ? "" : fmt(rem[it.id])}</td><td class="c">${res}</td>`;
+            }).join("")}</tr>`;
+        }).join("")}</tbody>
+      </table>
+      <div class="note">${part.map((it) => `<b>${td(order[it.id])}</b> ${esc(td(it.code || ""))} ${esc(it.title)}`).join(" ; ")}</div>
+    </section>`).join("");
+  }).join("");
+
+  // ---------- 3. สรุปคะแนนรายภาค ----------
+  const cT = c.collect_ratio / 2, fT = 50 - cT;
+  const termSummary = terms.map((term) => {
+    const inds = d.items.filter((i) => i.term_number === term && i.kind === "indicator");
+    return `<section class="sheet land">${mark}
+      ${head(`สรุปคะแนนภาคเรียนที่ ${td(term)}`)}
+      <table class="t small">
+        <thead>
+          <tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th><th colspan="5">ระหว่างภาค</th><th colspan="3">สอบปลายภาค</th><th rowspan="2" style="width:16mm">รวม</th><th rowspan="2" style="width:20mm">สถานะ<br>นักเรียน</th></tr>
+          <tr><th style="width:17mm">${W}</th><th style="width:15mm">กลางภาค</th><th style="width:15mm">แก้ตัว</th><th style="width:16mm">คะแนน<br>นับได้</th><th style="width:15mm">รวม</th>
+            <th style="width:15mm">สอบ</th><th style="width:15mm">แก้ตัว</th><th style="width:15mm">รวม</th></tr>
+          <tr><th></th><th class="r">คะแนนเต็ม</th><th>${fmt(cT)}</th><th>${td(0)}</th><th>${td(0)}</th><th>${fmt(cT)}</th><th>${fmt(cT)}</th><th>${fmt(fT)}</th><th>${td(0)}</th><th>${fmt(fT)}</th><th>${td(50)}</th><th></th></tr>
+        </thead>
+        <tbody>${d.students.map((x) => {
+          const k = d.computed[x.id], t = k.term_scores?.[term], sc = d.scores[x.id] || {}, rem = d.remedials?.[x.id] || {};
+          const raw = inds.reduce((a, it) => a + (sc[it.id] == null ? 0 : Number(sc[it.id])), 0);
+          const hasRem = inds.some((it) => rem[it.id] != null);
+          const gain = t ? Math.round((t.collect - raw) * 100) / 100 : 0;
+          const blank = !t || !inds.some((it) => sc[it.id] != null);
+          return `<tr><td class="c">${td(x.number ?? "")}</td><td class="nm">${esc(x.name)}</td>
+            <td class="c">${blank ? "" : fmt(raw)}</td><td class="c">${blank ? "" : td("0")}</td><td class="c">${hasRem ? fmt(gain) : blank ? "" : td("0")}</td>
+            <td class="c">${blank ? "" : fmt(t.collect)}</td><td class="c">${blank ? "" : fmt(t.collect)}</td>
+            <td class="c">${!t ? "" : fmt(t.final)}</td><td class="c">${!t ? "" : td("0")}</td><td class="c">${!t ? "" : fmt(t.final)}</td>
+            <td class="c"><b>${!t || blank ? "" : fmt(t.total)}</b></td><td class="c">${statusNote(x)}</td></tr>`;
+        }).join("")}</tbody>
+      </table>
+      <div class="note">คะแนนนับได้ = คะแนน${W}หลังรวมการแก้ตัว (นับได้ไม่เกินเกณฑ์ผ่าน) · ไม่ปัดเศษ</div>
+    </section>`;
+  }).join("");
+
+  // ---------- 4. สรุปผลการเรียนทั้งปี ----------
+  const yearSummary = `<section class="sheet">${mark}
+    ${head("สรุปผลการเรียนรายวิชา")}
+    <table class="t small">
+      <thead><tr><th style="width:10mm">เลขที่</th><th>ชื่อ–สกุล</th><th style="width:16mm">ภาค 1</th><th style="width:16mm">ภาค 2</th><th style="width:16mm">รวม</th>
+        <th style="width:14mm">ผลการ<br>เรียน</th><th style="width:14mm">แก้ไข</th><th style="width:20mm">สถานะ</th></tr>
+        <tr><th></th><th class="r">คะแนนเต็ม</th><th>${td(50)}</th><th>${td(50)}</th><th>${td(100)}</th><th>0–4</th><th>0–4</th><th></th></tr></thead>
+      <tbody>${d.students.map((x) => {
+        const k = d.computed[x.id], r = d.results[x.id] || {};
+        const t1 = k.term_scores?.[1], t2 = k.term_scores?.[2];
+        return `<tr><td class="c">${td(x.number ?? "")}</td><td class="nm">${esc(x.name)}</td>
+          <td class="c">${t1 ? fmt(t1.total) : "–"}</td><td class="c">${t2 ? fmt(t2.total) : "–"}</td><td class="c">${k.total_max === 100 && k.total != null ? fmt(k.total) : "–"}</td>
+          <td class="c"><b>${k.original_grade == null ? "–" : gradeOut(k.original_grade)}</b></td><td class="c">${r.remedial_grade ? gradeOut(r.remedial_grade) : ""}</td><td class="c">${statusNote(x)}</td></tr>`;
+      }).join("")}</tbody>
+    </table>
+    <div class="note">เกณฑ์: 80–100 = 4, 75–79.99 = 3.5, 70–74.99 = 3, 65–69.99 = 2.5, 60–64.99 = 2, 55–59.99 = 1.5, 50–54.99 = 1, 0–49.99 = 0 · ตัดเกรดจากคะแนนจริง ไม่ปัดเศษ
+      ${terms.length < 2 ? "<br>ยังมีคะแนนไม่ครบ 2 ภาคเรียน จึงยังไม่ตัดผลการเรียน (แสดง –)" : ""}</div>
+  </section>`;
+
+  // ---------- 5–6. อ่าน คิดวิเคราะห์ เขียน / คุณลักษณะอันพึงประสงค์ ----------
+  const assessPage = (key) => {
+    const g = ASSESSMENT_GROUPS.find((x) => x.key === key);
+    return `<section class="sheet">${mark}
+      ${head(g.title)}
+      <table class="t small">
+        <thead><tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2" style="width:16mm">เลข<br>ประจำตัว</th><th rowspan="2">ชื่อ–สกุล</th><th colspan="${g.items.length}">${key === "trait" ? "คุณลักษณะอันพึงประสงค์ข้อที่" : "ตัวชี้วัดข้อที่"}</th><th rowspan="2" style="width:22mm">สรุปผล</th></tr>
+          <tr>${g.items.map((_, i) => `<th style="width:9mm">${td(i + 1)}</th>`).join("")}</tr></thead>
+        <tbody>${d.students.map((x) => {
+          const v = d.assessments?.[x.id] || {};
+          const sum = summarizeGroup(g, v);
+          return `<tr><td class="c">${td(x.number ?? "")}</td><td class="c">${esc(td(x.student_code))}</td><td class="nm">${esc(x.name)}</td>
+            ${g.items.map(([k]) => `<td class="c">${v[k] == null ? "" : td(v[k])}</td>`).join("")}<td class="c">${sum == null ? "" : LEVEL_LABEL[sum]}</td></tr>`;
+        }).join("")}</tbody>
+      </table>
+      <div class="note">${g.items.map(([, label], i) => `${td(i + 1)}. ${esc(label)}`).join(" · ")}<br>ระดับ: ${td(3)} = ดีเยี่ยม, ${td(2)} = ดี, ${td(1)} = ผ่าน, ${td(0)} = ไม่ผ่าน · ประเมินโดยครูประจำชั้น</div>
+    </section>`;
+  };
+
+  // ---------- 7. โครงสร้างรายวิชา ----------
+  const units = (d.units || []);
+  const structureRows = terms.flatMap((term) => {
+    const tu = units.filter((u) => u.term_number === term);
+    const rows = tu.map((u) => {
+      const its = d.items.filter((i) => i.unit_id === u.id);
+      const stds = [...new Set(its.map((i) => splitCode(i.code).std).filter(Boolean))];
+      const nos = its.map((i) => splitCode(i.code).no).filter(Boolean);
+      return `<tr><td class="c">${td(u.unit_no)}</td><td>${esc(u.title)}</td><td class="c">${u.hours == null ? "" : fmt(u.hours)}</td><td class="c">${esc(td(stds.join(", ")))}</td>
+        <td class="c">${esc(td(nos.join(", ")))}</td><td class="c">${fmt(its.reduce((a, i) => a + i.max_score, 0))}</td><td>${esc(u.task || "")}</td><td></td></tr>`;
+    });
+    const loose = d.items.filter((i) => i.term_number === term && i.kind === "indicator" && !tu.some((u) => u.id === i.unit_id));
+    for (const it of loose) rows.push(`<tr><td class="c">–</td><td>${esc(it.title)}</td><td></td><td class="c">${esc(td(splitCode(it.code).std))}</td><td class="c">${esc(td(splitCode(it.code).no))}</td><td class="c">${fmt(it.max_score)}</td><td></td><td>ไม่ระบุหน่วย</td></tr>`);
+    const fin = d.items.filter((i) => i.term_number === term && i.kind === "final");
+    const finMax = fin.reduce((a, i) => a + i.max_score, 0);
+    return [`<tr class="band"><td colspan="8"><b>ภาคเรียนที่ ${td(term)}</b></td></tr>`, ...rows,
+      fin.length ? `<tr><td></td><td>สอบปลายภาค</td><td></td><td></td><td></td><td class="c">${fmt(finMax)}</td><td>แบบทดสอบ</td><td></td></tr>` : ""];
+  });
+  const structure = `<section class="sheet land">${mark}
+    ${head("โครงสร้างรายวิชา")}
+    <table class="t small">
+      <thead><tr><th style="width:16mm">หน่วยการ<br>เรียนรู้ที่</th><th>ชื่อหน่วยการเรียนรู้</th><th style="width:16mm">จำนวน<br>ชั่วโมง</th><th style="width:26mm">สาระ<br>มาตรฐาน</th>
+        <th style="width:24mm">${W}<br>ข้อที่</th><th style="width:15mm">คะแนน</th><th style="width:48mm">ภาระงาน/ชิ้นงาน/การประเมิน</th><th style="width:22mm">หมายเหตุ</th></tr></thead>
+      <tbody>${structureRows.join("")}</tbody>
+    </table>
+  </section>`;
+
+  return cover + indicatorPages + termSummary + yearSummary + assessPage("rtw") + assessPage("trait") + structure;
+}
+
+document.getElementById("doc").innerHTML = books.map(book).join("");
 </script>
 </body>
 </html>

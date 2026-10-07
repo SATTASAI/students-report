@@ -6,7 +6,7 @@ export const DEFAULT_SETTINGS = {
   school_name: "โรงเรียนบ้านป่าเด็ง", school_area: "", director_name: "", academic_head_name: "",
   measurement_head_name: "", entry_open: 1, roster_order: "gender",
   indicator_pass_pct_t2: null, deputy_director_name: "", affiliation: "สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน",
-  pilot_rooms: null,
+  pilot_rooms: null, school_address: "อำเภอแก่งกระจาน จังหวัดเพชรบุรี",
 };
 
 export async function listYears(env) {
@@ -123,6 +123,10 @@ export function studentName(s) {
 export async function loadCourse(env, courseId) {
   const course = await env.DB.prepare(
     `SELECT c.id, c.classroom, c.locked, c.submitted_at, c.submitted_by, c.subject_id,
+            c.approved_at, c.approved_by, c.return_note, c.returned_at,
+            (SELECT full_name FROM users WHERE id = c.submitted_by) AS submitted_by_name,
+            (SELECT full_name FROM users WHERE id = c.approved_by) AS approved_by_name,
+            (SELECT full_name FROM users WHERE id = c.returned_by) AS returned_by_name,
             s.academic_year_id, s.grade_level, s.code, s.name, s.learning_area, s.subject_type,
             s.hours_per_year, s.collect_ratio, y.year_be, s.template IS NOT NULL AS has_template, s.template_updated_at
        FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
@@ -134,7 +138,18 @@ export async function loadCourse(env, courseId) {
     `SELECT u.id, u.full_name FROM gr_course_teachers ct JOIN users u ON u.id = ct.user_id WHERE ct.course_id = ? ORDER BY u.full_name`
   ).bind(courseId).all();
   course.teachers = teachers;
+  course.status = courseStatus(course);
+  const { results: homeroom } = await env.DB.prepare(
+    "SELECT u.full_name FROM gr_homerooms h JOIN users u ON u.id = h.user_id WHERE h.academic_year_id = ? AND h.grade_level = ? AND h.classroom = ? ORDER BY u.full_name"
+  ).bind(course.academic_year_id, course.grade_level, course.classroom).all();
+  course.homeroom_teachers = homeroom.map((h) => h.full_name);
   return course;
+}
+
+// สถานะของ ห้อง × วิชา: draft (กำลังกรอก) → submitted (ส่งแล้ว, ล็อก) → approved (อนุมัติแล้ว)
+export function courseStatus(c) {
+  if (!c.locked) return "draft";
+  return c.approved_at ? "approved" : "submitted";
 }
 
 export function canViewCourse(user, course) {
@@ -145,7 +160,7 @@ export async function assertCourseAccess(env, user, courseId, { write = false } 
   const course = await loadCourse(env, courseId);
   if (!canViewCourse(user, course)) fail(403, "คุณไม่ได้รับมอบหมายให้สอนรายวิชานี้");
   if (write) {
-    if (course.locked) fail(409, "รายวิชานี้ยืนยันผลแล้ว ต้องให้ผู้ดูแลปลดล็อกก่อนแก้ไข");
+    if (course.locked) fail(409, course.approved_at ? "รายวิชานี้อนุมัติผลแล้ว ต้องให้ฝ่ายวิชาการส่งคืนพร้อมเหตุผลก่อนแก้ไข" : "รายวิชานี้ส่งแล้ว ต้องให้ฝ่ายวิชาการส่งคืนก่อนแก้ไข");
     const settings = await getSettings(env, course.academic_year_id);
     if (!settings.entry_open && !user.is_admin) fail(409, "ปิดระบบการกรอกคะแนนของปีการศึกษานี้แล้ว");
   }

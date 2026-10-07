@@ -163,10 +163,14 @@ test("เวลาเรียนไม่ถึง 80% → มส, สอบแ
   d = (await call("t1", "PUT", `/api/courses/${c.id}/results`, { changes: [{ student_id: s[0].id, remedial_type: "remedial", remedial_grade: "1", remedial_date: "2027-03-20" }] }, { expect: 200 })).data;
   assert.equal(d.computed[s[0].id].original_grade, "0");
   assert.equal(d.computed[s[0].id].grade, "1");
-  // ยืนยันผล → ล็อก
-  await call("t1", "POST", `/api/courses/${c.id}/submit`, {}, { expect: 200 });
+  // ส่งผล: คะแนนรวมภาคมีทศนิยม (42.5) → ระบบให้ครูดูก่อน แล้วยืนยันส่ง → ล็อก
+  const warn = await call("t1", "POST", `/api/courses/${c.id}/submit`, {}, { expect: 409 });
+  assert.ok(warn.data.checks.decimals.length > 0);
+  await call("t1", "POST", `/api/courses/${c.id}/submit`, { force: true }, { expect: 200 });
   await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: ind.id, student_id: s[2].id, score: 1 }] }, { expect: 409 });
-  await call("admin", "POST", `/api/admin/courses/${c.id}/lock`, { locked: false }, { expect: 200 });
+  // ส่งคืนต้องมีเหตุผล
+  await call("admin", "POST", `/api/admin/courses/${c.id}/lock`, { locked: false }, { expect: 400 });
+  await call("admin", "POST", `/api/admin/courses/${c.id}/return`, { note: "ตรวจคะแนนคนที่ 3 อีกครั้ง" }, { expect: 200 });
   await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: ind.id, student_id: s[2].id, score: 1 }] }, { expect: 200 });
 });
 
