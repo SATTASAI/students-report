@@ -289,3 +289,44 @@ export function debounce(fn, ms) {
 }
 
 export const room = (g, r) => `${g}/${r}`;
+
+// ---------- คำอธิบายลอย (tooltip): ใส่ data-tip="ข้อความ" ที่องค์ประกอบใดก็ได้ ----------
+// เมาส์ชี้ / โฟกัสด้วยคีย์บอร์ด = แสดง · แตะบนมือถือ = แสดง/ซ่อน · Esc = ซ่อน
+let tipEl, tipFor = null, tipAt = 0;
+function showTip(target) {
+  tipEl ||= Object.assign(document.body.appendChild(document.createElement("div")), { className: "tip-pop", role: "tooltip", id: "tipPop" });
+  tipEl.textContent = target.dataset.tip;
+  tipEl.hidden = false;
+  if (tipFor !== target) tipAt = Date.now();
+  tipFor = target;
+  target.setAttribute("aria-describedby", "tipPop");
+  const r = target.getBoundingClientRect(), w = Math.min(320, window.innerWidth - 16);
+  tipEl.style.maxWidth = `${w}px`;
+  const tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
+  const left = Math.max(8, Math.min(window.innerWidth - tw - 8, r.left + r.width / 2 - tw / 2));
+  const below = r.bottom + 8 + th < window.innerHeight;
+  tipEl.style.left = `${left + window.scrollX}px`;
+  tipEl.style.top = `${(below ? r.bottom + 8 : r.top - th - 8) + window.scrollY}px`;
+}
+function hideTip() { if (tipEl) tipEl.hidden = true; tipFor?.removeAttribute("aria-describedby"); tipFor = null; }
+// เมาส์เท่านั้น (บนจอสัมผัสใช้การแตะแทน เพราะเบราว์เซอร์มือถือจำลอง mouseover ที่ทำให้คำอธิบายปิดเอง)
+document.addEventListener("pointerover", (e) => {
+  if (e.pointerType !== "mouse") return;
+  const t = e.target.closest?.("[data-tip]");
+  if (t && t !== tipFor) showTip(t); else if (!t && tipFor) hideTip();
+});
+document.addEventListener("focusin", (e) => { const t = e.target.closest?.("[data-tip]"); if (t) showTip(t); });
+document.addEventListener("focusout", (e) => { if (e.target.closest?.("[data-tip]")) hideTip(); });
+document.addEventListener("click", (e) => {
+  const t = e.target.closest?.(".tip-btn[data-tip]");
+  if (t) { e.preventDefault(); tipFor === t && !tipEl?.hidden && Date.now() - tipAt > 500 ? hideTip() : showTip(t); } // แตะบนมือถือ: mouseover เปิดให้แล้ว ไม่ต้องปิดทันที
+  else if (tipFor && !e.target.closest?.("[data-tip]")) hideTip();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTip(); });
+// เลื่อนหน้าจอ/ตาราง: ย้ายคำอธิบายตามหัวคอลัมน์ (ซ่อนเมื่อหัวคอลัมน์หลุดจอ)
+window.addEventListener("scroll", () => {
+  if (!tipFor || tipEl?.hidden) return;
+  const r = tipFor.getBoundingClientRect();
+  if (!tipFor.isConnected || r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) hideTip();
+  else showTip(tipFor);
+}, { passive: true, capture: true });

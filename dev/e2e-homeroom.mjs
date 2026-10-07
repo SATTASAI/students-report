@@ -36,7 +36,13 @@ await t.locator("#sheet tbody tr").first().locator("select[data-row]").selectOpt
 await saved(t);
 const sums = await t.$$eval("#sheet tbody tr [data-sum]", (els) => els.slice(0, 2).map((e) => e.textContent));
 if (sums[0] !== "3 ดีเยี่ยม" || sums[1] !== "2 ดี") errors.push(`สรุปอ่านคิดฯ ไม่ถูก ${sums}`);
+// ชี้ที่หัวคอลัมน์ "ข้อ 2" แล้วต้องเห็นว่าวัดเรื่องอะไร
+await t.hover('#sheet thead .tip-btn >> nth=1');
+await t.waitForSelector(".tip-pop:not([hidden])");
+const tip = await t.innerText(".tip-pop");
+if (!tip.startsWith("ข้อ 2:") || !tip.includes("จับประเด็นสำคัญ")) errors.push(`คำอธิบายข้อ 2 ไม่ถูก: ${tip}`);
 await t.screenshot({ path: `${OUT}/h1-rtw.png` });
+await t.mouse.move(5, 5);
 
 // กิจกรรมพัฒนาผู้เรียน: ครูประจำชั้นบันทึกครบ 4 กิจกรรมจากเมนูซ้าย
 await t.click('.side-nav a[href="/activities.html"]');
@@ -95,12 +101,20 @@ if (d.body[st[0].id]?.[1]?.weight !== 32.5) errors.push("น้ำหนัก�
 await t.screenshot({ path: `${OUT}/h4-body.png` });
 
 // มือถือ: หน้าความคิดเห็นไม่ล้นจอ
-const m = await (await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: await t.context().storageState() })).newPage();
+const m = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, storageState: await t.context().storageState() })).newPage();
 await m.goto(`${BASE}/homeroom.html?${Q}`);
 await m.waitForSelector("#tabs button");
 await m.click('#tabs button[data-tab="comments"]');
 await m.waitForSelector(".cm-row");
 await m.screenshot({ path: `${OUT}/h5-mobile-comments.png` });
+// มือถือ: แตะหัวคอลัมน์อ่านคิดฯ แล้วเห็นคำอธิบาย
+await m.click('#tabs button[data-tab="rtw"]');
+await m.waitForSelector("#sheet thead .tip-btn");
+await m.tap("#sheet thead .tip-btn >> nth=0");
+await m.waitForSelector(".tip-pop:not([hidden])");
+await m.waitForTimeout(300);
+if (await m.evaluate(() => document.querySelector(".tip-pop").hidden)) errors.push("มือถือ: แตะแล้วคำอธิบายหายเอง");
+await m.screenshot({ path: `${OUT}/h6-mobile-rtw-tip.png` });
 const over = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 if (over > 2) errors.push(`มือถือเลื่อนแนวนอน ${over}px`);
 await browser.close();

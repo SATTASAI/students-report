@@ -115,6 +115,7 @@ const levelOptions = (v, blank = "–") => [["", blank], ...LEVELS.map((l) => [l
   .map(([val, label]) => `<option value="${val}" ${String(v) === val ? "selected" : ""}>${label}</option>`).join("");
 const summaryCell = (group, sid) => { const v = summarizeGroup(group, data.assessments[sid]); return v == null ? "–" : `${group.type === "activity" ? "" : `${v} `}${summaryText(group, v)}`; };
 
+const labelOf = (group, key) => { const i = group.items.findIndex(([k]) => k === key); return i < 0 ? key : (group.key === "rtw" ? `ข้อ ${i + 1} ` : "") + group.items[i][1]; };
 function renderAssessment(group) {
   const shortHead = group.key === "rtw"; // ข้อความตัวชี้วัดยาว ใช้หัวคอลัมน์ "ข้อ 1–5" แล้วอธิบายใต้ตาราง
   view.innerHTML = `
@@ -124,12 +125,14 @@ function renderAssessment(group) {
     </div>
     <div class="sheet-wrap"><table class="sheet" id="sheet">
       <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
-        ${group.items.map(([k, label], i) => `<th class="col-head" style="min-width:96px" title="${esc(label)}"><span class="t">${esc(shortHead ? `ข้อ ${i + 1}` : label)}</span>
+        ${group.items.map(([k, label], i) => `<th class="col-head" style="min-width:96px">${shortHead
+          ? `<button type="button" class="tip-btn" data-tip="ข้อ ${i + 1}: ${esc(label)}" aria-label="ข้อ ${i + 1} วัดเรื่องอะไร">ข้อ ${i + 1} <i class="i" aria-hidden="true">i</i></button>`
+          : `<span class="t" data-tip="${esc(label)}">${esc(label)}</span>`}
           <select class="level-select fill" data-fill="${k}" aria-label="กรอกทั้งห้อง ${esc(label)}">${levelOptions("", "ทั้งห้อง…")}</select></th>`).join("")}
         <th class="col-head">ทุกข้อ</th><th class="col-head">สรุป</th></tr></thead>
       <tbody>${data.students.map((s) => `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}">
         <td class="stick no">${s.number ?? ""}</td><td class="stick name">${esc(s.name)}</td>
-        ${group.items.map(([k]) => { const v = valueOf(s.id, k); return `<td><select class="level-select v${esc(v)}" data-key="${k}" aria-label="${esc(s.name)} ${esc(k)}">${levelOptions(v)}</select></td>`; }).join("")}
+        ${group.items.map(([k]) => { const v = valueOf(s.id, k); return `<td><select class="level-select v${esc(v)}" data-key="${k}" aria-label="${esc(s.name)} ${esc(labelOf(group, k))}">${levelOptions(v)}</select></td>`; }).join("")}
         <td><select class="level-select fill" data-row aria-label="ทุกข้อของ ${esc(s.name)}">${levelOptions("", "ทุกข้อ…")}</select></td>
         <td class="calc" data-sum>${summaryCell(group, s.id)}</td></tr>`).join("")}</tbody>
     </table></div>
