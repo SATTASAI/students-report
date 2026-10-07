@@ -10,7 +10,7 @@
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
 import { esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDate } from "/print/print.js";
-import { ASSESSMENT_GROUPS, LEVEL_LABEL, summarizeGroup } from "/js/grading.js";
+import { ASSESSMENT_GROUPS, summarizeGroup, summaryText } from "/js/grading.js";
 
 const p = params();
 let ids = [];
@@ -63,7 +63,7 @@ function page(d) {
       <tr><th>สรุปผลการประเมิน</th><th>ผล</th><th>สรุปผลการเรียน</th><th>ผล</th></tr>
       <tr><td>เวลาเรียนรายวิชาพื้นฐาน</td><td class="c">${td(hours("basic"))} ชม.</td><td>ผลการเรียนเฉลี่ย (ทุกปีที่มีในระบบ)</td><td class="c">${gpa == null ? "" : fmt(gpa)}</td></tr>
       <tr><td>เวลาเรียนรายวิชาเพิ่มเติม</td><td class="c">${td(hours("additional"))} ชม.</td><td>ผลการตัดสิน</td><td class="c">ผ่าน / ไม่ผ่าน</td></tr>
-      ${last ? ASSESSMENT_GROUPS.map((g) => `<tr><td colspan="2">${g.title} (ปีล่าสุด)</td><td colspan="2" class="c">${(() => { const v = summarizeGroup(g, last.assessments); return v == null ? "" : g.type === "pass" ? (v === "ผ" ? "ผ่าน" : "ไม่ผ่าน") : LEVEL_LABEL[v]; })()}</td></tr>`).join("") : ""}
+      ${last ? ASSESSMENT_GROUPS.map((g) => `<tr><td colspan="2">${g.title} (ปีล่าสุด)</td><td colspan="2" class="c">${(() => { const v = summarizeGroup(g, last.assessments); return summaryText(g, v); })()}</td></tr>`).join("") : ""}
     </table>
     <div class="note">ฉบับนี้ใช้ตรวจทานข้อมูลก่อนออก ปพ.1 จากแบบพิมพ์ทางราชการ/ระบบ SGS เท่านั้น — แสดงเฉพาะปีที่มีข้อมูลในระบบนี้ ปีที่ยังไม่ได้บันทึกต้องตรวจจากระเบียนเดิม</div>
     <div class="signs">

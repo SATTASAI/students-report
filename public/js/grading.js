@@ -244,7 +244,7 @@ export const LEVEL_LABEL = Object.fromEntries(LEVELS.map((l) => [l.value, l.labe
 
 export const ASSESSMENT_GROUPS = [
   {
-    key: "trait", title: "คุณลักษณะอันพึงประสงค์", short: "คุณลักษณะฯ", type: "level",
+    key: "trait", title: "คุณลักษณะอันพึงประสงค์", short: "คุณลักษณะฯ", type: "level", rule: "trait",
     items: [
       ["trait_1", "รักชาติ ศาสน์ กษัตริย์"], ["trait_2", "ซื่อสัตย์สุจริต"], ["trait_3", "มีวินัย"],
       ["trait_4", "ใฝ่เรียนรู้"], ["trait_5", "อยู่อย่างพอเพียง"], ["trait_6", "มุ่งมั่นในการทำงาน"],
@@ -252,11 +252,19 @@ export const ASSESSMENT_GROUPS = [
     ],
   },
   {
-    key: "rtw", title: "การอ่าน คิดวิเคราะห์ และเขียน", short: "อ่าน คิด เขียน", type: "level",
-    items: [["rtw_read", "การอ่าน"], ["rtw_think", "การคิดวิเคราะห์"], ["rtw_write", "การเขียน"]],
+    // 5 ตัวชี้วัดตามแนวปฏิบัติการวัดและประเมินผล (หลักสูตรแกนกลางฯ) — ตรงกับ ปพ.5 ของโรงเรียนที่มี 5 ข้อ
+    key: "rtw", title: "การอ่าน คิดวิเคราะห์ และเขียน", short: "อ่าน คิด เขียน", type: "level", rule: "rtw",
+    items: [
+      ["rtw_1", "สามารถคัดสรรสื่อที่ต้องการอ่านเพื่อหาข้อมูลสารสนเทศได้ตามวัตถุประสงค์ สร้างความเข้าใจและประยุกต์ใช้ความรู้จากการอ่าน"],
+      ["rtw_2", "สามารถจับประเด็นสำคัญ เปรียบเทียบ เชื่อมโยงความเป็นเหตุเป็นผลจากการอ่าน"],
+      ["rtw_3", "สามารถเชื่อมโยงความสัมพันธ์ของเรื่องราว เหตุการณ์ของเรื่องที่อ่าน"],
+      ["rtw_4", "สามารถแสดงความคิดเห็นต่อเรื่องที่อ่าน โดยมีเหตุผลประกอบ"],
+      ["rtw_5", "สามารถถ่ายทอดความเข้าใจ ความคิดเห็น คุณค่าจากเรื่องที่อ่าน โดยการเขียน"],
+    ],
   },
   {
-    key: "comp", title: "สมรรถนะสำคัญของผู้เรียน", short: "สมรรถนะ", type: "level",
+    key: "comp", title: "สมรรถนะสำคัญของผู้เรียน", short: "สมรรถนะ", type: "level", rule: "comp",
+    summaryLabels: { 3: "ดีเยี่ยม", 2: "ดี", 1: "พอใช้", 0: "ปรับปรุง" },
     items: [
       ["comp_1", "ความสามารถในการสื่อสาร"], ["comp_2", "ความสามารถในการคิด"],
       ["comp_3", "ความสามารถในการแก้ปัญหา"], ["comp_4", "ความสามารถในการใช้ทักษะชีวิต"],
@@ -264,7 +272,9 @@ export const ASSESSMENT_GROUPS = [
     ],
   },
   {
-    key: "act", title: "กิจกรรมพัฒนาผู้เรียน", short: "กิจกรรม", type: "pass",
+    // ปพ.5.1: ต่อกิจกรรมมี 2 เงื่อนไข — เวลาเรียน (_t) และจุดประสงค์ (_o)
+    // ค่าเริ่มต้นผ่าน: เก็บเฉพาะ "มผ" ของคนที่ไม่ผ่าน ไม่ต้องยืนยันเด็กทุกเทอม
+    key: "act", title: "กิจกรรมพัฒนาผู้เรียน", short: "กิจกรรม (ปพ.5.1)", type: "activity",
     items: [
       ["act_guidance", "กิจกรรมแนะแนว"], ["act_scout", "ลูกเสือ-เนตรนารี"],
       ["act_club", "กิจกรรมชุมนุม"], ["act_social", "กิจกรรมเพื่อสังคมและสาธารณประโยชน์"],
@@ -272,24 +282,54 @@ export const ASSESSMENT_GROUPS = [
   },
 ];
 
-export const ASSESSMENT_KEYS = new Set(ASSESSMENT_GROUPS.flatMap((g) => g.items.map((i) => i[0])));
+export const ACTIVITY_PARTS = [["t", "เวลาเรียน"], ["o", "จุดประสงค์"]];
+export const ASSESSMENT_KEYS = new Set(ASSESSMENT_GROUPS.flatMap((g) => g.type === "activity"
+  ? g.items.flatMap(([k]) => ACTIVITY_PARTS.map(([p]) => `${k}_${p}`))
+  : g.items.map((i) => i[0])));
 
 export function validAssessmentValue(key, value) {
-  const group = ASSESSMENT_GROUPS.find((g) => g.items.some((i) => i[0] === key));
-  if (!group) return false;
+  if (!ASSESSMENT_KEYS.has(key)) return false;
   if (value === "" || value == null) return true; // ลบค่า
-  return group.type === "pass" ? ["ผ", "มผ"].includes(value) : ["0", "1", "2", "3"].includes(String(value));
+  if (/^act_/.test(key)) return value === "มผ";
+  return ["0", "1", "2", "3"].includes(String(value));
 }
 
-// สรุปผลรวมของกลุ่มประเมินระดับคุณภาพ:
-// ข้อใดไม่ผ่าน → ไม่ผ่าน; ไม่เช่นนั้นใช้ค่าเฉลี่ยแล้วปัดลง (ไม่ปัดขึ้น)
+// ผลกิจกรรม 1 รายการ: ผ่านเมื่อทั้งเวลาเรียนและจุดประสงค์ไม่ถูกติ๊กว่าไม่ผ่าน
+export function activityResult(key, values) {
+  return ACTIVITY_PARTS.some(([p]) => values?.[`${key}_${p}`] === "มผ") ? "มผ" : "ผ";
+}
+
+// สรุปผลของกลุ่ม "ตามเกณฑ์" (แนวปฏิบัติ สพฐ.) — ยืนยันกับ ปพ.5 จริงของโรงเรียน (tests/assessment.test.mjs)
+// คุณลักษณะ 8 ข้อ: มีข้อใด 0 → ไม่ผ่าน; ดีเยี่ยม 5–8 ข้อและไม่มีข้อใดต่ำกว่าดี → ดีเยี่ยม;
+//   ดีเยี่ยม 1–4 ข้อและไม่มีต่ำกว่าดี / ดีทั้งหมด / ดีเยี่ยม 4 ข้อและที่เหลือไม่ต่ำกว่าผ่าน → ดี; นอกนั้น → ผ่าน
+// อ่าน คิดวิเคราะห์ เขียน 5 ข้อ: รวมคะแนน 13–15 ดีเยี่ยม, 9–12 ดี, 5–8 ผ่าน, 0–4 ไม่ผ่าน
+// สมรรถนะ 5 ด้าน: นับด้านที่ผ่าน (ระดับ 1 ขึ้นไป) 5 = ดีเยี่ยม, 4 = ดี, 3 = พอใช้, 0–2 = ปรับปรุง
 export function summarizeGroup(group, values) {
+  if (group.type === "activity") return group.items.some(([k]) => activityResult(k, values) === "มผ") ? "มผ" : "ผ";
   const vals = group.items.map(([k]) => values?.[k]);
   if (vals.some((v) => v == null || v === "")) return null;
-  if (group.type === "pass") return vals.every((v) => v === "ผ") ? "ผ" : "มผ";
-  if (vals.some((v) => v === "0")) return "0";
-  const avg = vals.reduce((a, v) => a + Number(v), 0) / vals.length;
-  return String(Math.floor(avg + 1e-9));
+  const n = vals.map(Number);
+  if (group.rule === "rtw") {
+    const sum = n.reduce((a, b) => a + b, 0), max = n.length * 3;
+    const scale = (x) => Math.round((x / 15) * max); // ปรับช่วงตามจำนวนข้อ (5 ข้อ = 13/9/5)
+    return sum >= scale(13) ? "3" : sum >= scale(9) ? "2" : sum >= scale(5) ? "1" : "0";
+  }
+  if (group.rule === "comp") {
+    const pass = n.filter((v) => v >= 1).length;
+    return pass >= 5 ? "3" : pass === 4 ? "2" : pass === 3 ? "1" : "0";
+  }
+  if (n.some((v) => v === 0)) return "0";
+  const c3 = n.filter((v) => v === 3).length, low = n.some((v) => v < 2);
+  const need = Math.ceil(n.length * 5 / 8); // 8 ข้อ → 5
+  if (c3 >= need && !low) return "3";
+  if ((!low) || (c3 >= need - 1)) return "2";
+  return "1";
+}
+
+export function summaryText(group, v) {
+  if (v == null) return "";
+  if (group.type === "activity") return v === "ผ" ? "ผ่าน" : "ไม่ผ่าน";
+  return group.summaryLabels?.[v] ?? LEVEL_LABEL[v];
 }
 
 export function roomLabel(grade, room) {

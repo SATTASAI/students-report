@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-4";
+export const SCHEMA_VERSION = "gr-5";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -110,6 +110,32 @@ export const SCHEMA_SQL = [
     note TEXT,
     recorded_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (student_id, absence_date))`,
+  // ความคิดเห็นครูประจำชั้นบน ปพ.6 (ต่อภาค, 4 ด้าน)
+  `CREATE TABLE IF NOT EXISTS gr_comments (
+    academic_year_id INTEGER NOT NULL,
+    term_number INTEGER NOT NULL CHECK (term_number IN (1,2)),
+    student_id INTEGER NOT NULL,
+    field TEXT NOT NULL CHECK (field IN ('learn','habit','health','other')),
+    body TEXT NOT NULL,
+    updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (academic_year_id, term_number, student_id, field))`,
+  // คลังข้อความความคิดเห็นของครูแต่ละคน
+  `CREATE TABLE IF NOT EXISTS gr_comment_bank (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    field TEXT NOT NULL CHECK (field IN ('learn','habit','health','other')),
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, field, body))`,
+  // น้ำหนัก/ส่วนสูง 4 ครั้งต่อปี
+  `CREATE TABLE IF NOT EXISTS gr_body (
+    academic_year_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    round INTEGER NOT NULL CHECK (round BETWEEN 1 AND 4),
+    weight REAL CHECK (weight IS NULL OR (weight > 0 AND weight < 200)),
+    height REAL CHECK (height IS NULL OR (height > 30 AND height < 230)),
+    updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (academic_year_id, student_id, round))`,
   `CREATE TABLE IF NOT EXISTS gr_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER, action TEXT NOT NULL, detail TEXT,

@@ -60,8 +60,9 @@ test("สรุปการประเมินของครูประจ�
   const all = (v) => Object.fromEntries(trait.items.map(([k]) => [k, v]));
   assert.equal(summarizeGroup(trait, all("3")), "3");
   assert.equal(summarizeGroup(trait, { ...all("3"), trait_8: "0" }), "0");
-  assert.equal(summarizeGroup(trait, { ...all("3"), trait_8: "2" }), "2");
+  // 3 จำนวน 7 ข้อ + 2 อีก 1 ข้อ = ดีเยี่ยม ตามเกณฑ์ (ตรงกับ ปพ.5 จริงเลขที่ 7)
+  assert.equal(summarizeGroup(trait, { ...all("3"), trait_8: "2" }), "3");
   assert.equal(summarizeGroup(trait, { ...all("3"), trait_8: undefined }), null);
   const act = ASSESSMENT_GROUPS.find((g) => g.key === "act");
-  assert.equal(summarizeGroup(act, { act_guidance: "ผ", act_scout: "ผ", act_club: "ผ", act_social: "มผ" }), "มผ");
+  assert.equal(summarizeGroup(act, { act_social_t: "มผ" }), "มผ");
 });

@@ -4,7 +4,7 @@ import {
   assessmentsFor, absenceCounts, studentName, isPrimaryGrade, compareGrade,
 } from "../lib/data.js";
 import { courseOverview } from "./admin.js";
-import { listAbsences } from "./homeroom.js";
+import { listAbsences, commentsFor } from "./homeroom.js";
 import { weightedGPA, NUMERIC_GRADES } from "../../public/js/grading.js";
 
 export async function handleMe(request, env, user, url) {
@@ -46,13 +46,14 @@ async function roomReport(env, year, grade, room, onlyStudent) {
   let roster = await roomRoster(env, year.id, grade, room);
   if (onlyStudent) roster = roster.filter((s) => s.id === onlyStudent);
   const ids = roster.map((s) => s.id);
-  const [grades, assessments, absences, settings, homeroom] = await Promise.all([
+  const [grades, assessments, absences, settings, homeroom, comments] = await Promise.all([
     yearResultsForStudents(env, year.id, grade, ids),
     assessmentsFor(env, year.id, ids),
     absenceCounts(env, year.id, ids),
     getSettings(env, year.id),
     env.DB.prepare("SELECT u.full_name FROM gr_homerooms h JOIN users u ON u.id = h.user_id WHERE h.academic_year_id = ? AND h.grade_level = ? AND h.classroom = ?")
       .bind(year.id, grade, room).all().then((r) => r.results.map((x) => x.full_name)),
+    commentsFor(env, year.id, ids),
   ]);
   return {
     year, grade, room, settings, homeroom_teachers: homeroom,
@@ -60,7 +61,7 @@ async function roomReport(env, year, grade, room, onlyStudent) {
       id: s.id, number: s.number, student_code: s.student_code, national_id: s.national_id, name: studentName(s),
       birth_date: s.birth_date, gender: s.gender, enrollment_status: s.enrollment_status,
       subjects: grades[s.id] || [], gpa: weightedGPA(grades[s.id] || []),
-      assessments: assessments[s.id] || {}, absent_days: absences[s.id] || 0,
+      assessments: assessments[s.id] || {}, absent_days: absences[s.id] || 0, comments: comments[s.id] || {},
     })),
   };
 }

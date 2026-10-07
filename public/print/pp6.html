@@ -10,7 +10,7 @@
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
 import { esc, params, get, toolbar, status, fmt, td, gradeOut, GRADE_TEXT } from "/print/print.js";
-import { ASSESSMENT_GROUPS, LEVEL_LABEL, summarizeGroup } from "/js/grading.js";
+import { ASSESSMENT_GROUPS, summarizeGroup, summaryText, activityResult } from "/js/grading.js";
 
 const p = params();
 const q = new URLSearchParams({ grade: p.get("grade") || "", room: p.get("room") || "" });
@@ -27,7 +27,7 @@ document.title = `ปพ.6 ${d.grade}-${d.room} ${d.year.year_be}`;
 const students = d.students.filter((x) => includeLeft || x.enrollment_status === "enrolled");
 if (!students.length) { status("ไม่มีนักเรียนในห้องนี้"); throw new Error("empty"); }
 
-const levelText = (g, v) => v == null ? "" : g.type === "pass" ? (v === "ผ" ? "ผ่าน" : "ไม่ผ่าน") : LEVEL_LABEL[v];
+const levelText = (g, v) => summaryText(g, v);
 
 function page(st) {
   const basic = st.subjects.filter((x) => x.subject_type === "basic");
@@ -55,8 +55,8 @@ function page(st) {
     </table>
     <table class="t tiny" style="font-size:14pt">
       <thead><tr><th>การประเมิน</th><th style="width:42mm">ผลการประเมิน</th></tr></thead>
-      <tbody>${ASSESSMENT_GROUPS.map((g) => g.type === "pass"
-        ? g.items.map(([k, label], i) => `<tr><td>${i === 0 ? `<b>${g.title}</b><br>` : ""}&nbsp;&nbsp;${esc(label)}</td><td class="c">${levelText(g, st.assessments[k])}</td></tr>`).join("")
+      <tbody>${ASSESSMENT_GROUPS.map((g) => g.type === "activity"
+        ? g.items.map(([k, label], i) => `<tr><td>${i === 0 ? `<b>${g.title}</b><br>` : ""}&nbsp;&nbsp;${esc(label)}</td><td class="c">${levelText(g, activityResult(k, st.assessments))}</td></tr>`).join("")
         : `<tr><td><b>${g.title}</b></td><td class="c">${levelText(g, summarizeGroup(g, st.assessments))}</td></tr>`).join("")}</tbody>
     </table>
     <div style="margin-top:3mm">จำนวนวันที่ขาดเรียน (ตามที่ครูประจำชั้นบันทึก) ${td(st.absent_days)} วัน</div>

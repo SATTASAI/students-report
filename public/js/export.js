@@ -1,6 +1,6 @@
 // ส่งออกผลการเรียนเป็น Excel / CSV (สร้างในเบราว์เซอร์ ไม่ส่งข้อมูลออกนอกระบบ)
 import { api, toast } from "/js/app.js";
-import { ASSESSMENT_GROUPS, summarizeGroup } from "/js/grading.js";
+import { ASSESSMENT_GROUPS, summarizeGroup, summaryText } from "/js/grading.js";
 
 let xlsxLoading;
 export function loadXlsx() {
@@ -28,7 +28,7 @@ export function roomSheetRows(data) {
   const rows = data.students.map((st) => {
     const by = Object.fromEntries(st.subjects.map((g) => [g.code, g.grade]));
     return [st.number ?? "", st.student_code, st.national_id || "", st.name, ...subjects.map((s) => by[s.code] ?? ""), st.gpa ?? "",
-      ...ASSESSMENT_GROUPS.map((g) => summarizeGroup(g, st.assessments) ?? ""), st.absent_days];
+      ...ASSESSMENT_GROUPS.map((g) => summaryText(g, summarizeGroup(g, st.assessments))), st.absent_days];
   });
   return [header, ...rows];
 }

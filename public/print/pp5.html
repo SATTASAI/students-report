@@ -15,7 +15,7 @@
 // ตัวเลขทุกตัวอ่านจากผลที่เซิร์ฟเวอร์คำนวณแล้ว (computed) — ไม่คำนวณคะแนนใหม่ในหน้านี้
 // ?course=ID = 1 วิชา, ?courses=1,2,3 หรือ ?grade=ป.4&room=2&year=ID = ทุกวิชาของห้องเป็นไฟล์เดียว
 import { esc, params, get, toolbar, status, fmt, td, gradeOut } from "/print/print.js";
-import { indicatorResult, effectiveScore, indicatorWord, ASSESSMENT_GROUPS, summarizeGroup, LEVEL_LABEL, NUMERIC_GRADES } from "/js/grading.js";
+import { indicatorResult, effectiveScore, indicatorWord, ASSESSMENT_GROUPS, summarizeGroup, summaryText, NUMERIC_GRADES } from "/js/grading.js";
 
 const q = params();
 let ids = [];
@@ -219,7 +219,7 @@ function book(d) {
           const v = d.assessments?.[x.id] || {};
           const sum = summarizeGroup(g, v);
           return `<tr><td class="c">${td(x.number ?? "")}</td><td class="c">${esc(td(x.student_code))}</td><td class="nm">${esc(x.name)}</td>
-            ${g.items.map(([k]) => `<td class="c">${v[k] == null ? "" : td(v[k])}</td>`).join("")}<td class="c">${sum == null ? "" : LEVEL_LABEL[sum]}</td></tr>`;
+            ${g.items.map(([k]) => `<td class="c">${v[k] == null ? "" : td(v[k])}</td>`).join("")}<td class="c">${summaryText(g, sum)}</td></tr>`;
         }).join("")}</tbody>
       </table>
       <div class="note">${g.items.map(([, label], i) => `${td(i + 1)}. ${esc(label)}`).join(" · ")}<br>ระดับ: ${td(3)} = ดีเยี่ยม, ${td(2)} = ดี, ${td(1)} = ผ่าน, ${td(0)} = ไม่ผ่าน · ประเมินโดยครูประจำชั้น</div>
