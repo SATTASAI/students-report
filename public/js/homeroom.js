@@ -138,7 +138,7 @@ function renderActivities(group) {
           return `<td class="chk-cell ${ok ? "" : "fail"}"><input type="checkbox" data-key="${key}" ${ok ? "checked" : ""} aria-label="${esc(s.name)} ${esc(label)} ${pl}"></td>`; }).join("")).join("")}
         <td class="calc" data-sum>${summaryCell(group, s.id)}</td></tr>`).join("")}</tbody>
     </table></div>
-    <p class="muted small" style="margin-top:10px">ช่องมีเครื่องหมาย = ผ่าน · ผลกิจกรรมผ่านเมื่อผ่านทั้งเวลาเรียนและจุดประสงค์ · ชุมนุมข้ามห้องจะให้ฝ่ายวิชาการจัดรายชื่อในรอบถัดไป</p>`;
+    <p class="muted small" style="margin-top:10px">ช่องมีเครื่องหมาย = ผ่าน · ผลกิจกรรมผ่านเมื่อผ่านทั้งเวลาเรียนและจุดประสงค์</p>`;
   document.getElementById("sheet").addEventListener("change", (e) => {
     const box = e.target;
     if (!box.dataset.key) return;
