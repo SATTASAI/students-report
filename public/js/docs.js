@@ -9,7 +9,7 @@ const Y = me.year.id;
 document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} · เอกสารทุกฉบับสร้างจากข้อมูลล่าสุดทุกครั้งที่กด · เปิดแล้วกด "พิมพ์ / บันทึกเป็น PDF"`;
 
 let data;
-try { data = await api(`/api/reports/docs?year=${Y}`); }
+try { data = await api(`/api/reports/docs?year=${Y}${me.role === "teacher" ? "&scope=mine" : ""}`); }
 catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; throw err; }
 
 const enc = encodeURIComponent;

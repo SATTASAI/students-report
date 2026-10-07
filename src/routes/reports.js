@@ -84,8 +84,10 @@ export async function handleReports(request, env, user, parts, method, url) {
     const [all, rooms, settings] = await Promise.all([courseOverview(env, year.id), listRooms(env, year.id), getSettings(env, year.id)]);
     const primary = rooms.filter((r) => isPrimaryGrade(r.grade_level));
     const key = (g, r) => `${g}/${r}`;
+    // ครูผู้สอน (หรือผู้ดูแลที่สลับมาดูในบทบาทครู ?scope=mine) เห็นเฉพาะห้องที่เป็นครูประจำชั้น + รายวิชาที่ตัวเองสอน
+    const asAdmin = user.is_admin && url.searchParams.get("scope") !== "mine";
     let full = new Set();
-    if (user.is_admin) full = new Set(primary.map((r) => key(r.grade_level, r.classroom)).filter((k) => !settings.pilot_rooms || settings.pilot_rooms.includes(k)));
+    if (asAdmin) full = new Set(primary.map((r) => key(r.grade_level, r.classroom)).filter((k) => !settings.pilot_rooms || settings.pilot_rooms.includes(k)));
     else {
       const { results } = await env.DB.prepare("SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?").bind(year.id, user.id).all();
       full = new Set(results.map((h) => key(h.grade_level, h.classroom)));
@@ -98,7 +100,7 @@ export async function handleReports(request, env, user, parts, method, url) {
       out.push({ grade_level: r.grade_level, classroom: r.classroom, students: r.students, full: full.has(k),
         courses: mine.map((c) => ({ id: c.id, code: c.code, name: c.name, status: c.status, item_count: c.item_count })) });
     }
-    return json({ year, rooms: out, school: !!user.is_admin });
+    return json({ year, rooms: out, school: asAdmin, scope: asAdmin ? "all" : "mine" });
   }
 
   // รายวิชาของห้องที่ผู้ใช้พิมพ์ ปพ.5 ได้ (ผู้ดูแล/ครูประจำชั้น = ทุกวิชา, ครูผู้สอน = วิชาที่สอน)

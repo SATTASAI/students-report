@@ -131,3 +131,19 @@ test("กิจกรรมพัฒนาผู้เรียน: ครูป
   await call("admin", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_t", value: "" }] }, { expect: 200 });
   assert.equal((await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.assessments[sid].act_club_t, undefined);
 });
+
+test("คลังเอกสาร: ครูเห็นเฉพาะห้องที่เป็นครูประจำชั้นและวิชาที่สอน ผู้ดูแลในบทบาทครูก็เหมือนกัน", async () => {
+  const { call } = await setup();
+  const mine = (await call("t1", "GET", "/api/reports/docs", null, { expect: 200 })).data;
+  assert.equal(mine.school, false);
+  assert.deepEqual(mine.rooms.map((r) => `${r.grade_level}/${r.classroom}`), ["ป.4/1"]);
+  assert.equal(mine.rooms[0].full, true);
+  const other = (await call("t2", "GET", "/api/reports/docs", null, { expect: 200 })).data;
+  assert.equal(other.rooms.length, 0);
+  const all = (await call("admin", "GET", "/api/reports/docs", null, { expect: 200 })).data;
+  assert.equal(all.school, true);
+  assert.ok(all.rooms.length > 1);
+  const asTeacher = (await call("admin", "GET", "/api/reports/docs?scope=mine", null, { expect: 200 })).data;
+  assert.equal(asTeacher.school, false);
+  assert.equal(asTeacher.rooms.length, 0);
+});

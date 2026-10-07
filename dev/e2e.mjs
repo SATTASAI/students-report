@@ -156,6 +156,9 @@ await t.waitForSelector("[data-del]");
 // คลังเอกสาร: ครูประจำชั้นเห็นเอกสารของห้อง และรายชื่อหนังสือแจ้งผู้ปกครอง
 await t.click('.side-nav a[href="/docs.html"]');
 await t.waitForSelector(".room-docs");
+const docRooms = await t.$$eval(".room-docs h2", (els) => els.map((e) => e.firstChild.textContent.trim()));
+if (JSON.stringify(docRooms) !== JSON.stringify(["ป.1/1"])) errors.push(`คลังเอกสารของครูต้องมีเฉพาะห้องตัวเอง ได้ ${docRooms}`);
+if (await t.$("#allXlsx")) errors.push("ครูไม่ควรเห็นเอกสารทั้งโรงเรียน");
 await t.click("[data-letters]");
 await t.waitForSelector("a[href*='absence-letter']");
 await shot(t, "08b-docs");
