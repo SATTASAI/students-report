@@ -118,11 +118,10 @@ function roleMenu(role, me) {
     { href: "/admin.html#subjects", icon: "list", label: "รายวิชา" },
     { href: "/admin.html#import", icon: "upload", label: "นำเข้าจาก Excel" },
     { href: "/admin.html#review", icon: "check", label: "ตรวจผลการเรียน" },
-    { href: "/admin.html#courses", icon: "people", label: "ครูผู้สอน / ส่งคืน" },
+    { href: "/admin.html#courses", icon: "people", label: "ครูผู้สอน" },
     { href: "/admin.html#homerooms", icon: "room", label: "ครูประจำชั้น" },
-    { href: "/admin.html#students", icon: "people", label: "รายชื่อนักเรียน" },
+    { href: "/admin.html#students", icon: "people", label: "นักเรียน" },
     { href: "/admin.html#calendar", icon: "clock", label: "ปฏิทินวันหยุด" },
-    { href: "/admin.html#moves", icon: "people", label: "นักเรียนย้ายเข้า/ย้ายออก" },
     { href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" },
     { href: "/admin.html#bank", icon: "bank", label: "คลังตัวชี้วัด" },
     { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม" },
@@ -136,9 +135,9 @@ function roleMenu(role, me) {
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   return [
-    { href: "/admin.html#start", icon: "flag", label: "ห้องที่เปิดใช้ระบบ" },
+    // ผู้ดูแลระบบสลับไปบทบาท "เจ้าหน้าที่วัดผล" เพื่อตั้งค่าปี/เกณฑ์ (ไม่ซ้ำเมนูไว้ที่นี่)
     { href: "/admin.html#people", icon: "key", label: "สิทธิ์ทีมวัดผล" },
-    { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม" },
+    { href: "/admin.html#sync", icon: "upload", label: "ดึงข้อมูลจากระบบทะเบียน" },
     { href: "/admin.html#audit", icon: "clock", label: "ประวัติการใช้งาน" },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
@@ -152,7 +151,9 @@ const sameItem = (href) => {
     const want = new URLSearchParams(href.split("?")[1].split("#")[0]), cur = new URLSearchParams(location.search);
     return [...want].every(([k, v]) => cur.get(k) === v);
   }
-  return hash ? location.hash === `#${hash}` : true;
+  const HASH_ALIAS = { moves: "students" }; // ส่วนย่อยของเมนูเดียวกัน
+  const cur = location.hash.slice(1);
+  return hash ? (cur === hash || HASH_ALIAS[cur] === hash) : true;
 };
 
 // โครงหน้าทุกหน้า: เมนูซ้าย (มือถือ/แท็บเล็ตเป็นลิ้นชัก) + สลับบทบาท + ปีการศึกษา

@@ -35,7 +35,7 @@ await a.click('.side-nav a[href="/admin.html#approve"]');
 await a.waitForFunction(() => document.getElementById("pageTitle")?.textContent === "อนุมัติผลการเรียน");
 await a.screenshot({ path: `${OUT}/role-exec-approve.png` });
 await a.selectOption("#roleSel", "admin");
-await a.waitForURL(/admin\.html#start/);
+await a.waitForURL(/admin\.html#people/);
 await a.click('.side-nav a[href="/admin.html#audit"]');
 await a.waitForFunction(() => document.getElementById("pageTitle")?.textContent === "ประวัติการใช้งาน");
 await a.screenshot({ path: `${OUT}/role-admin-audit.png` });

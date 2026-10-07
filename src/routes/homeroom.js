@@ -1,5 +1,5 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
-import { resolveYear, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday } from "../lib/data.js";
+import { resolveYear, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday, mirrorBody } from "../lib/data.js";
 import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
 
 export const ATT_CODES = [["ข", "ขาดเรียน"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]];
@@ -127,6 +127,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
           .bind(year.id, sid, round, w, h, user.id));
     }
     await batchAll(env, stmts);
+    await mirrorBody(env, year.id, [...new Set(changes.map((c) => Number(c.student_id)))]);
     return json({ ok: true, saved: stmts.length });
   }
 

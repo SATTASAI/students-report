@@ -189,7 +189,7 @@ test("นำเข้าข้อมูลได้เฉพาะผู้ด�
   env.DB.raw.prepare("UPDATE users SET role = 'executive' WHERE id = 1").run();
   await call("admin", "GET", "/api/admin/subjects", null, { expect: 200 });
   for (const [path, body] of [["/api/admin/import/subjects", { rows: [row] }], ["/api/admin/subjects/copy", { from_year: 1 }],
-    ["/api/admin/homerooms/import", {}], ["/api/admin/indicator-bank/import", { rows: [] }]]) {
+    ["/api/admin/sync", { what: "homerooms" }], ["/api/roster/import", { rows: [] }], ["/api/admin/indicator-bank/import", { rows: [] }]]) {
     await call("admin", "POST", path, body, { expect: 403 });
   }
   assert.equal((await call("admin", "GET", "/api/me", null, { expect: 200 })).data.user.can_import, false);

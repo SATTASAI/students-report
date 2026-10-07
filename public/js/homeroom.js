@@ -34,12 +34,13 @@ pp6.href = `/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}`;
 
 const hasMovers = data.students.some((s) => s.transfer_in_term > 1);
 const KINDER = /^อ\./.test(grade); // อนุบาล: ใช้เฉพาะบันทึกการมาเรียนและน้ำหนักส่วนสูง (การประเมินพัฒนาการ 4 ด้านจะตามมา)
-const TABS = KINDER ? [["attend", "บันทึกการมาเรียน"], ["body", "น้ำหนัก ส่วนสูง"]] : [...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["act", "กิจกรรมพัฒนาผู้เรียน"], ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"],
+const TABS = KINDER ? [["attend", "บันทึกการมาเรียน"], ["body", "น้ำหนัก ส่วนสูง"]] : [...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"],
   ...(hasMovers ? [["carry", "คะแนนยกมา (ย้ายเข้า)"]] : []), ["grades", "ผลการเรียนรวม"], ["attend", "บันทึกการมาเรียน"]];
 if (location.hash === "#carry" && hasMovers) tab = "carry";
 const tabs = document.getElementById("tabs");
 tabs.innerHTML = TABS.map(([k, label]) => `<button role="tab" data-tab="${k}">${label}</button>`).join("");
 if (tab === "absence") tab = "attend";
+if (tab === "act") tab = "trait"; // กิจกรรมพัฒนาผู้เรียนอยู่ที่เมนูซ้าย "กิจกรรมพัฒนาผู้เรียน" ที่เดียว
 if (!TABS.some(([k]) => k === tab)) tab = TABS[0][0];
 function renderTabs() {
   for (const b of tabs.querySelectorAll("button")) {

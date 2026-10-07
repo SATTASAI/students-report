@@ -403,3 +403,45 @@ export async function attendanceSummary(env, yearId, studentIds) {
   }
   return out;
 }
+
+// ---------- ข้อมูลที่ระบบทะเบียน (banpadeng-school-db) ใช้ร่วม ----------
+// ระบบเกรดเป็นที่แก้ข้อมูลที่เดียว (ครูประจำชั้น น้ำหนักส่วนสูง ข้อมูลนักเรียน) แล้วสะท้อนไปตารางของระบบทะเบียน
+// เพื่อให้หน้าของระบบทะเบียน (วิเคราะห์ผู้เรียน ข้อมูลนักเรียน) เห็นค่าเดียวกัน — ไม่ทำให้การบันทึกหลักล้มถ้าตารางนั้นไม่มี
+async function tableExists(env, name) {
+  return !!(await env.DB.prepare("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?").bind(name).first().catch(() => null));
+}
+
+// ครูประจำชั้น → learner_class_assignments (ทุกภาคเรียนของปีนั้น)
+export async function mirrorHomerooms(env, yearId, rooms, byUserId) {
+  try {
+    if (!(await tableExists(env, "learner_class_assignments"))) return;
+    const { results: terms } = await env.DB.prepare("SELECT id FROM academic_terms WHERE academic_year_id = ?").bind(yearId).all();
+    if (!terms.length) return;
+    const stmts = [];
+    for (const r of rooms) for (const t of terms) {
+      stmts.push(env.DB.prepare("DELETE FROM learner_class_assignments WHERE academic_term_id = ? AND grade_level = ? AND classroom = ?").bind(t.id, r.grade, r.classroom));
+      for (const uid of r.userIds) stmts.push(env.DB.prepare(
+        "INSERT OR IGNORE INTO learner_class_assignments (academic_term_id, grade_level, classroom, teacher_user_id, assigned_by) VALUES (?,?,?,?,?)"
+      ).bind(t.id, r.grade, r.classroom, uid, byUserId));
+    }
+    for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
+  } catch (err) { console.warn("mirrorHomerooms", err?.message); }
+}
+
+// น้ำหนักส่วนสูงครั้งล่าสุดของปี → student_details.weight_kg / height_cm
+export async function mirrorBody(env, yearId, studentIds) {
+  try {
+    if (!studentIds.length || !(await tableExists(env, "student_details"))) return;
+    const stmts = [];
+    for (const sid of studentIds) {
+      const last = await env.DB.prepare(
+        "SELECT weight, height FROM gr_body WHERE academic_year_id = ? AND student_id = ? AND (weight IS NOT NULL OR height IS NOT NULL) ORDER BY round DESC LIMIT 1"
+      ).bind(yearId, sid).first();
+      if (!last) continue;
+      stmts.push(env.DB.prepare(`INSERT INTO student_details (student_id, weight_kg, height_cm, updated_at) VALUES (?,?,?,datetime('now'))
+        ON CONFLICT(student_id) DO UPDATE SET weight_kg = COALESCE(excluded.weight_kg, student_details.weight_kg),
+          height_cm = COALESCE(excluded.height_cm, student_details.height_cm), updated_at = datetime('now')`).bind(sid, last.weight, last.height));
+    }
+    for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
+  } catch (err) { console.warn("mirrorBody", err?.message); }
+}

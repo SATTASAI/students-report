@@ -1,5 +1,5 @@
 import { json, readJson, fail, requireAdmin, intParam, text, audit, batchAll, HttpError, requireImporter } from "../lib/http.js";
-import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade, isSchoolGrade } from "../lib/data.js";
+import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade, isSchoolGrade, mirrorHomerooms } from "../lib/data.js";
 
 export const LEARNING_AREAS = [
   "ภาษาไทย", "คณิตศาสตร์", "วิทยาศาสตร์และเทคโนโลยี", "สังคมศึกษา ศาสนาและวัฒนธรรม",
@@ -203,6 +203,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
           env.DB.prepare("DELETE FROM gr_homerooms WHERE academic_year_id = ? AND grade_level = ? AND classroom = ?").bind(year.id, p.grade, p.classroom),
           ...p.teacherIds.map((t) => env.DB.prepare("INSERT INTO gr_homerooms (academic_year_id, grade_level, classroom, user_id) VALUES (?,?,?,?)").bind(year.id, p.grade, p.classroom, t)),
         ]));
+        await mirrorHomerooms(env, year.id, plan.map((p) => ({ grade: p.grade, classroom: p.classroom, userIds: p.teacherIds })), user.id);
       } else {
         // สร้างรายวิชาของห้องให้ถ้ายังไม่มี แล้วแทนที่ครูผู้สอนด้วยรายชื่อในไฟล์
         await batchAll(env, plan.map((p) => env.DB.prepare("INSERT OR IGNORE INTO gr_courses (subject_id, classroom) VALUES (?, ?)").bind(p.subjectId, p.classroom)));
@@ -452,22 +453,65 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         env.DB.prepare("DELETE FROM gr_homerooms WHERE academic_year_id = ? AND grade_level = ? AND classroom = ?").bind(year.id, grade, room),
         ...ids.map((t) => env.DB.prepare("INSERT INTO gr_homerooms (academic_year_id, grade_level, classroom, user_id) VALUES (?,?,?,?)").bind(year.id, grade, room, t)),
       ]);
+      await mirrorHomerooms(env, year.id, [{ grade, classroom: room, userIds: ids }], user.id);
       await audit(env, user, "homeroom.set", { year: year.id, grade, room, ids });
       return json({ ok: true });
     }
-    if (method === "POST" && idPart === "import") {
-      // ดึงครูประจำชั้นจากหน้า "วิเคราะห์ผู้เรียน" ของระบบบริหารโรงเรียน (learner_class_assignments)
+  }
+
+  // ---------- ดึงข้อมูลล่าสุดจากระบบทะเบียน (เฉพาะ superadmin) ----------
+  // ระบบเกรดเป็นที่แก้ข้อมูลที่เดียว ระบบทะเบียนแก้ไม่ได้ — ปุ่มนี้ใช้เมื่อต้องการนำข้อมูลเดิมในระบบทะเบียนมาทับ
+  if (section === "sync") {
+    if (user.role !== "superadmin") fail(403, "ดึงข้อมูลจากระบบทะเบียนได้เฉพาะผู้ดูแลระบบ (superadmin)");
+    const year = await resolveYear(env, url.searchParams.get("year"));
+    const regHomerooms = async () => {
+      const ok = await env.DB.prepare("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='learner_class_assignments'").first();
+      if (!ok) return [];
+      const { results } = await env.DB.prepare(
+        `SELECT DISTINCT a.grade_level, a.classroom, a.teacher_user_id AS user_id FROM learner_class_assignments a
+           JOIN academic_terms t ON t.id = a.academic_term_id JOIN users u ON u.id = a.teacher_user_id AND u.status = 'active'
+          WHERE t.academic_year_id = ? AND t.term_number = (SELECT MAX(t2.term_number) FROM learner_class_assignments a2 JOIN academic_terms t2 ON t2.id = a2.academic_term_id WHERE t2.academic_year_id = ?)`
+      ).bind(year.id, year.id).all();
+      return results.filter((r) => isSchoolGrade(r.grade_level));
+    };
+    const regBody = async () => {
+      const { results } = await env.DB.prepare(
+        `SELECT d.student_id, d.weight_kg, d.height_cm FROM student_details d
+          WHERE (d.weight_kg > 0 OR d.height_cm > 30)
+            AND d.student_id IN (SELECT student_id FROM student_enrollments e JOIN academic_terms t ON t.id = e.academic_term_id WHERE t.academic_year_id = ? AND e.status = 'enrolled')
+            AND NOT EXISTS (SELECT 1 FROM gr_body b WHERE b.academic_year_id = ? AND b.student_id = d.student_id)`
+      ).bind(year.id, year.id).all().catch(() => ({ results: [] }));
+      return results;
+    };
+    if (method === "GET") {
+      const reg = await regHomerooms();
+      const { results: cur } = await env.DB.prepare("SELECT grade_level, classroom, user_id FROM gr_homerooms WHERE academic_year_id = ?").bind(year.id).all();
+      const key = (r) => `${r.grade_level}/${r.classroom}#${r.user_id}`;
+      const a = new Set(reg.map(key)), c = new Set(cur.map(key));
+      return json({ year, homerooms: { registry: reg.length, current: cur.length, add: [...a].filter((k) => !c.has(k)).length, remove: [...c].filter((k) => !a.has(k)).length },
+        body: { fill: (await regBody()).length } });
+    }
+    if (method === "POST") {
       const b = await readJson(request);
-      const year = await resolveYear(env, b.year);
-      const r = await env.DB.prepare(
-        `INSERT OR IGNORE INTO gr_homerooms (academic_year_id, grade_level, classroom, user_id)
-         SELECT DISTINCT t.academic_year_id, a.grade_level, a.classroom, a.teacher_user_id
-           FROM learner_class_assignments a JOIN academic_terms t ON t.id = a.academic_term_id
-           JOIN users u ON u.id = a.teacher_user_id AND u.status = 'active'
-          WHERE t.academic_year_id = ? AND (a.grade_level LIKE 'ป.%' OR a.grade_level LIKE 'อ.%')`
-      ).bind(year.id).run().catch(() => ({ meta: { changes: 0 } }));
-      await audit(env, user, "homeroom.import", { year: year.id, added: r.meta?.changes ?? 0 });
-      return json({ ok: true, added: r.meta?.changes ?? 0 });
+      if (b.what === "homerooms") {
+        const reg = await regHomerooms();
+        if (!reg.length) fail(409, "ระบบทะเบียนยังไม่มีข้อมูลครูประจำชั้นของปีนี้ — ไม่ได้เปลี่ยนอะไร");
+        await env.DB.batch([
+          env.DB.prepare("DELETE FROM gr_homerooms WHERE academic_year_id = ?").bind(year.id),
+          ...reg.map((r) => env.DB.prepare("INSERT OR IGNORE INTO gr_homerooms (academic_year_id, grade_level, classroom, user_id) VALUES (?,?,?,?)").bind(year.id, r.grade_level, r.classroom, r.user_id)),
+        ]);
+        await audit(env, user, "sync.homerooms", { year: year.id, rows: reg.length });
+        return json({ ok: true, rows: reg.length });
+      }
+      if (b.what === "body") {
+        const rows = await regBody();
+        for (let i = 0; i < rows.length; i += 90) await env.DB.batch(rows.slice(i, i + 90).map((r) => env.DB.prepare(
+          "INSERT OR IGNORE INTO gr_body (academic_year_id, student_id, round, weight, height, updated_by) VALUES (?,?,1,?,?,?)"
+        ).bind(year.id, r.student_id, r.weight_kg > 0 && r.weight_kg < 200 ? r.weight_kg : null, r.height_cm > 30 && r.height_cm < 230 ? r.height_cm : null, user.id)));
+        await audit(env, user, "sync.body", { year: year.id, rows: rows.length });
+        return json({ ok: true, rows: rows.length });
+      }
+      fail(400, "เลือกข้อมูลที่จะดึง");
     }
   }
 

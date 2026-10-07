@@ -176,8 +176,11 @@ test("ครูประจำชั้น: ประเมินคุณลั
   const { call } = await setup();
   const { courses } = await prepareYear(call);
   await call("t1", "GET", "/api/homeroom?grade=ป.1&room=1", null, { expect: 403 });
-  const imp = await call("admin", "POST", "/api/admin/homerooms/import", {}, { expect: 200 });
-  assert.equal(imp.data.added, 1);
+  // ดึงครูประจำชั้นจากระบบทะเบียน: เฉพาะ superadmin (admin ในชุดทดสอบเป็น superadmin)
+  const pre = (await call("admin", "GET", "/api/admin/sync", null, { expect: 200 })).data;
+  assert.equal(pre.homerooms.add, 1);
+  const imp = await call("admin", "POST", "/api/admin/sync", { what: "homerooms" }, { expect: 200 });
+  assert.equal(imp.data.rows, 1);
   const hr = (await call("t1", "GET", "/api/homeroom?grade=ป.1&room=1", null, { expect: 200 })).data;
   const sid = hr.students[0].id;
   await call("t1", "PUT", "/api/homeroom/assessments?grade=ป.1&room=1", { changes: [{ student_id: sid, item_key: "trait_1", value: "3" }] }, { expect: 200 });

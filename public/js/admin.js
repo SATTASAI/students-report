@@ -16,14 +16,15 @@ const CAN_IMPORT = !!me.user.can_import; // นำเข้าข้อมูล
 if (!CAN_IMPORT) for (const t of ["import", "bank"]) document.querySelector(`#tabs [data-tab="${t}"]`)?.remove();
 const yq = `year=${Y}`;
 main.hidden = false;
-document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} — ใช้ข้อมูลห้องเรียนและนักเรียนจากระบบบริหารโรงเรียน`;
+document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} — ข้อมูลนักเรียน ครูประจำชั้น และน้ำหนักส่วนสูง แก้ที่ระบบนี้ที่เดียว (ระบบทะเบียนแสดงตาม)`;
 const GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
 // ส่วนของหน้า เลือกจากเมนูซ้ายผ่าน #hash
 const SECTIONS = {
-  start: "เริ่มต้นปีการศึกษา", subjects: "รายวิชา", import: "นำเข้าจาก Excel", courses: "ครูผู้สอน / ส่งคืน", homerooms: "ครูประจำชั้น",
-  students: "รายชื่อนักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียนย้ายเข้า/ย้ายออก", review: "ตรวจผลการเรียน", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน",
+  start: "เริ่มต้นปีการศึกษา", subjects: "รายวิชา", import: "นำเข้าจาก Excel", courses: "ครูผู้สอน", homerooms: "ครูประจำชั้น",
+  students: "นักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียน", sync: "ดึงข้อมูลจากระบบทะเบียน", review: "ตรวจผลการเรียน", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน",
 };
-const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves", "students", "calendar"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super));
+const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves", "students", "calendar"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super)
+  && !(k === "sync" && me.user.role !== "superadmin"));
 let tab = hashTab(allowed, me.role === "exec" && allowed.includes("approve") ? "approve" : "start");
 document.getElementById("tabs")?.classList.add("by-menu");
 if (location.hash === "#activity") location.replace("/activities.html"); // ลิงก์เก่า
@@ -39,7 +40,7 @@ function renderTabs() {
 async function render() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   try {
-    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), bank: renderBank, settings: renderSettings, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit })[tab]();
+    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), sync: renderSync, bank: renderBank, settings: renderSettings, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit })[tab]();
   } catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong>${esc(err.message)}</div>`; }
 }
 
@@ -111,7 +112,8 @@ async function renderStart() {
 }
 
 // ---------- นำเข้าจาก Excel ----------
-let importKind = "subjects";
+let importKind = sessionStorage.getItem("sr-import-kind") || "subjects";
+document.addEventListener("click", (e) => { const a = e.target.closest?.("[data-kind-link]"); if (a) sessionStorage.setItem("sr-import-kind", a.dataset.kindLink); });
 async function renderImport() {
   const spec = IMPORT_KINDS[importKind];
   view.innerHTML = `<div class="panel">
@@ -124,7 +126,8 @@ async function renderImport() {
     <div class="actions" style="margin-top:10px"><label class="btn">เลือกไฟล์ Excel / CSV<input type="file" id="fileIn" accept=".xlsx,.xls,.csv" hidden></label>
       <button class="btn primary" id="checkBtn">ตรวจข้อมูล</button><span class="muted small" id="pasteInfo"></span></div>
     <div id="result" style="margin-top:14px"></div></div>`;
-  for (const b of view.querySelectorAll("[data-kind]")) b.onclick = () => { importKind = b.dataset.kind; render(); };
+  if (!IMPORT_KINDS[importKind]) importKind = "subjects";
+  for (const b of view.querySelectorAll("[data-kind]")) b.onclick = () => { importKind = b.dataset.kind; sessionStorage.setItem("sr-import-kind", importKind); render(); };
   const box = document.getElementById("pasteBox"), info = document.getElementById("pasteInfo"), out = document.getElementById("result");
   const current = () => gridToRows(importKind, parseGrid(box.value));
   box.oninput = () => { const { rows, header } = current(); info.textContent = rows.length ? `${rows.length} แถว${header ? " (พบแถวหัวตาราง)" : ""}` : ""; out.innerHTML = ""; };
@@ -142,7 +145,7 @@ async function renderImport() {
     e.target.value = "";
   };
   document.getElementById("tplDl").onclick = () => downloadTemplate(importKind).catch(showError);
-  const send = async (dry) => api(`/api/admin/import/${importKind}`, { method: "POST", body: { year: Y, rows: current().rows, dry_run: dry } });
+  const send = async (dry) => api(spec.endpoint ? `${spec.endpoint}?${yq}` : `/api/admin/import/${importKind}`, { method: "POST", body: { year: Y, rows: current().rows, dry_run: dry } });
   document.getElementById("checkBtn").onclick = async () => {
     const { rows } = current();
     if (!rows.length) { toast("ยังไม่มีข้อมูล — วางตารางจาก Excel ก่อน", "bad"); return; }
@@ -177,6 +180,8 @@ async function downloadTemplate(kind) {
     const [{ courses }, { settings }] = await Promise.all([api(`/api/admin/courses?${yq}`), api(`/api/admin/settings?${yq}`)]);
     rows = courses.filter((c) => !settings.pilot_rooms || settings.pilot_rooms.includes(`${c.grade_level}/${c.classroom}`))
       .map((c) => [`${c.grade_level}/${c.classroom}`, c.code, c.name, c.teachers.map((t) => t.full_name).join(", ")]);
+  } else if (kind === "students") {
+    rows = [["10101", "เด็กหญิง", "ตัวอย่าง", "นามสกุลตัวอย่าง", "ญ", "1234567890123", "2019-05-31", "อ.1/1"]];
   } else {
     const [{ rooms }, { settings }] = await Promise.all([api(`/api/admin/homerooms?${yq}`), api(`/api/admin/settings?${yq}`)]);
     rows = rooms.filter((r) => !settings.pilot_rooms || settings.pilot_rooms.includes(`${r.grade_level}/${r.classroom}`))
@@ -276,14 +281,8 @@ async function renderCourses() {
       <td>${c.teachers.length ? c.teachers.map((t) => esc(t.full_name)).join(", ") : '<span class="tag warn">ยังไม่กำหนด</span>'}</td>
       <td style="min-width:120px"><span class="small muted">${c.progress}%</span><div class="meter ${c.progress >= 100 ? "done" : ""}"><i style="width:${c.progress}%"></i></div></td>
       <td>${statusTag(c)}</td>
-      <td class="actions"><button class="btn small" data-teach="${c.id}">ครูผู้สอน</button>${c.locked ? `<button class="btn small" data-unlock="${c.id}">ส่งคืน</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
-    ${inRoom.some((c) => c.status === "submitted") ? `<div class="actions" style="margin-top:12px"><button class="btn primary" id="reviewRoom">ตรวจแล้วทุกวิชาที่ส่งของห้อง ${selRoom} (${inRoom.filter((c) => c.status === "submitted").length}) → ส่งผู้บริหาร</button></div>` : ""}</div>`;
-  const ar = document.getElementById("reviewRoom");
-  if (ar) ar.onclick = async () => {
-    const ids = inRoom.filter((c) => c.status === "submitted").map((c) => c.id);
-    if (!(await confirmBox("ตรวจผลการเรียนแล้ว", `ยืนยันว่าตรวจ ${ids.length} รายวิชาที่ส่งแล้วของห้อง ${selRoom} และส่งต่อให้ผู้บริหารอนุมัติ`, "ตรวจแล้ว"))) return;
-    try { const r = await api("/api/admin/courses/review", { method: "POST", body: { course_ids: ids } }); toast(`ส่งต่อผู้บริหาร ${r.reviewed} รายวิชา`); render(); } catch (err) { showError(err); }
-  };
+      <td class="actions"><button class="btn small" data-teach="${c.id}">ครูผู้สอน</button></td></tr>`).join("")}</tbody></table></div>
+    <p class="muted small" style="margin-top:10px">ตรวจผล ส่งคืนให้ครูแก้ และส่งต่อผู้บริหาร ทำที่เมนู <a href="/admin.html#review">ตรวจผลการเรียน</a></p></div>`;
   for (const b of view.querySelectorAll("[data-room]")) b.onclick = () => { selRoom = b.dataset.room; sessionStorage.setItem("sr-admin-room", selRoom); render(); };
   const teacherChecks = (chosen) => `<input type="search" placeholder="ค้นหาชื่อครู" data-filter style="margin-bottom:10px">
     <div style="display:grid;gap:4px;max-height:340px;overflow:auto">${list.map((t) => `<label class="check" data-name="${esc(t.full_name)}"><input type="checkbox" name="t${t.id}" ${chosen.includes(t.id) ? "checked" : ""}> ${esc(t.full_name)}</label>`).join("")}</div>`;
@@ -294,12 +293,6 @@ async function renderCourses() {
     if (!r.ok) return;
     const ids = list.filter((t) => r.data[`t${t.id}`]).map((t) => t.id);
     try { await api(`/api/admin/courses/${c.id}/teachers`, { method: "PUT", body: { user_ids: ids } }); toast("บันทึกแล้ว"); render(); } catch (err) { showError(err); }
-  };
-  for (const b of view.querySelectorAll("[data-unlock]")) b.onclick = async () => {
-    const r = await dialog({ title: "ส่งคืนให้ครูแก้", okText: "ส่งคืน", okClass: "danger",
-      body: `<label class="field">เหตุผล / สิ่งที่ต้องแก้ (ครูจะเห็นข้อความนี้)<textarea name="note" required minlength="3" maxlength="500"></textarea></label>` });
-    if (!r.ok) return;
-    try { await api(`/api/admin/courses/${b.dataset.unlock}/return`, { method: "POST", body: { note: r.data.note } }); toast("ส่งคืนแล้ว"); render(); } catch (err) { showError(err); }
   };
   document.getElementById("assignAll").onclick = async () => {
     const r = await dialog({
@@ -318,14 +311,12 @@ async function renderCourses() {
 async function renderHomerooms() {
   const [{ rooms }, list] = await Promise.all([api(`/api/admin/homerooms?${yq}`), teachers()]);
   view.innerHTML = `<div class="panel">
-    <div class="panel-head"><h2>ครูประจำชั้น</h2>${CAN_IMPORT ? '<button class="btn" id="importHr">ดึงจากหน้าวิเคราะห์ผู้เรียน (ระบบบริหารฯ)</button>' : ""}</div>
+    <div class="panel-head"><h2>ครูประจำชั้น</h2></div>
+    <p class="muted small">กำหนดที่นี่ที่เดียว (หรือนำเข้าจาก Excel) — ระบบส่งข้อมูลไปหน้าวิเคราะห์ผู้เรียนของระบบทะเบียนให้อัตโนมัติ</p>
     <div class="table-wrap"><table class="list"><thead><tr><th>ห้อง</th><th class="num">นักเรียน</th><th>ครูประจำชั้น</th><th></th></tr></thead>
     <tbody>${rooms.map((r, i) => `<tr><td><a href="/homeroom.html?grade=${encodeURIComponent(r.grade_level)}&room=${encodeURIComponent(r.classroom)}&year=${Y}">${esc(r.grade_level)}/${esc(r.classroom)}</a></td><td class="num">${r.students}</td>
       <td>${r.teachers.length ? r.teachers.map((t) => esc(t.full_name)).join(", ") : '<span class="tag warn">ยังไม่กำหนด</span>'}</td>
       <td><button class="btn small" data-i="${i}">กำหนด</button></td></tr>`).join("")}</tbody></table></div></div>`;
-  if (CAN_IMPORT) document.getElementById("importHr").onclick = async () => {
-    try { const r = await api("/api/admin/homerooms/import", { method: "POST", body: { year: Y } }); toast(r.added ? `เพิ่ม ${r.added} รายการ` : "ไม่มีข้อมูลใหม่ให้ดึง"); render(); } catch (err) { showError(err); }
-  };
   for (const b of view.querySelectorAll("[data-i]")) b.onclick = async () => {
     const r0 = rooms[Number(b.dataset.i)];
     const chosen = r0.teachers.map((t) => t.id);
@@ -380,6 +371,11 @@ async function renderCalendar() {
 
 // ---------- รายชื่อนักเรียน: แก้ชื่อ เพศ ห้อง เลขที่ (เขียนลงทะเบียนเดียวกับระบบบริหารโรงเรียน) ----------
 let rosterRoom = sessionStorage.getItem("sr-admin-roster") || "";
+// เมนู "นักเรียน" มี 2 ส่วน: รายชื่อตามห้อง (แก้ข้อมูล) และ ย้ายเข้า/ย้ายออก
+const studentTabs = (cur) => `<div class="tabs" role="tablist" style="margin-bottom:14px">
+  <a role="tab" class="tab-link" href="#students" aria-selected="${cur === "students"}">รายชื่อตามห้อง</a>
+  <a role="tab" class="tab-link" href="#moves" aria-selected="${cur === "moves"}">ย้ายเข้า / ย้ายออก / ออกกลางคัน</a>
+  <a role="tab" class="tab-link" href="/admin.html#import" data-kind-link="students">นำเข้าจาก Excel</a></div>`;
 async function renderStudents() {
   const base = await api(`/api/roster?${yq}`);
   if (!base.rooms.length) { view.innerHTML = `<div class="panel empty"><strong>ยังไม่มีห้องเรียน</strong>เพิ่มนักเรียนที่ระบบบริหารโรงเรียนก่อน</div>`; return; }
@@ -388,18 +384,20 @@ async function renderStudents() {
   const [g, rm] = rosterRoom.split("/");
   const d = await api(`/api/roster?${yq}&grade=${encodeURIComponent(g)}&room=${encodeURIComponent(rm)}`);
   const roomOpts = (cur) => d.rooms.map((r) => `<option value="${esc(key(r))}" ${key(r) === cur ? "selected" : ""}>${esc(key(r))}</option>`).join("");
-  view.innerHTML = `<div class="panel">
+  view.innerHTML = `${studentTabs("students")}<div class="panel">
     <div class="panel-head"><div class="actions">${d.rooms.map((r) => `<button class="btn small ${key(r) === rosterRoom ? "primary" : ""}" data-rr="${esc(key(r))}">${esc(key(r))}</button>`).join("")}</div></div>
-    <p class="muted small">แก้แล้วบันทึกทันที และแก้ในระบบบริหารโรงเรียนด้วย (ข้อมูลชุดเดียวกัน) · เลขที่ว่าง = เรียงอัตโนมัติ (${"ชายก่อนหญิง แล้วตามเลขประจำตัว"} — เปลี่ยนวิธีเรียงได้ที่ "เกณฑ์และผู้ลงนาม") ใส่เลขที่เองเพื่อตรึงไว้
-      · ย้ายห้องภายในโรงเรียน: เลือกห้องใหม่ · นักเรียนย้ายออก/ย้ายเข้าใช้เมนู "นักเรียนย้ายเข้า/ย้ายออก"</p>
-    <div class="table-wrap"><table class="list roster-edit"><thead><tr><th class="num">เลขที่</th><th>เลขประจำตัว</th><th>คำนำหน้า</th><th>ชื่อ</th><th>นามสกุล</th><th>เพศ</th><th>ห้อง</th></tr></thead>
+    <p class="muted small">ข้อมูลนักเรียนแก้ที่นี่ที่เดียว (ระบบทะเบียนแสดงตามนี้) แก้แล้วบันทึกทันที · เลขที่ว่าง = เรียงอัตโนมัติ (${"ชายก่อนหญิง แล้วตามเลขประจำตัว"} — เปลี่ยนวิธีเรียงได้ที่ "เกณฑ์และผู้ลงนาม") ใส่เลขที่เองเพื่อตรึงไว้
+      · ย้ายห้องภายในโรงเรียน: เลือกห้องใหม่ · นักเรียนย้ายออก/ย้ายเข้าใช้แท็บ "ย้ายเข้า / ย้ายออก"</p>
+    <div class="table-wrap"><table class="list roster-edit"><thead><tr><th class="num">เลขที่</th><th>เลขประจำตัว</th><th>คำนำหน้า</th><th>ชื่อ</th><th>นามสกุล</th><th>เพศ</th><th>เลขประจำตัวประชาชน</th><th>วันเกิด</th><th>ห้อง</th></tr></thead>
     <tbody>${d.students.map((s) => `<tr data-sid="${s.id}">
       <td class="num"><input data-f="number" inputmode="numeric" value="${s.manual_number ?? ""}" placeholder="${s.number ?? ""}" aria-label="เลขที่ ${esc(s.name)}" style="width:56px;text-align:center"></td>
       <td>${esc(s.student_code)}${s.transfer_in_term ? ' <span class="tag">ย้ายเข้า</span>' : ""}</td>
       <td><input data-f="name_prefix" list="prefixList" value="${esc(s.name_prefix)}" style="width:96px" aria-label="คำนำหน้า"></td>
-      <td><input data-f="first_name" value="${esc(s.first_name)}" aria-label="ชื่อ"></td>
-      <td><input data-f="last_name" value="${esc(s.last_name)}" aria-label="นามสกุล"></td>
+      <td><input data-f="first_name" value="${esc(s.first_name)}" aria-label="ชื่อ" style="min-width:130px"></td>
+      <td><input data-f="last_name" value="${esc(s.last_name)}" aria-label="นามสกุล" style="min-width:130px"></td>
       <td><select data-f="gender" style="width:70px" aria-label="เพศ"><option value="">–</option><option ${s.gender === "ช" ? "selected" : ""} value="ช">ช</option><option ${s.gender === "ญ" ? "selected" : ""} value="ญ">ญ</option></select></td>
+      <td><input data-f="national_id" inputmode="numeric" maxlength="17" value="${esc(s.national_id)}" style="width:150px" aria-label="เลขประจำตัวประชาชน ${esc(s.name)}"></td>
+      <td><input data-f="birth_date" type="date" value="${esc(s.birth_date)}" style="width:150px" aria-label="วันเกิด ${esc(s.name)}"></td>
       <td><select data-f="room" style="width:96px" aria-label="ห้อง">${roomOpts(rosterRoom)}</select></td></tr>`).join("")}</tbody></table></div>
     <datalist id="prefixList">${d.prefixes.map((p) => `<option value="${esc(p)}">`).join("")}</datalist></div>`;
   for (const b of view.querySelectorAll("[data-rr]")) b.onclick = () => { rosterRoom = b.dataset.rr; sessionStorage.setItem("sr-admin-roster", rosterRoom); render(); };
@@ -429,7 +427,7 @@ async function renderMoves() {
   const m = await api(`/api/moves?${yq}`);
   const termSel = (name = "term_number") => `<label>ภาคเรียน<select name="${name}">${[1, 2].map((t) => `<option value="${t}" ${t === m.term_number ? "selected" : ""}>ภาคเรียนที่ ${t}</option>`).join("")}</select></label>`;
   const roomSel = () => `<label>เข้าเรียนห้อง<select name="room" required><option value="">เลือกห้อง</option>${m.rooms.map((r) => `<option value="${esc(r.grade_level)}|${esc(r.classroom)}">${esc(r.grade_level)}/${esc(r.classroom)}</option>`).join("")}</select></label>`;
-  view.innerHTML = `
+  view.innerHTML = `${studentTabs("moves")}
     <div class="panel">
       <div class="panel-head"><h2>ค้นหานักเรียน</h2><button class="btn primary" id="newKid">+ นักเรียนย้ายเข้าใหม่</button></div>
       <p class="muted small">นักเรียนที่ย้ายออกหรือออกกลางคันจะไม่แสดงในรายชื่อทุกหน้า แต่ระบบไม่ลบข้อมูล — ถ้ากลับมาเรียนอีก ให้ค้นหาแล้วกด "รับกลับเข้าเรียน" จะได้เลขประจำตัวเดิมและข้อมูลเดิมทั้งหมด
@@ -522,6 +520,26 @@ async function renderMoves() {
   for (const b of view.querySelectorAll("[data-undo]")) b.onclick = async () => {
     if (!(await confirmBox("ยกเลิกรายการนี้", "นักเรียนจะกลับมาอยู่ในรายชื่อห้องเดิมพร้อมข้อมูลเดิม"))) return;
     try { await api(`/api/moves/${b.dataset.undo}/undo?${yq}`, { method: "POST", body: {} }); toast("ยกเลิกแล้ว"); renderMoves(); } catch (err) { showError(err); }
+  };
+}
+
+// ---------- ดึงข้อมูลล่าสุดจากระบบทะเบียน (superadmin) ----------
+async function renderSync() {
+  const p = await api(`/api/admin/sync?${yq}`);
+  view.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2>ดึงข้อมูลล่าสุดจากระบบทะเบียน</h2></div>
+    <p class="muted small">ข้อมูลนักเรียน ครูประจำชั้น และน้ำหนักส่วนสูง แก้ได้ที่ระบบรายงานผลการเรียนที่เดียว (ระบบทะเบียนแก้ไม่ได้)
+      ใช้ปุ่มด้านล่างเฉพาะเมื่อต้องการนำข้อมูลที่ค้างอยู่ในระบบทะเบียนมาใช้ · ชื่อ ห้อง และสถานะของนักเรียนเป็นตารางเดียวกันอยู่แล้ว ไม่ต้องดึง</p>
+    <div class="doc-grid">
+      <div class="doc-item"><b>ครูประจำชั้น</b><span class="muted small">จากหน้าวิเคราะห์ผู้เรียน (ภาคล่าสุดของปี) ${p.homerooms.registry} รายการ · ในระบบเกรด ${p.homerooms.current} รายการ
+        · จะเพิ่ม ${p.homerooms.add} ลบ ${p.homerooms.remove} — <b>แทนที่ครูประจำชั้นทั้งหมดของปีนี้</b></span>
+        <button class="btn small" data-sync="homerooms" ${p.homerooms.registry ? "" : "disabled"}>ดึงครูประจำชั้น</button></div>
+      <div class="doc-item"><b>น้ำหนัก ส่วนสูง</b><span class="muted small">นักเรียนที่ยังไม่มีข้อมูลในระบบเกรดปีนี้ ${p.body.fill} คน — ใส่เป็นครั้งที่ 1 (ไม่ทับข้อมูลที่ครูกรอกแล้ว)</span>
+        <button class="btn small" data-sync="body" ${p.body.fill ? "" : "disabled"}>ดึงน้ำหนักส่วนสูง</button></div>
+    </div></div>`;
+  for (const b of view.querySelectorAll("[data-sync]")) b.onclick = async () => {
+    if (!(await confirmBox("ดึงข้อมูลจากระบบทะเบียน", b.dataset.sync === "homerooms" ? "ครูประจำชั้นทั้งหมดของปีนี้ในระบบเกรดจะถูกแทนที่ด้วยข้อมูลจากระบบทะเบียน" : "เติมน้ำหนักส่วนสูงให้นักเรียนที่ยังไม่มีข้อมูล", "ดึงข้อมูล", b.dataset.sync === "homerooms"))) return;
+    try { const r = await api(`/api/admin/sync?${yq}`, { method: "POST", body: { what: b.dataset.sync } }); toast(`ดึงแล้ว ${r.rows} รายการ`); teachersCache = null; render(); } catch (err) { showError(err); }
   };
 }
 
@@ -627,11 +645,20 @@ async function renderApprove(mode = "approve") {
         <td><input type="checkbox" class="pick" value="${c.id}" aria-label="เลือก ${esc(c.code)}" style="width:18px;height:18px;min-height:0"></td>
         <td>${esc(c.code)}</td><td><a href="/course.html?id=${c.id}&year=${Y}">${esc(c.name)}</a>${c.edit_count ? ` <span class="tag warn" title="ฝ่ายวัดผลแก้ไขหลังส่ง">แก้ ${c.edit_count}</span>` : ""}</td>
         <td class="small">${c.teachers.map((t) => esc(t.full_name)).join(", ")}</td><td class="small muted">${esc(thaiTime(R ? c.submitted_at : c.reviewed_at))}</td>
-        <td class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/pp5.html?course=${c.id}">ตรวจ ปพ.5</a></td></tr>`).join("")}</tbody></table></div>`).join("")
+        <td class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/pp5.html?course=${c.id}">ตรวจ ปพ.5</a>${R ? `<button class="btn small" data-return="${c.id}">ส่งคืน</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`).join("")
       : `<div class="empty"><strong>${R ? "ไม่มีรายวิชารอตรวจ" : "ไม่มีรายวิชารออนุมัติ"}</strong>${R ? "เมื่อครูส่งผลแล้ว รายวิชาจะขึ้นที่นี่" : "เมื่อฝ่ายวัดผลตรวจแล้ว รายวิชาจะขึ้นที่นี่"}</div>`}
   </div>
-  <div class="panel"><div class="panel-head"><h2>${R ? "ตรวจแล้ว" : "อนุมัติแล้ว"} <span class="tag ok">${done.length}</span></h2></div>
-    <p class="muted small">${R ? "รายวิชาที่ตรวจแล้วรอผู้บริหารอนุมัติ ถ้าฝ่ายวัดผลแก้คะแนนหลังอนุมัติ รายวิชาจะกลับมารอผู้บริหารอนุมัติใหม่" : "ถ้าฝ่ายวัดผลแก้ผลหลังอนุมัติ รายวิชาจะกลับมาขึ้นในรายการรออนุมัติอีกครั้ง"}</p></div>`;
+  <div class="panel"><div class="panel-head"><h2>${R ? "ตรวจแล้ว / อนุมัติแล้ว" : "อนุมัติแล้ว"} <span class="tag ok">${done.length}</span></h2></div>
+    <p class="muted small">${R ? "รายวิชาที่ตรวจแล้วรอผู้บริหารอนุมัติ หรืออนุมัติแล้ว ถ้าฝ่ายวัดผลแก้คะแนนหลังอนุมัติ รายวิชาจะกลับมารอผู้บริหารอนุมัติใหม่ · ส่งคืนให้ครูแก้เองได้ทุกสถานะ" : "ถ้าฝ่ายวัดผลแก้ผลหลังอนุมัติ รายวิชาจะกลับมาขึ้นในรายการรออนุมัติอีกครั้ง"}</p>
+    ${R && done.length ? `<div class="table-wrap"><table class="list"><thead><tr><th>ห้อง</th><th>รหัส</th><th>วิชา</th><th>สถานะ</th><th></th></tr></thead><tbody>${done.map((c) => `<tr>
+      <td>${esc(c.grade_level)}/${esc(c.classroom)}</td><td>${esc(c.code)}</td><td><a href="/course.html?id=${c.id}&year=${Y}">${esc(c.name)}</a></td><td>${statusTag(c)}</td>
+      <td class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/pp5.html?course=${c.id}">ปพ.5</a><button class="btn small" data-return="${c.id}">ส่งคืน</button></td></tr>`).join("")}</tbody></table></div>` : ""}</div>`;
+  for (const b of view.querySelectorAll("[data-return]")) b.onclick = async () => {
+    const r = await dialog({ title: "ส่งคืนให้ครูแก้", okText: "ส่งคืน", okClass: "danger",
+      body: `<label class="field">เหตุผล / สิ่งที่ต้องแก้ (ครูจะเห็นข้อความนี้)<textarea name="note" required minlength="3" maxlength="500"></textarea></label>` });
+    if (!r.ok) return;
+    try { await api(`/api/admin/courses/${b.dataset.return}/return`, { method: "POST", body: { note: r.data.note } }); toast("ส่งคืนแล้ว"); render(); } catch (err) { showError(err); }
+  };
   const picks = () => [...view.querySelectorAll(".pick")];
   const sync = () => { const n = picks().filter((p) => p.checked).length; const b = document.getElementById("approveSel"); if (b) { b.disabled = !n; b.textContent = n ? `${verb}ที่เลือก (${n})` : `${verb}ที่เลือก`; } };
   for (const p of picks()) p.onchange = sync;

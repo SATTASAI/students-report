@@ -40,7 +40,8 @@ const leaver = before[3];
 
 // ---------- วัดผล: ออกกลางคัน ----------
 await a.goto(`${BASE}/admin.html`);
-await a.click('.side-nav a[href="/admin.html#moves"]');
+await a.click('.side-nav a[href="/admin.html#students"]');
+await a.click('.tab-link[href="#moves"]');
 await a.waitForSelector("#findForm");
 await a.fill("#findForm input[name=q]", leaver.student_code);
 await a.click("#findForm button");

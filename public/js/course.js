@@ -47,7 +47,7 @@ function renderHeader() {
     (c.teachers.length ? ` · ครูผู้สอน ${c.teachers.map((t) => t.full_name).join(", ")}` : "");
   const back = document.getElementById("backLink");
   if (me.role === "exec") { back.textContent = "อนุมัติผลการเรียน"; back.href = "/admin.html#approve"; }
-  else if (me.role === "measure" || me.role === "admin") { back.textContent = "ครูผู้สอน / ส่งคืน"; back.href = "/admin.html#courses"; }
+  else if (me.role === "measure" || me.role === "admin") { back.textContent = "ตรวจผลการเรียน"; back.href = "/admin.html#review"; }
   else back.href = withYear("/", c.academic_year_id);
   const pb = document.getElementById("printBtn");
   pb.innerHTML = `${ICONS.print} ปพ.5 ในคลังเอกสาร`;

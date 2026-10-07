@@ -53,8 +53,14 @@ await okDialog(admin);
 await admin.waitForFunction(() => document.body.innerText.includes("ครูสมใจ"));
 await shot(admin, "02-admin-courses");
 await admin.click('.side-nav a[href="/admin.html#homerooms"]');
-await admin.waitForSelector("#importHr");
-await admin.click("#importHr");
+await admin.waitForFunction(() => document.getElementById("pageTitle")?.textContent === "ครูประจำชั้น");
+// ดึงครูประจำชั้นจากระบบทะเบียน (เฉพาะ superadmin — เมนูผู้ดูแลระบบ)
+await admin.goto(`${BASE}/admin.html#sync`);
+await admin.waitForSelector('[data-sync="homerooms"]');
+await admin.click('[data-sync="homerooms"]');
+await okDialog(admin);
+await admin.waitForFunction(() => document.body.innerText.includes("ดึงแล้ว"));
+await admin.goto(`${BASE}/admin.html#homerooms`);
 await admin.waitForFunction(() => [...document.querySelectorAll("td")].some((t) => t.textContent.includes("ครูสมใจ")));
 // เพิ่มคลังตัวชี้วัดภาษาไทย ป.1
 await admin.click('.side-nav a[href="/admin.html#bank"]');
