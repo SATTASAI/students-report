@@ -1,4 +1,4 @@
-import { json, readJson, fail, requireAdmin, intParam, text, audit, batchAll, HttpError } from "../lib/http.js";
+import { json, readJson, fail, requireAdmin, intParam, text, audit, batchAll, HttpError, requireImporter } from "../lib/http.js";
 import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade } from "../lib/data.js";
 
 export const LEARNING_AREAS = [
@@ -43,6 +43,9 @@ function cleanSubject(body, settings) {
 export async function handleAdmin(request, env, user, parts, method, url) {
   requireAdmin(user);
   const [, , section, idPart, action] = parts; // /api/admin/<section>/<id>/<action>
+  const isImport = method === "POST" && (section === "import" || (section === "subjects" && idPart === "copy") ||
+    (section === "homerooms" && idPart === "import") || (section === "indicator-bank" && idPart === "import"));
+  if (isImport) requireImporter(user);
 
   if (section === "settings") {
     const year = await resolveYear(env, url.searchParams.get("year"));

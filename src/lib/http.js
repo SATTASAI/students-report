@@ -43,6 +43,8 @@ export async function currentUser(request, env) {
   if (user.session_version != null && Number(payload.sv || 1) !== Number(user.session_version)) return null;
   user.is_admin = ADMIN_ROLES.includes(user.role) || user.grade_role === "grade_admin";
   user.is_super = ADMIN_ROLES.includes(user.role);
+  // นำเข้าข้อมูลจำนวนมาก (Excel / คัดลอกปีก่อน / ดึงจากระบบบริหารฯ / คลังตัวชี้วัด): เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล
+  user.can_import = user.role === "superadmin" || user.grade_role === "grade_admin";
   return user;
 }
 
@@ -55,6 +57,12 @@ export function requireUser(user) {
 export function requireAdmin(user) {
   requireUser(user);
   if (!user.is_admin) fail(403, "เฉพาะผู้ดูแลงานวัดผล/วิชาการเท่านั้น");
+  return user;
+}
+
+export function requireImporter(user) {
+  requireAdmin(user);
+  if (!user.can_import) fail(403, "การนำเข้าข้อมูลทำได้เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล");
   return user;
 }
 

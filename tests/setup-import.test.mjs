@@ -181,3 +181,23 @@ test("ชุดทดสอบการคำนวณ: 0, 49.5, 54.5, 79.5, 100
   // มส จากผลพิเศษ
   assert.equal(computeStudentResult(items, { 1: 35, 2: 15, 3: 35, 4: 15 }, { special: "มส" }, s).grade, "มส");
 });
+
+test("นำเข้าข้อมูลได้เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล (ผู้บริหารไม่ได้)", async () => {
+  const { env, call } = await setup();
+  const row = { grade_level: "ป.4", code: "ท14101", name: "ภาษาไทย", learning_area: "ภาษาไทย", subject_type: "พื้นฐาน", hours_per_year: "160" };
+  // ผู้บริหาร (executive) ยังตั้งค่าได้ แต่นำเข้าไม่ได้
+  env.DB.raw.prepare("UPDATE users SET role = 'executive' WHERE id = 1").run();
+  await call("admin", "GET", "/api/admin/subjects", null, { expect: 200 });
+  for (const [path, body] of [["/api/admin/import/subjects", { rows: [row] }], ["/api/admin/subjects/copy", { from_year: 1 }],
+    ["/api/admin/homerooms/import", {}], ["/api/admin/indicator-bank/import", { rows: [] }]]) {
+    await call("admin", "POST", path, body, { expect: 403 });
+  }
+  assert.equal((await call("admin", "GET", "/api/me", null, { expect: 200 })).data.user.can_import, false);
+  // ครูที่ได้สิทธิ์ทีมวัดผลนำเข้าได้
+  env.DB.raw.prepare("INSERT INTO gr_staff_roles (user_id, role) VALUES (2, 'grade_admin')").run();
+  await call("t1", "POST", "/api/admin/import/subjects", { rows: [row] }, { expect: 200 });
+  assert.equal((await call("t1", "GET", "/api/me", null, { expect: 200 })).data.user.can_import, true);
+  // superadmin นำเข้าได้
+  env.DB.raw.prepare("UPDATE users SET role = 'superadmin' WHERE id = 1").run();
+  await call("admin", "POST", "/api/admin/import/subjects", { rows: [row], dry_run: true }, { expect: 200 });
+});

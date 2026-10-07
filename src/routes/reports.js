@@ -26,7 +26,7 @@ export async function handleMe(request, env, user, url) {
     avg_progress: all.length ? Math.round(all.reduce((a, c) => a + c.progress, 0) / all.length) : 0,
   } : null;
   return json({
-    user: { id: user.id, full_name: user.full_name, role: user.role, is_admin: user.is_admin, is_super: user.is_super },
+    user: { id: user.id, full_name: user.full_name, role: user.role, is_admin: user.is_admin, is_super: user.is_super, can_import: !!user.can_import },
     years, year, settings: { entry_open: settings.entry_open, school_name: settings.school_name },
     courses: mine, homerooms, summary,
   });

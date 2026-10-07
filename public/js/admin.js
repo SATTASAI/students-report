@@ -12,11 +12,14 @@ if (!me.user.is_admin) {
   throw new Error("not admin");
 }
 const Y = me.year.id;
+const CAN_IMPORT = !!me.user.can_import; // นำเข้าข้อมูล: เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล
+if (!CAN_IMPORT) for (const t of ["import", "bank"]) document.querySelector(`#tabs [data-tab="${t}"]`)?.remove();
 const yq = `year=${Y}`;
 main.hidden = false;
 document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} — ใช้ข้อมูลห้องเรียนและนักเรียนจากระบบบริหารโรงเรียน`;
 const GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
 let tab = sessionStorage.getItem("sr-admin-tab") || "start";
+if (["import", "bank"].includes(tab) && !me.user.can_import) tab = "start";
 let teachersCache;
 const teachers = async () => (teachersCache ||= (await api("/api/admin/teachers")).teachers);
 
@@ -51,10 +54,10 @@ async function renderStart() {
   const steps = [
     { done: primaryRooms.length > 0, title: "ห้องเรียนและรายชื่อนักเรียน", text: primaryRooms.length ? `พบ ${primaryRooms.length} ห้อง (ป.1–ป.6) นักเรียน ${primaryRooms.reduce((a, r) => a + r.students, 0)} คน จากระบบบริหารโรงเรียน` : "ยังไม่มีนักเรียนลงทะเบียนในปีนี้ ให้จัดชั้นเรียนในระบบบริหารโรงเรียนก่อน", action: "" },
     { done: true, title: "ห้องที่เปิดใช้ระบบ", text: pilot ? `นำร่องเฉพาะ <b>${pilot.map(esc).join(", ")}</b> — ห้องอื่นยังใช้ Q-Info` : "เปิดใช้ทุกห้อง", action: `<button class="btn" id="pilotBtn">เลือกห้อง</button>` },
-    { done: subjects.some((s) => pilotGrades.includes(s.grade_level)), title: "รายวิชาของแต่ละชั้น", text: subjects.length ? `มี ${subjects.length} รายวิชา (${[...new Set(subjects.map((s) => s.grade_level))].join(", ")})` : "นำเข้าจาก Excel, คัดลอกจากปีก่อน หรือสร้างวิชาพื้นฐานตามหลักสูตรแกนกลางฯ 2551 (เหมาะกับ ป.4–6) แล้วแก้ภายหลังได้",
-      action: `<span class="actions"><button class="btn ${subjects.length ? "" : "primary"}" data-go="import">นำเข้าจาก Excel</button>${me.years.length > 1 ? '<button class="btn" id="copyBtn">คัดลอกจากปีก่อน</button>' : ""}<button class="btn" id="tplBtn">วิชาพื้นฐาน</button></span>` },
+    { done: subjects.some((s) => pilotGrades.includes(s.grade_level)), title: "รายวิชาของแต่ละชั้น", text: subjects.length ? `มี ${subjects.length} รายวิชา (${[...new Set(subjects.map((s) => s.grade_level))].join(", ")})` : (CAN_IMPORT ? "นำเข้าจาก Excel, คัดลอกจากปีก่อน หรือ" : "ทีมวัดผลนำเข้าจาก Excel ได้ หรือ") + "สร้างวิชาพื้นฐานตามหลักสูตรแกนกลางฯ 2551 (เหมาะกับ ป.4–6) แล้วแก้ภายหลังได้",
+      action: `<span class="actions">${CAN_IMPORT ? `<button class="btn ${subjects.length ? "" : "primary"}" data-go="import">นำเข้าจาก Excel</button>${me.years.length > 1 ? '<button class="btn" id="copyBtn">คัดลอกจากปีก่อน</button>' : ""}` : ""}<button class="btn" id="tplBtn">วิชาพื้นฐาน</button></span>` },
     { done: scopedCourses.length > 0, title: "รายวิชาของแต่ละห้อง", text: scopedCourses.length ? `มี ${scopedCourses.length} รายวิชา-ห้อง${pilot ? " ในห้องที่เปิดใช้" : ""}` : `จับคู่รายวิชากับ${pilot ? "ห้องที่เปิดใช้" : "ทุกห้องเรียนของชั้นนั้น"}`, action: `<button class="btn ${subjects.length && !scopedCourses.length ? "primary" : ""}" id="genBtn" ${subjects.length ? "" : "disabled"}>สร้าง/เติมรายวิชา${pilot ? "ห้องที่เปิดใช้" : "ทุกห้อง"}</button>` },
-    { done: scopedCourses.length > 0 && noTeacher === 0, title: "มอบหมายครูผู้สอน", text: scopedCourses.length ? (noTeacher ? `ยังไม่มีครูผู้สอน ${noTeacher} รายวิชา` : "ครบทุกรายวิชา") : "ทำหลังขั้นตอนที่ 4 หรือนำเข้าจาก Excel ได้เลย", action: `<span class="actions"><button class="btn" data-go="import" data-kind="teachers">นำเข้าจาก Excel</button><button class="btn" data-go="courses">ไปมอบหมาย</button></span>` },
+    { done: scopedCourses.length > 0 && noTeacher === 0, title: "มอบหมายครูผู้สอน", text: scopedCourses.length ? (noTeacher ? `ยังไม่มีครูผู้สอน ${noTeacher} รายวิชา` : "ครบทุกรายวิชา") : (CAN_IMPORT ? "ทำหลังขั้นตอนที่ 4 หรือนำเข้าจาก Excel ได้เลย" : "ทำหลังขั้นตอนที่ 4"), action: `<span class="actions">${CAN_IMPORT ? '<button class="btn" data-go="import" data-kind="teachers">นำเข้าจาก Excel</button>' : ""}<button class="btn" data-go="courses">ไปมอบหมาย</button></span>` },
     { done: scopedHr.length > 0 && noHomeroom === 0, title: "ครูประจำชั้น", text: noHomeroom ? `ยังไม่กำหนด ${noHomeroom} ห้อง` : "ครบทุกห้อง", action: `<button class="btn" data-go="homerooms">ไปกำหนด</button>` },
     { done: true, title: "เกณฑ์การวัดผลและผู้ลงนาม", text: `เกณฑ์ผ่านตัวชี้วัด ภาค 1 ${settings.indicator_pass_pct}% · ภาค 2 ${settings.indicator_pass_pct_t2 ?? settings.indicator_pass_pct}%`, action: `<button class="btn" data-go="settings">ตรวจ/แก้</button>` },
   ];
@@ -274,12 +277,12 @@ async function renderCourses() {
 async function renderHomerooms() {
   const [{ rooms }, list] = await Promise.all([api(`/api/admin/homerooms?${yq}`), teachers()]);
   view.innerHTML = `<div class="panel">
-    <div class="panel-head"><h2>ครูประจำชั้น</h2><button class="btn" id="importHr">ดึงจากหน้าวิเคราะห์ผู้เรียน (ระบบบริหารฯ)</button></div>
+    <div class="panel-head"><h2>ครูประจำชั้น</h2>${CAN_IMPORT ? '<button class="btn" id="importHr">ดึงจากหน้าวิเคราะห์ผู้เรียน (ระบบบริหารฯ)</button>' : ""}</div>
     <div class="table-wrap"><table class="list"><thead><tr><th>ห้อง</th><th class="num">นักเรียน</th><th>ครูประจำชั้น</th><th></th></tr></thead>
     <tbody>${rooms.map((r, i) => `<tr><td><a href="/homeroom.html?grade=${encodeURIComponent(r.grade_level)}&room=${encodeURIComponent(r.classroom)}&year=${Y}">${esc(r.grade_level)}/${esc(r.classroom)}</a></td><td class="num">${r.students}</td>
       <td>${r.teachers.length ? r.teachers.map((t) => esc(t.full_name)).join(", ") : '<span class="tag warn">ยังไม่กำหนด</span>'}</td>
       <td><button class="btn small" data-i="${i}">กำหนด</button></td></tr>`).join("")}</tbody></table></div></div>`;
-  document.getElementById("importHr").onclick = async () => {
+  if (CAN_IMPORT) document.getElementById("importHr").onclick = async () => {
     try { const r = await api("/api/admin/homerooms/import", { method: "POST", body: { year: Y } }); toast(r.added ? `เพิ่ม ${r.added} รายการ` : "ไม่มีข้อมูลใหม่ให้ดึง"); render(); } catch (err) { showError(err); }
   };
   for (const b of view.querySelectorAll("[data-i]")) b.onclick = async () => {
@@ -359,9 +362,9 @@ async function renderSettings() {
 async function renderPeople() {
   teachersCache = null;
   const list = await teachers();
-  view.innerHTML = `<div class="panel"><div class="panel-head"><h2>ผู้ดูแลงานวัดผล</h2></div>
+  view.innerHTML = `<div class="panel"><div class="panel-head"><h2>ทีมวัดและประเมินผล</h2></div>
     <p class="muted small">ผู้บริหารและผู้ดูแลระบบมีสิทธิ์อยู่แล้ว เพิ่มสิทธิ์ให้ครูฝ่ายวิชาการ/วัดผลที่ต้องตั้งค่ารายวิชา ดูรายงาน และปลดล็อกได้ที่นี่</p>
-    <div class="table-wrap"><table class="list"><thead><tr><th>ชื่อ</th><th>บทบาทในระบบบริหารฯ</th><th>ผู้ดูแลงานวัดผล</th></tr></thead>
+    <div class="table-wrap"><table class="list"><thead><tr><th>ชื่อ</th><th>บทบาทในระบบบริหารฯ</th><th>ทีมวัดและประเมินผล</th></tr></thead>
     <tbody>${list.map((t) => { const built = ["superadmin", "executive"].includes(t.role); return `<tr><td>${esc(t.full_name)}</td><td class="small muted">${esc(t.role)}</td>
       <td>${built ? '<span class="tag ok">มีสิทธิ์อยู่แล้ว</span>' : `<label class="check"><input type="checkbox" data-u="${t.id}" ${t.grade_role ? "checked" : ""}> ให้สิทธิ์</label>`}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   for (const c of view.querySelectorAll("[data-u]")) c.onchange = async () => {
