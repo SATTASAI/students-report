@@ -9,9 +9,9 @@
 <body>
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
-// ปพ.5 ทั้งเล่ม เรียงตามแบบที่โรงเรียนใช้ (จากตัวอย่าง Q-Info):
-// 1 ปก + สรุปผล + การอนุมัติ → 2 ผลการประเมินตัวชี้วัด (รายภาค) → 3 สรุปคะแนนรายภาค → 4 สรุปผลทั้งปี
-// → 5 อ่าน คิดวิเคราะห์ เขียน → 6 คุณลักษณะอันพึงประสงค์ → 7 โครงสร้างรายวิชา
+// ปพ.5 ทั้งเล่ม เรียงตามที่โรงเรียนกำหนด:
+// 1 ปก (สรุปผล + การอนุมัติ) → 2 โครงสร้างรายวิชา → 3 บันทึกเวลาเรียน → 4 อ่าน คิดวิเคราะห์ เขียน
+// → 5 คุณลักษณะอันพึงประสงค์ → 6 ผลการประเมินตัวชี้วัด (รายภาค) → 7 สรุปผลการประเมิน (รายภาค + ทั้งปี)
 // ตัวเลขทุกตัวอ่านจากผลที่เซิร์ฟเวอร์คำนวณแล้ว (computed) — ไม่คำนวณคะแนนใหม่ในหน้านี้
 // ?course=ID = 1 วิชา, ?courses=1,2,3 หรือ ?grade=ป.4&room=2&year=ID = ทุกวิชาของห้องเป็นไฟล์เดียว
 import { esc, params, get, toolbar, status, fmt, td, gradeOut } from "/print/print.js";
@@ -129,7 +129,7 @@ function book(d) {
       : c.status === "submitted" ? `<div class="sys-note">ส่งผลในระบบแล้ว รอผู้บริหารอนุมัติ</div>` : ""}
   </section>`;
 
-  // ---------- 2. ผลการประเมินตัวชี้วัด (รายภาค, หน้าละไม่เกิน 6 ตัว) ----------
+  // ---------- 6. ผลการประเมินตัวชี้วัด (รายภาค, หน้าละไม่เกิน 6 ตัว) ----------
   const indicatorPages = terms.map((term) => {
     const inds = d.items.filter((i) => i.term_number === term && i.kind === "indicator");
     if (!inds.length) return "";
@@ -158,12 +158,12 @@ function book(d) {
     </section>`).join("");
   }).join("");
 
-  // ---------- 3. สรุปคะแนนรายภาค ----------
+  // ---------- 7a. สรุปผลการประเมิน รายภาค ----------
   const cT = c.collect_ratio / 2, fT = 50 - cT;
   const termSummary = terms.map((term) => {
     const inds = d.items.filter((i) => i.term_number === term && i.kind === "indicator");
     return `<section class="sheet land">${mark}
-      ${head(`สรุปคะแนนภาคเรียนที่ ${td(term)}`)}
+      ${head(`สรุปผลการประเมิน${W} ภาคเรียนที่ ${td(term)}`)}
       <table class="t small">
         <thead>
           <tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th><th colspan="5">ระหว่างภาค</th><th colspan="3">สอบปลายภาค</th><th rowspan="2" style="width:16mm">รวม</th><th rowspan="2" style="width:20mm">สถานะ<br>นักเรียน</th></tr>
@@ -188,7 +188,7 @@ function book(d) {
     </section>`;
   }).join("");
 
-  // ---------- 4. สรุปผลการเรียนทั้งปี ----------
+  // ---------- 7b. สรุปผลการเรียนทั้งปี ----------
   const yearSummary = `<section class="sheet">${mark}
     ${head("สรุปผลการเรียนรายวิชา")}
     <table class="t small">
@@ -207,7 +207,7 @@ function book(d) {
       ${terms.length < 2 ? "<br>ยังมีคะแนนไม่ครบ 2 ภาคเรียน จึงยังไม่ตัดผลการเรียน (แสดง –)" : ""}</div>
   </section>`;
 
-  // ---------- 5–6. อ่าน คิดวิเคราะห์ เขียน / คุณลักษณะอันพึงประสงค์ ----------
+  // ---------- 4–5. อ่าน คิดวิเคราะห์ เขียน / คุณลักษณะอันพึงประสงค์ ----------
   const assessPage = (key) => {
     const g = ASSESSMENT_GROUPS.find((x) => x.key === key);
     return `<section class="sheet">${mark}
@@ -226,7 +226,7 @@ function book(d) {
     </section>`;
   };
 
-  // ---------- 7. โครงสร้างรายวิชา ----------
+  // ---------- 2. โครงสร้างรายวิชา ----------
   const units = (d.units || []);
   const structureRows = terms.flatMap((term) => {
     const tu = units.filter((u) => u.term_number === term);
@@ -253,7 +253,25 @@ function book(d) {
     </table>
   </section>`;
 
-  return cover + indicatorPages + termSummary + yearSummary + assessPage("rtw") + assessPage("trait") + structure;
+  // ---------- 3. บันทึกเวลาเรียน (สรุปรายวิชา) ----------
+  // เวลาเรียนรายวัน/รายชั่วโมงจะมาเมื่อเลิกเช็คชื่อใน Q-Info — ตอนนี้พิมพ์ยอดที่ครูบันทึกในแท็บสรุปผล (ว่าง = มาครบ)
+  const attendance = `<section class="sheet">${mark}
+    ${head("บันทึกเวลาเรียน")}
+    <table class="t small">
+      <thead><tr><th style="width:10mm">เลขที่</th><th style="width:16mm">เลข<br>ประจำตัว</th><th>ชื่อ–สกุล</th><th style="width:20mm">เวลาเรียน<br>เต็ม (ชม.)</th>
+        <th style="width:20mm">มาเรียน<br>(ชม.)</th><th style="width:16mm">ร้อยละ</th><th style="width:22mm">ผล</th><th style="width:20mm">สถานะ</th></tr></thead>
+      <tbody>${d.students.map((x) => {
+        const k = d.computed[x.id];
+        const pct = c.hours_per_year ? Math.floor((k.hours / c.hours_per_year) * 10000) / 100 : null;
+        return `<tr><td class="c">${td(x.number ?? "")}</td><td class="c">${esc(td(x.student_code))}</td><td class="nm">${esc(x.name)}</td>
+          <td class="c">${fmt(c.hours_per_year)}</td><td class="c">${fmt(k.hours)}</td><td class="c">${pct == null ? "" : td(pct.toFixed(2))}</td>
+          <td class="c">${k.low_attendance ? "มส" : "มีสิทธิ์สอบ"}</td><td class="c">${statusNote(x)}</td></tr>`;
+      }).join("")}</tbody>
+    </table>
+    <div class="note">ต้องมีเวลาเรียนไม่น้อยกว่าร้อยละ ${td(s.attendance_pass_pct)} (${fmt(c.hours_per_year * s.attendance_pass_pct / 100)} ชั่วโมง) จึงมีสิทธิ์รับการประเมิน · ระหว่างนำร่อง เวลาเรียนรายวันใช้แบบบันทึกจาก Q-Info</div>
+  </section>`;
+
+  return cover + structure + attendance + assessPage("rtw") + assessPage("trait") + indicatorPages + termSummary + yearSummary;
 }
 
 document.getElementById("doc").innerHTML = books.map(book).join("");
