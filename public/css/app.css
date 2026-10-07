@@ -251,3 +251,7 @@ table.sheet { border-collapse: separate; border-spacing: 0; font-size: 14px; }
   .sheet-wrap { max-height: calc(100dvh - 240px); }
 }
 @media print { .topbar, .no-print { display: none !important; } }
+
+/* ขั้นตอนเริ่มต้นปี (หน้าตั้งค่า) */
+.step-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+@media (max-width: 640px) { .step-row { grid-template-columns: 34px 1fr; } .step-row > :last-child:not(:nth-child(2)) { grid-column: 2; } }

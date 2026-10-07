@@ -1,13 +1,15 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll } from "../lib/http.js";
 import { assertCourseAccess, courseBundle, loadCourse, canViewCourse, studentName } from "../lib/data.js";
-import { computeStudentResult, validateRemedial } from "../../public/js/grading.js";
-import { gradeSettings, getSettings } from "../lib/data.js";
+import { computeStudentResult, validateRemedial, structureIssues, indicatorWord } from "../../public/js/grading.js";
+import { gradeSettings, getSettings, assessmentsFor } from "../lib/data.js";
 
 const MAX_ITEMS_PER_COURSE = 80;
 
 function serializeBundle(b, user) {
   return {
     course: { ...b.course, can_edit: !b.course.locked && (b.settings.entry_open || user.is_admin) },
+    structure_issues: structureIssues(b.items, b.course.collect_ratio, indicatorWord(b.course.grade_level)),
+    assessments: b.assessments || {},
     settings: b.settings,
     items: b.items,
     students: b.roster.map((s) => ({
@@ -39,7 +41,9 @@ export async function handleCourses(request, env, user, parts, method, url) {
 
   if (!sub && method === "GET") {
     const course = await assertCourseAccess(env, user, id);
-    return json(serializeBundle(await courseBundle(env, course), user));
+    const bundle = await courseBundle(env, course);
+    bundle.assessments = await assessmentsFor(env, course.academic_year_id, bundle.roster.map((s) => s.id));
+    return json(serializeBundle(bundle, user));
   }
 
   // ---------- โครงสร้างคะแนน ----------
@@ -205,7 +209,7 @@ export async function handleCourses(request, env, user, parts, method, url) {
         const type = c.remedial_type || null, grade = c.remedial_grade === "" || c.remedial_grade == null ? null : String(c.remedial_grade);
         if (type || grade) {
           // ตรวจกับผลเดิม (ก่อนแก้) ที่คำนวณจากคะแนนจริง
-          const original = computeStudentResult(bundle.items, bundle.scores[sid] || {}, { ...next, remedial_grade: null }, settings).original_grade;
+          const original = computeStudentResult(bundle.items, bundle.scores[sid] || {}, { ...next, remedial_grade: null }, { ...settings, finalized: true }).original_grade;
           const err = validateRemedial(original, type, grade);
           if (err) fail(400, `${studentName(bundle.roster.find((s) => s.id === sid))}: ${err}`);
           next.remedial_type = type; next.remedial_grade = grade;
@@ -233,6 +237,8 @@ export async function handleCourses(request, env, user, parts, method, url) {
     const course = await assertCourseAccess(env, user, id, { write: true });
     const bundle = await courseBundle(env, course);
     if (!bundle.items.length) fail(400, "ยังไม่ได้ตั้งโครงสร้างคะแนน");
+    const issues = structureIssues(bundle.items, course.collect_ratio, indicatorWord(course.grade_level));
+    if (issues.length) return json({ error: `ยืนยันผลไม่ได้: ${issues.join(" และ ")}`, structure_issues: issues }, 400);
     const pending = bundle.roster.filter((s) => s.enrollment_status === "enrolled" &&bundle.computed[s.id].missing > 0 && !bundle.results[s.id]?.special);
     const b = await readJson(request);
     if (pending.length && !b.force) {

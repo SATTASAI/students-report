@@ -31,7 +31,9 @@ test("มส มาก่อน ร และผลแก้ไขแทนผ�
   const items = [{ id: 1, kind: "indicator", max_score: 10 }];
   const s = { collect_ratio: 70, hours_per_year: 40, attendance_pass_pct: 80 };
   assert.equal(computeStudentResult(items, {}, { hours_attended: 31 }, s).grade, "มส");
-  assert.equal(computeStudentResult(items, {}, { hours_attended: 32 }, s).grade, "ร");
+  // คะแนนไม่ครบ: ระหว่างปียังไม่มีผล ("-"), ยืนยันผลแล้วจึงเป็น ร
+  assert.equal(computeStudentResult(items, {}, { hours_attended: 32 }, s).grade, null);
+  assert.equal(computeStudentResult(items, {}, { hours_attended: 32 }, { ...s, finalized: true }).grade, "ร");
   assert.equal(computeStudentResult(items, { 1: 2 }, { remedial_grade: "1" }, s).grade, "1");
   assert.equal(computeStudentResult(items, { 1: 2 }, { remedial_grade: "1" }, s).original_grade, "0");
 });

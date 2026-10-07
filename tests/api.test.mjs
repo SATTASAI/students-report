@@ -91,27 +91,27 @@ test("กรอกคะแนน ตัดเกรดไม่ปัด แล
   const c = courses.find((x) => x.code === "ค11101" && x.classroom === "1");
   await call("admin", "PUT", `/api/admin/courses/${c.id}/teachers`, { user_ids: [2] }, { expect: 200 });
   const r = await call("t1", "POST", `/api/courses/${c.id}/items`, { items: [
-    { term_number: 1, kind: "indicator", code: "ค 1.1 ป.1/1", title: "บอกจำนวน", max_score: 20 },
+    { term_number: 1, kind: "indicator", code: "ค 1.1 ป.1/1", title: "บอกจำนวน", max_score: 35 },
     { term_number: 1, kind: "final", title: "สอบปลายภาค 1", max_score: 15 },
-    { term_number: 2, kind: "indicator", code: "ค 1.1 ป.1/2", title: "บวกลบ", max_score: 50 },
+    { term_number: 2, kind: "indicator", code: "ค 1.1 ป.1/2", title: "บวกลบ", max_score: 35 },
     { term_number: 2, kind: "final", title: "สอบปลายภาค 2", max_score: 15 },
   ] }, { expect: 200 });
   const items = r.data.items;
   const [i1, f1, i2, f2] = [items.find((i) => i.title === "บอกจำนวน"), items.find((i) => i.title === "สอบปลายภาค 1"), items.find((i) => i.title === "บวกลบ"), items.find((i) => i.title === "สอบปลายภาค 2")];
   const s = r.data.students.filter((x) => x.enrollment_status === "enrolled");
-  // คนที่ 1: เก็บ 55.9/70 → 55.9/70*70 = 55.9; สอบ 24/30 → 24 → รวม 79.9 → ต้องได้ 3.5 (ไม่ปัด)
+  // ภาคละ 35 + 15 = 50 → คะแนนจริงบวกตรง ๆ: คนที่ 1 เก็บ 28 + 27.9, สอบ 12 + 12 → รวม 79.9 → ต้องได้ 3.5 (ไม่ปัด)
   const changes = [
-    { item_id: i1.id, student_id: s[0].id, score: 16 }, { item_id: i2.id, student_id: s[0].id, score: 39.9 },
+    { item_id: i1.id, student_id: s[0].id, score: 28 }, { item_id: i2.id, student_id: s[0].id, score: 27.9 },
     { item_id: f1.id, student_id: s[0].id, score: 12 }, { item_id: f2.id, student_id: s[0].id, score: 12 },
     // คนที่ 2: เต็มทุกช่อง → 4
-    { item_id: i1.id, student_id: s[1].id, score: 20 }, { item_id: i2.id, student_id: s[1].id, score: 50 },
+    { item_id: i1.id, student_id: s[1].id, score: 35 }, { item_id: i2.id, student_id: s[1].id, score: 35 },
     { item_id: f1.id, student_id: s[1].id, score: 15 }, { item_id: f2.id, student_id: s[1].id, score: 15 },
     // คนที่ 3: ขาดสอบปลายภาค 2 → ร
     { item_id: i1.id, student_id: s[2].id, score: 10 }, { item_id: i2.id, student_id: s[2].id, score: 25 }, { item_id: f1.id, student_id: s[2].id, score: 7 },
   ];
   await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes }, { expect: 200 });
   // คะแนนเกินเต็ม → ไม่บันทึกทั้งชุด
-  const bad = await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: i1.id, student_id: s[3].id, score: 5 }, { item_id: i1.id, student_id: s[4].id, score: 21 }] }, { expect: 400 });
+  const bad = await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: i1.id, student_id: s[3].id, score: 5 }, { item_id: i1.id, student_id: s[4].id, score: 36 }] }, { expect: 400 });
   assert.equal(bad.data.errors.length, 1);
   // นักเรียนนอกห้อง
   await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: i1.id, student_id: 9999, score: 5 }] }, { expect: 400 });
@@ -120,10 +120,11 @@ test("กรอกคะแนน ตัดเกรดไม่ปัด แล
   assert.equal(d.computed[s[0].id].total, 79.9);
   assert.equal(d.computed[s[0].id].grade, "3.5");
   assert.equal(d.computed[s[1].id].grade, "4");
-  assert.equal(d.computed[s[2].id].grade, "ร");
+  // ยังไม่ยืนยันผล คะแนนไม่ครบแสดง "-" (ไม่ใช่ ร) เพื่อไม่ให้ผลระหว่างภาคดูเหมือนผลจริง
+  assert.equal(d.computed[s[2].id].grade, null);
   assert.ok(d.computed[s[2].id].reason.includes("ไม่ครบ"));
-  // ตัวชี้วัดไม่ผ่าน: คนที่ 3 ได้ 10/20 = 50% (ผ่าน), 25/50 = 50% (ผ่าน)
-  assert.equal(d.computed[s[2].id].failed_indicators.length, 0);
+  // ตัวชี้วัดไม่ผ่าน (เกณฑ์ 50%): คนที่ 3 ได้ 10/35 (ไม่ผ่าน), 25/35 (ผ่าน)
+  assert.deepEqual(d.computed[s[2].id].failed_indicators, [i1.id]);
   // ลดคะแนนเต็มต่ำกว่าคะแนนที่กรอกไม่ได้
   await call("t1", "PUT", `/api/courses/${c.id}/items/${i1.id}`, { term_number: 1, kind: "indicator", title: "บอกจำนวน", max_score: 15 }, { expect: 409 });
   // ลบช่องที่มีคะแนนต้องยืนยัน
@@ -137,12 +138,15 @@ test("เวลาเรียนไม่ถึง 80% → มส, สอบแ
   const c = courses.find((x) => x.code === "ศ11101" && x.classroom === "1"); // 80 ชม.
   await call("admin", "PUT", `/api/admin/courses/${c.id}/teachers`, { user_ids: [2] }, { expect: 200 });
   const r = await call("t1", "POST", `/api/courses/${c.id}/items`, { items: [
-    { term_number: 1, kind: "indicator", title: "งานปั้น", max_score: 70 },
-    { term_number: 2, kind: "final", title: "สอบ", max_score: 30 },
+    { term_number: 1, kind: "indicator", title: "งานปั้น", max_score: 35 },
+    { term_number: 1, kind: "final", title: "สอบ 1", max_score: 15 },
+    { term_number: 2, kind: "indicator", title: "งานวาด", max_score: 35 },
+    { term_number: 2, kind: "final", title: "สอบ 2", max_score: 15 },
   ] }, { expect: 200 });
-  const [ind, fin] = r.data.items;
+  const ind = r.data.items.find((i) => i.title === "งานปั้น");
   const s = r.data.students.filter((x) => x.enrollment_status === "enrolled");
-  const all = s.flatMap((st, k) => [{ item_id: ind.id, student_id: st.id, score: k === 0 ? 20 : 60 }, { item_id: fin.id, student_id: st.id, score: k === 0 ? 10 : 25 }]);
+  // คนแรกได้ 10+5+10+5 = 30 → 0, คนอื่น 30+12.5+30+12.5 = 85 → 4
+  const all = s.flatMap((st, k) => r.data.items.map((it) => ({ item_id: it.id, student_id: st.id, score: it.kind === "final" ? (k === 0 ? 5 : 12.5) : (k === 0 ? 10 : 30) })));
   await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: all }, { expect: 200 });
   let d = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
   assert.equal(d.computed[s[0].id].grade, "0");

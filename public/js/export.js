@@ -3,7 +3,7 @@ import { api, toast } from "/js/app.js";
 import { ASSESSMENT_GROUPS, summarizeGroup } from "/js/grading.js";
 
 let xlsxLoading;
-function loadXlsx() {
+export function loadXlsx() {
   if (window.XLSX) return Promise.resolve(window.XLSX);
   xlsxLoading ||= new Promise((resolve, reject) => {
     const s = document.createElement("script");

@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-1";
+export const SCHEMA_VERSION = "gr-2";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -114,6 +114,25 @@ export const SCHEMA_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_gr_bank_lookup ON gr_indicator_bank(grade_level, learning_area)`,
 ];
 
+// คอลัมน์ที่เพิ่มหลังเวอร์ชันแรก — เพิ่มเฉพาะที่ยังไม่มี (ALTER TABLE ADD COLUMN ไม่แตะข้อมูลเดิม)
+export const ADDED_COLUMNS = [
+  ["gr_settings", "indicator_pass_pct_t2", "INTEGER CHECK (indicator_pass_pct_t2 IS NULL OR indicator_pass_pct_t2 BETWEEN 0 AND 100)"], // เกณฑ์ผ่านรายตัวชี้วัดภาค 2 (ว่าง = ใช้ค่าภาค 1)
+  ["gr_settings", "deputy_director_name", "TEXT"],
+  ["gr_settings", "affiliation", "TEXT"],
+  ["gr_settings", "pilot_rooms", "TEXT"], // JSON ["ป.4/2"] = เปิดใช้เฉพาะห้องเหล่านี้, ว่าง = ทุกห้อง
+];
+
+async function addMissingColumns(env) {
+  const tables = [...new Set(ADDED_COLUMNS.map((c) => c[0]))];
+  for (const t of tables) {
+    const { results } = await env.DB.prepare(`SELECT name FROM pragma_table_info('${t}')`).all();
+    const have = new Set(results.map((r) => r.name));
+    for (const [table, col, def] of ADDED_COLUMNS) {
+      if (table === t && !have.has(col)) await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run();
+    }
+  }
+}
+
 const ensured = new WeakMap();
 
 export async function ensureSchema(env) {
@@ -123,6 +142,7 @@ export async function ensureSchema(env) {
       .first().catch(() => null);
     if (marker?.setting_value === SCHEMA_VERSION) return;
     await env.DB.batch(SCHEMA_SQL.map((sql) => env.DB.prepare(sql)));
+    await addMissingColumns(env);
     await env.DB.prepare(`INSERT INTO system_settings (setting_key, setting_value, updated_at)
       VALUES ('students_report_schema', ?, datetime('now'))
       ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = datetime('now')`)

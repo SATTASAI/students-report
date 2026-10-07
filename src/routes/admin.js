@@ -1,4 +1,4 @@
-import { json, readJson, fail, requireAdmin, intParam, text, audit, batchAll } from "../lib/http.js";
+import { json, readJson, fail, requireAdmin, intParam, text, audit, batchAll, HttpError } from "../lib/http.js";
 import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade } from "../lib/data.js";
 
 export const LEARNING_AREAS = [
@@ -28,9 +28,10 @@ function cleanSubject(body, settings) {
   if (!code) fail(400, "กรุณาระบุรหัสวิชา");
   const name = text(body.name, 120);
   if (!name) fail(400, "กรุณาระบุชื่อวิชา");
+  // ป.1–3 หลักสูตรใหม่มีกลุ่ม/ชื่อวิชาที่ไม่ตรงกลุ่มสาระแกนกลาง จึงรับข้อความอิสระได้
   const area = text(body.learning_area, 80);
-  if (!LEARNING_AREAS.includes(area) && area !== "อื่น ๆ") fail(400, "กลุ่มสาระไม่ถูกต้อง");
-  const type = body.subject_type === "additional" ? "additional" : "basic";
+  if (!area) fail(400, "กรุณาระบุกลุ่มสาระ");
+  const type = ["additional", "เพิ่มเติม"].includes(text(body.subject_type, 20)) ? "additional" : "basic";
   const hours = Number(body.hours_per_year);
   if (!Number.isInteger(hours) || hours < 1 || hours > 400) fail(400, "เวลาเรียนต้องเป็นจำนวนเต็ม 1–400 ชั่วโมง");
   const ratio = body.collect_ratio == null || body.collect_ratio === "" ? settings.collect_ratio : Number(body.collect_ratio);
@@ -48,29 +49,33 @@ export async function handleAdmin(request, env, user, parts, method, url) {
     if (method === "GET") return json({ year, settings: await getSettings(env, year.id) });
     if (method === "PUT") {
       const b = await readJson(request);
-      const pct = (v, label) => { const n = Number(v); if (!Number.isInteger(n) || n < 0 || n > 100) fail(400, `${label}ต้องเป็น 0–100`); return n; };
+      const pct = (v, label) => { const n = Number(v); if (v === "" || v == null || !Number.isInteger(n) || n < 0 || n > 100) fail(400, `${label}ต้องเป็นจำนวนเต็ม 0–100`); return n; };
       const s = {
         collect_ratio: pct(b.collect_ratio, "สัดส่วนคะแนนเก็บ"),
-        indicator_pass_pct: pct(b.indicator_pass_pct, "เกณฑ์ผ่านตัวชี้วัด"),
+        indicator_pass_pct: pct(b.indicator_pass_pct, "เกณฑ์ผ่านตัวชี้วัดภาค 1 "),
+        indicator_pass_pct_t2: b.indicator_pass_pct_t2 === "" || b.indicator_pass_pct_t2 == null ? null : pct(b.indicator_pass_pct_t2, "เกณฑ์ผ่านตัวชี้วัดภาค 2 "),
         attendance_pass_pct: pct(b.attendance_pass_pct, "เกณฑ์เวลาเรียน"),
-        school_name: text(b.school_name, 120), school_area: text(b.school_area, 160),
-        director_name: text(b.director_name, 120), academic_head_name: text(b.academic_head_name, 120),
-        measurement_head_name: text(b.measurement_head_name, 120), entry_open: b.entry_open ? 1 : 0,
-        roster_order: b.roster_order === "code" ? "code" : "gender",
+        school_name: text(b.school_name, 120), school_area: text(b.school_area, 160), affiliation: text(b.affiliation, 160),
+        director_name: text(b.director_name, 120), deputy_director_name: text(b.deputy_director_name, 120),
+        academic_head_name: text(b.academic_head_name, 120), measurement_head_name: text(b.measurement_head_name, 120),
+        entry_open: b.entry_open ? 1 : 0, roster_order: b.roster_order === "code" ? "code" : "gender",
       };
-      await env.DB.prepare(`INSERT INTO gr_settings (academic_year_id, collect_ratio, indicator_pass_pct, attendance_pass_pct,
-          school_name, school_area, director_name, academic_head_name, measurement_head_name, entry_open, roster_order, updated_by, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
-        ON CONFLICT(academic_year_id) DO UPDATE SET collect_ratio=excluded.collect_ratio, indicator_pass_pct=excluded.indicator_pass_pct,
-          attendance_pass_pct=excluded.attendance_pass_pct, school_name=excluded.school_name, school_area=excluded.school_area,
-          director_name=excluded.director_name, academic_head_name=excluded.academic_head_name,
-          measurement_head_name=excluded.measurement_head_name, entry_open=excluded.entry_open, roster_order=excluded.roster_order,
-          updated_by=excluded.updated_by, updated_at=datetime('now')`)
-        .bind(year.id, s.collect_ratio, s.indicator_pass_pct, s.attendance_pass_pct, s.school_name, s.school_area,
-          s.director_name, s.academic_head_name, s.measurement_head_name, s.entry_open, s.roster_order, user.id).run();
+      await upsertSettings(env, year.id, s, user);
       await audit(env, user, "settings.update", { year: year.id, ...s });
       return json({ ok: true, settings: await getSettings(env, year.id) });
     }
+  }
+
+  // ห้องนำร่อง: เปิดใช้ระบบเฉพาะห้องที่เลือก (ว่าง = ทุกห้อง)
+  if (section === "pilot" && method === "PUT") {
+    const b = await readJson(request);
+    const year = await resolveYear(env, b.year);
+    const valid = new Set((await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level)).map((r) => `${r.grade_level}/${r.classroom}`));
+    const rooms = [...new Set((Array.isArray(b.rooms) ? b.rooms : []).map((r) => text(r, 20)))];
+    for (const r of rooms) if (!valid.has(r)) fail(400, `ไม่พบห้อง ${r} ในปีการศึกษานี้`);
+    await upsertSettings(env, year.id, { pilot_rooms: rooms.length ? JSON.stringify(rooms) : null }, user);
+    await audit(env, user, "pilot.set", { year: year.id, rooms });
+    return json({ ok: true, pilot_rooms: rooms.length ? rooms : null });
   }
 
   if (section === "rooms" && method === "GET") {
@@ -99,6 +104,97 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       await audit(env, user, "staff_role", { target, grant: !!b.grant });
       return json({ ok: true });
     }
+  }
+
+
+  // ---------- นำเข้าจาก Excel (วางข้อมูล) ----------
+  // ทุกแบบ: ส่ง dry_run = true เพื่อดูผลตรวจก่อน แล้วค่อยส่งจริง ถ้ามีแถวผิดแม้แถวเดียวจะไม่บันทึกเลย
+  if (section === "import" && method === "POST") {
+    const b = await readJson(request);
+    const year = await resolveYear(env, b.year);
+    const rows = Array.isArray(b.rows) ? b.rows.slice(0, 2000) : [];
+    if (!rows.length) fail(400, "ไม่มีข้อมูลให้นำเข้า");
+    const errors = [], plan = [];
+    const check = (i, fn) => { try { const r = fn(); if (r) plan.push(r); } catch (e) { if (e instanceof HttpError) errors.push({ row: i + 1, error: e.message }); else throw e; } };
+
+    if (idPart === "subjects") {
+      const settings = await getSettings(env, year.id);
+      const seen = new Set();
+      rows.forEach((r, i) => check(i, () => {
+        const s = cleanSubject(r, settings);
+        const key = `${s.grade}|${s.code}`;
+        if (seen.has(key)) fail(400, `รหัส ${s.code} ของ ${s.grade} ซ้ำในไฟล์`);
+        seen.add(key);
+        if (!r.sort_order && r.sort_order !== 0) s.sort = (i + 1) * 10;
+        return s;
+      }));
+      const { results: existing } = await env.DB.prepare("SELECT grade_level, code FROM gr_subjects WHERE academic_year_id = ?").bind(year.id).all();
+      const have = new Set(existing.map((e) => `${e.grade_level}|${e.code}`));
+      const summary = { add: plan.filter((s) => !have.has(`${s.grade}|${s.code}`)).length, update: plan.filter((s) => have.has(`${s.grade}|${s.code}`)).length };
+      if (b.dry_run || errors.length) return json({ ok: !errors.length, dry_run: true, errors, summary, preview: plan });
+      await batchAll(env, plan.map((s) => env.DB.prepare(`INSERT INTO gr_subjects (academic_year_id, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order)
+        VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(academic_year_id, grade_level, code) DO UPDATE SET name=excluded.name, learning_area=excluded.learning_area,
+        subject_type=excluded.subject_type, hours_per_year=excluded.hours_per_year, collect_ratio=excluded.collect_ratio, sort_order=excluded.sort_order`)
+        .bind(year.id, s.grade, s.code, s.name, s.area, s.type, s.hours, s.ratio, s.sort)));
+      await audit(env, user, "import.subjects", { year: year.id, ...summary });
+      return json({ ok: true, summary });
+    }
+
+    if (idPart === "teachers" || idPart === "homerooms") {
+      const findTeacher = await teacherMatcher(env);
+      const rooms = new Set((await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level)).map((r) => `${r.grade_level}/${r.classroom}`));
+      const { results: subjects } = await env.DB.prepare("SELECT id, grade_level, code FROM gr_subjects WHERE academic_year_id = ?").bind(year.id).all();
+      const subjectOf = Object.fromEntries(subjects.map((x) => [`${x.grade_level}|${x.code}`, x.id]));
+      const seen = new Set();
+      rows.forEach((r, i) => check(i, () => {
+        const room = normRoom(r.room);
+        if (!rooms.has(room)) fail(400, `ไม่พบห้อง "${text(r.room, 20)}" (ต้องเป็นแบบ ป.4/2 และมีนักเรียนในระบบบริหารฯ)`);
+        const [grade, classroom] = room.split("/");
+        const names = String(r.teachers ?? "").split(/[,;\n]/).map((x) => text(x, 120)).filter(Boolean);
+        if (!names.length) fail(400, "ไม่ระบุครู");
+        if (names.length > (idPart === "teachers" ? 6 : 4)) fail(400, "จำนวนครูเกินที่กำหนด");
+        const teacherIds = names.map(findTeacher);
+        if (idPart === "homerooms") {
+          if (seen.has(room)) fail(400, `ห้อง ${room} ซ้ำในไฟล์`);
+          seen.add(room);
+          return { room, grade, classroom, teacherIds, names };
+        }
+        const code = text(r.code, 20).replace(/\s+/g, "");
+        const subjectId = subjectOf[`${grade}|${code}`];
+        if (!subjectId) fail(400, `ไม่พบรหัสวิชา ${code || "(ว่าง)"} ของ ${grade} — นำเข้ารายวิชาก่อน`);
+        if (seen.has(`${room}|${code}`)) fail(400, `${code} ห้อง ${room} ซ้ำในไฟล์`);
+        seen.add(`${room}|${code}`);
+        return { room, grade, classroom, code, subjectId, teacherIds, names };
+      }));
+      if (b.dry_run || errors.length) return json({ ok: !errors.length, dry_run: true, errors, summary: { rows: plan.length }, preview: plan.map(({ teacherIds, subjectId, ...p }) => p) });
+      if (idPart === "homerooms") {
+        await batchAll(env, plan.flatMap((p) => [
+          env.DB.prepare("DELETE FROM gr_homerooms WHERE academic_year_id = ? AND grade_level = ? AND classroom = ?").bind(year.id, p.grade, p.classroom),
+          ...p.teacherIds.map((t) => env.DB.prepare("INSERT INTO gr_homerooms (academic_year_id, grade_level, classroom, user_id) VALUES (?,?,?,?)").bind(year.id, p.grade, p.classroom, t)),
+        ]));
+      } else {
+        // สร้างรายวิชาของห้องให้ถ้ายังไม่มี แล้วแทนที่ครูผู้สอนด้วยรายชื่อในไฟล์
+        await batchAll(env, plan.map((p) => env.DB.prepare("INSERT OR IGNORE INTO gr_courses (subject_id, classroom) VALUES (?, ?)").bind(p.subjectId, p.classroom)));
+        await batchAll(env, plan.flatMap((p) => [
+          env.DB.prepare("DELETE FROM gr_course_teachers WHERE course_id = (SELECT id FROM gr_courses WHERE subject_id = ? AND classroom = ?)").bind(p.subjectId, p.classroom),
+          ...p.teacherIds.map((t) => env.DB.prepare("INSERT OR IGNORE INTO gr_course_teachers (course_id, user_id) SELECT id, ? FROM gr_courses WHERE subject_id = ? AND classroom = ?").bind(t, p.subjectId, p.classroom)),
+        ]));
+      }
+      await audit(env, user, `import.${idPart}`, { year: year.id, rows: plan.length });
+      return json({ ok: true, summary: { rows: plan.length } });
+    }
+  }
+
+  // คัดลอกรายวิชาจากปีการศึกษาก่อน (เพิ่มเฉพาะรหัสที่ยังไม่มี)
+  if (section === "subjects" && method === "POST" && idPart === "copy") {
+    const b = await readJson(request);
+    const year = await resolveYear(env, b.year);
+    const from = await resolveYear(env, intParam(b.from_year, "ปีต้นทาง"));
+    if (from.id === year.id) fail(400, "เลือกปีต้นทางที่ไม่ใช่ปีเดียวกัน");
+    const r = await env.DB.prepare(`INSERT OR IGNORE INTO gr_subjects (academic_year_id, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order)
+      SELECT ?, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order FROM gr_subjects WHERE academic_year_id = ?`).bind(year.id, from.id).run();
+    await audit(env, user, "subjects.copy", { year: year.id, from: from.id, added: r.meta?.changes ?? 0 });
+    return json({ ok: true, added: r.meta?.changes ?? 0 });
   }
 
   // ---------- รายวิชา (subjects) ----------
@@ -192,7 +288,8 @@ export async function handleAdmin(request, env, user, parts, method, url) {
     if (method === "POST" && idPart === "generate") {
       const b = await readJson(request);
       const year = await resolveYear(env, b.year);
-      const rooms = (await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level));
+      const pilot = (await getSettings(env, year.id)).pilot_rooms;
+      const rooms = (await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level) && (!pilot || pilot.includes(`${r.grade_level}/${r.classroom}`)));
       const { results: subjects } = await env.DB.prepare("SELECT id, grade_level FROM gr_subjects WHERE academic_year_id = ?").bind(year.id).all();
       const stmts = [];
       for (const s of subjects) for (const r of rooms) if (r.grade_level === s.grade_level) {
@@ -337,6 +434,42 @@ export async function handleAdmin(request, env, user, parts, method, url) {
   }
 
   fail(404, "ไม่พบเส้นทาง API");
+}
+
+// บันทึกค่าตั้งของปี เฉพาะคอลัมน์ที่ส่งมา (คอลัมน์อื่นคงเดิม)
+const SETTING_COLUMNS = ["collect_ratio", "indicator_pass_pct", "indicator_pass_pct_t2", "attendance_pass_pct", "school_name", "school_area",
+  "affiliation", "director_name", "deputy_director_name", "academic_head_name", "measurement_head_name", "entry_open", "roster_order", "pilot_rooms"];
+async function upsertSettings(env, yearId, values, user) {
+  const cols = Object.keys(values).filter((k) => SETTING_COLUMNS.includes(k));
+  await env.DB.prepare("INSERT OR IGNORE INTO gr_settings (academic_year_id) VALUES (?)").bind(yearId).run();
+  await env.DB.prepare(`UPDATE gr_settings SET ${cols.map((c) => `${c} = ?`).join(", ")}, updated_by = ?, updated_at = datetime('now') WHERE academic_year_id = ?`)
+    .bind(...cols.map((c) => values[c]), user.id, yearId).run();
+}
+
+// "ป.4/2", "ป4/2", "ป. 4 / 2", "4/2" → "ป.4/2"
+export function normRoom(v) {
+  const m = String(v ?? "").replace(/\s+/g, "").match(/^(?:ป\.?)?([1-6])\/(\d+)$/);
+  return m ? `ป.${m[1]}/${m[2]}` : String(v ?? "").trim();
+}
+
+// จับคู่ชื่อครูในไฟล์กับบัญชีผู้ใช้: ตรงกับอีเมล หรือชื่อ-สกุล (ไม่สนคำนำหน้าและช่องว่าง)
+const PREFIX = /^(นางสาว|นาง|นาย|น\.ส\.|ว่าที่ร้อยตรี|ว่าที่ ร\.ต\.|ดร\.|ครู)\s*/;
+const normName = (n) => {
+  let s = String(n || "").trim(), prev;
+  do { prev = s; s = s.replace(PREFIX, ""); } while (s !== prev); // คำนำหน้าซ้อนกันได้ เช่น "นางครู…"
+  return s.replace(/\s+/g, "");
+};
+async function teacherMatcher(env) {
+  const { results } = await env.DB.prepare("SELECT id, email, full_name FROM users WHERE status = 'active' AND deleted_at IS NULL AND role IS NOT NULL").all();
+  const byEmail = new Map(results.map((u) => [String(u.email).toLowerCase(), u.id]));
+  const byName = new Map();
+  for (const u of results) { const k = normName(u.full_name); byName.set(k, byName.has(k) ? -1 : u.id); }
+  return (name) => {
+    const id = byEmail.get(name.toLowerCase()) ?? byName.get(normName(name));
+    if (id === -1) fail(400, `ชื่อ "${name}" ซ้ำกันหลายบัญชี ให้ใช้อีเมลแทน`);
+    if (!id) fail(400, `ไม่พบบัญชีครู "${name}" (ใช้ชื่อ-สกุลตามระบบ หรืออีเมล)`);
+    return id;
+  };
 }
 
 async function countCourses(env, yearId) {

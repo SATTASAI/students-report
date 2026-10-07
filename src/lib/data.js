@@ -5,6 +5,8 @@ export const DEFAULT_SETTINGS = {
   collect_ratio: 70, indicator_pass_pct: 50, attendance_pass_pct: 80,
   school_name: "โรงเรียนบ้านป่าเด็ง", school_area: "", director_name: "", academic_head_name: "",
   measurement_head_name: "", entry_open: 1, roster_order: "gender",
+  indicator_pass_pct_t2: null, deputy_director_name: "", affiliation: "สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน",
+  pilot_rooms: null,
 };
 
 export async function listYears(env) {
@@ -29,7 +31,18 @@ export async function resolveYear(env, value) {
 
 export async function getSettings(env, yearId) {
   const row = await env.DB.prepare("SELECT * FROM gr_settings WHERE academic_year_id = ?").bind(yearId).first();
-  return { ...DEFAULT_SETTINGS, ...(row || {}), academic_year_id: yearId };
+  const out = { ...DEFAULT_SETTINGS, academic_year_id: yearId };
+  for (const [k, v] of Object.entries(row || {})) if (v != null || !(k in DEFAULT_SETTINGS)) out[k] = v;
+  if (!out.affiliation) out.affiliation = DEFAULT_SETTINGS.affiliation;
+  out.pilot_rooms = parsePilotRooms(out.pilot_rooms);
+  return out;
+}
+
+// ห้องนำร่อง: ["ป.4/2"] หรือ null (= เปิดใช้ทุกห้อง)
+export function parsePilotRooms(v) {
+  if (Array.isArray(v)) return v.length ? v : null;
+  if (!v) return null;
+  try { const a = JSON.parse(v); return Array.isArray(a) && a.length ? a.map(String) : null; } catch { return null; }
 }
 
 // ห้องเรียนทั้งหมดของปี: นับจากภาคเรียนล่าสุดที่นักเรียนแต่ละคนลงทะเบียน (เฉพาะที่ยังเรียนอยู่)
@@ -168,6 +181,8 @@ export function gradeSettings(course, settings) {
     hours_per_year: course.hours_per_year,
     attendance_pass_pct: settings.attendance_pass_pct,
     indicator_pass_pct: settings.indicator_pass_pct,
+    indicator_pass_pct_t2: settings.indicator_pass_pct_t2,
+    finalized: !!course.locked,
   };
 }
 
