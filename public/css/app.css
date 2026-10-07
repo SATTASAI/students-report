@@ -328,3 +328,10 @@ table.sheet { border-collapse: separate; border-spacing: 0; font-size: 14px; }
 .sheet td.chk-cell.ro { background: var(--line-soft); }
 .sheet td.chk-cell.ro.fail { background: var(--bad-bg); }
 .ratio-sel { width: auto; min-height: 32px; padding: 3px 8px; font-size: 14px; }
+
+/* คลังเอกสาร */
+.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.doc-item { display: grid; gap: 6px; align-content: start; padding: 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: #fbfcff; }
+.doc-item.wide { grid-column: 1 / -1; }
+.doc-item > .btn, .doc-item > a.btn { justify-self: start; }
+.room-docs { scroll-margin-top: 70px; }

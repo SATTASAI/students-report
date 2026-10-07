@@ -7,6 +7,7 @@ import { handleAdmin } from "./routes/admin.js";
 import { handleCourses } from "./routes/courses.js";
 import { handleHomeroom } from "./routes/homeroom.js";
 import { handleReports, handleMe } from "./routes/reports.js";
+import { handleActivities } from "./routes/activities.js";
 
 const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
@@ -40,6 +41,7 @@ async function routeApi(request, env, url) {
     case "courses": return handleCourses(request, env, user, parts, method, url);
     case "homeroom": return handleHomeroom(request, env, user, parts, method, url);
     case "reports": return handleReports(request, env, user, parts, method, url);
+    case "activities": return handleActivities(request, env, user, parts, method, url);
     default: return json({ error: "ไม่พบเส้นทาง API" }, 404);
   }
 }

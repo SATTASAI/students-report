@@ -1,6 +1,5 @@
 import { json, readJson, fail, requireAdmin, intParam, text, audit, batchAll, HttpError, requireImporter } from "../lib/http.js";
-import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade, roomRoster, studentName, assessmentsFor } from "../lib/data.js";
-import { ACADEMIC_ACTIVITIES, ACTIVITY_PARTS } from "../../public/js/grading.js";
+import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade } from "../lib/data.js";
 
 export const LEARNING_AREAS = [
   "ภาษาไทย", "คณิตศาสตร์", "วิทยาศาสตร์และเทคโนโลยี", "สังคมศึกษา ศาสนาและวัฒนธรรม",
@@ -457,44 +456,6 @@ export async function handleAdmin(request, env, user, parts, method, url) {
     if (method === "DELETE" && idPart) {
       await env.DB.prepare("DELETE FROM gr_indicator_bank WHERE id = ?").bind(intParam(idPart)).run();
       return json({ ok: true });
-    }
-  }
-
-  // ---------- ฐานการเรียนรู้ (ฝ่ายวิชาการบันทึกผล ปพ.5.1) ----------
-  if (section === "activity") {
-    if (!user.can_import) fail(403, "ฐานการเรียนรู้บันทึกได้เฉพาะฝ่ายวิชาการ/ทีมวัดผล");
-    const year = await resolveYear(env, url.searchParams.get("year"));
-    const keys = ACADEMIC_ACTIVITIES.flatMap((k) => ACTIVITY_PARTS.map(([p]) => `${k}_${p}`));
-    if (method === "GET") {
-      const grade = text(url.searchParams.get("grade"), 10), room = text(url.searchParams.get("room"), 10);
-      if (!isPrimaryGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
-      const roster = await roomRoster(env, year.id, grade, room);
-      const ass = await assessmentsFor(env, year.id, roster.map((s) => s.id));
-      return json({ year, grade, room, keys, students: roster.map((s) => ({
-        id: s.id, number: s.number, name: studentName(s), enrollment_status: s.enrollment_status,
-        values: Object.fromEntries(keys.filter((k) => ass[s.id]?.[k]).map((k) => [k, ass[s.id][k]])),
-      })) });
-    }
-    if (method === "PUT") {
-      const b = await readJson(request);
-      const grade = text(b.grade, 10), room = text(b.room, 10);
-      if (!isPrimaryGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
-      const roster = new Set((await roomRoster(env, year.id, grade, room)).map((s) => s.id));
-      const changes = Array.isArray(b.changes) ? b.changes.slice(0, 2000) : [];
-      const stmts = [];
-      for (const c of changes) {
-        const sid = Number(c.student_id);
-        if (!roster.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
-        if (!keys.includes(c.item_key)) fail(400, "หัวข้อไม่ถูกต้อง");
-        if (c.value && c.value !== "มผ") fail(400, "บันทึกได้เฉพาะ มผ (ค่าเริ่มต้นคือผ่าน)");
-        stmts.push(c.value
-          ? env.DB.prepare(`INSERT INTO gr_assessments (academic_year_id, student_id, item_key, value, updated_by, updated_at) VALUES (?,?,?,?,?,datetime('now'))
-              ON CONFLICT(academic_year_id, student_id, item_key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = datetime('now')`).bind(year.id, sid, c.item_key, "มผ", user.id)
-          : env.DB.prepare("DELETE FROM gr_assessments WHERE academic_year_id = ? AND student_id = ? AND item_key = ?").bind(year.id, sid, c.item_key));
-      }
-      await batchAll(env, stmts);
-      await audit(env, user, "activity.update", { grade, room, changes: changes.length });
-      return json({ ok: true, saved: stmts.length });
     }
   }
 

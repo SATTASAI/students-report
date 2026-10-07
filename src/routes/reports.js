@@ -77,6 +77,30 @@ export async function handleReports(request, env, user, parts, method, url) {
     return json(await roomReport(env, year, grade, room, student));
   }
 
+  // คลังเอกสาร: ห้องและรายวิชาที่ผู้ใช้ออกเอกสารได้
+  // ผู้ดูแล/ทีมวัดผล/ผู้บริหาร = ทุกห้อง (เฉพาะห้องนำร่องถ้าตั้งไว้), ครูประจำชั้น = ทั้งห้องของตน, ครูผู้สอน = เฉพาะวิชาที่สอน
+  if (kind === "docs") {
+    const year = await resolveYear(env, url.searchParams.get("year"));
+    const [all, rooms, settings] = await Promise.all([courseOverview(env, year.id), listRooms(env, year.id), getSettings(env, year.id)]);
+    const primary = rooms.filter((r) => isPrimaryGrade(r.grade_level));
+    const key = (g, r) => `${g}/${r}`;
+    let full = new Set();
+    if (user.is_admin) full = new Set(primary.map((r) => key(r.grade_level, r.classroom)).filter((k) => !settings.pilot_rooms || settings.pilot_rooms.includes(k)));
+    else {
+      const { results } = await env.DB.prepare("SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?").bind(year.id, user.id).all();
+      full = new Set(results.map((h) => key(h.grade_level, h.classroom)));
+    }
+    const out = [];
+    for (const r of primary) {
+      const k = key(r.grade_level, r.classroom);
+      const mine = all.filter((c) => c.grade_level === r.grade_level && c.classroom === r.classroom && (full.has(k) || c.teachers.some((t) => t.id === user.id)));
+      if (!full.has(k) && !mine.length) continue;
+      out.push({ grade_level: r.grade_level, classroom: r.classroom, students: r.students, full: full.has(k),
+        courses: mine.map((c) => ({ id: c.id, code: c.code, name: c.name, status: c.status, item_count: c.item_count })) });
+    }
+    return json({ year, rooms: out, school: !!user.is_admin });
+  }
+
   // รายวิชาของห้องที่ผู้ใช้พิมพ์ ปพ.5 ได้ (ผู้ดูแล/ครูประจำชั้น = ทุกวิชา, ครูผู้สอน = วิชาที่สอน)
   if (kind === "room-courses") {
     const year = await resolveYear(env, url.searchParams.get("year"));

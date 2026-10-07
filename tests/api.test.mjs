@@ -182,7 +182,7 @@ test("ครูประจำชั้น: ประเมินคุณลั
   assert.equal(imp.data.added, 1);
   const hr = (await call("t1", "GET", "/api/homeroom?grade=ป.1&room=1", null, { expect: 200 })).data;
   const sid = hr.students[0].id;
-  await call("t1", "PUT", "/api/homeroom/assessments?grade=ป.1&room=1", { changes: [{ student_id: sid, item_key: "trait_1", value: "3" }, { student_id: sid, item_key: "act_scout_o", value: "มผ" }] }, { expect: 200 });
+  await call("t1", "PUT", "/api/homeroom/assessments?grade=ป.1&room=1", { changes: [{ student_id: sid, item_key: "trait_1", value: "3" }] }, { expect: 200 });
   await call("t1", "PUT", "/api/homeroom/assessments?grade=ป.1&room=1", { changes: [{ student_id: sid, item_key: "trait_1", value: "5" }] }, { expect: 400 });
   await call("t1", "PUT", "/api/homeroom/assessments?grade=ป.1&room=1", { changes: [{ student_id: sid, item_key: "hack", value: "1" }] }, { expect: 400 });
   // นักเรียนห้องอื่น

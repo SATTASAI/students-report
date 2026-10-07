@@ -1,5 +1,5 @@
 import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear } from "/js/app.js";
-import { ASSESSMENT_GROUPS, ACTIVITY_PARTS, ACADEMIC_ACTIVITIES, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
+import { ASSESSMENT_GROUPS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
 
 await shell("home");
 const p = params();
@@ -28,10 +28,10 @@ const active = () => data.students.filter((s) => s.enrollment_status === "enroll
 document.getElementById("meta").textContent = `ปีการศึกษา ${data.year.year_be} · นักเรียน ${active().length} คน`;
 document.getElementById("backLink").href = withYear("/", data.year.id);
 const pp6 = document.getElementById("pp6Btn");
-pp6.innerHTML = `${ICONS.print} พิมพ์ ปพ.6 ทั้งห้อง`;
-pp6.href = `/print/pp6.html?${q}`;
+pp6.innerHTML = `${ICONS.print} ปพ.6 และเอกสารของห้อง`;
+pp6.href = `/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}`;
 
-const TABS = [...ASSESSMENT_GROUPS.map((g) => [g.key, g.short]), ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"], ["grades", "ผลการเรียนรวม"], ["absence", "ขาดเรียน (บค.)"]];
+const TABS = [...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["act", "กิจกรรมพัฒนาผู้เรียน"], ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"], ["grades", "ผลการเรียนรวม"], ["absence", "ขาดเรียน (บค.)"]];
 const tabs = document.getElementById("tabs");
 tabs.innerHTML = TABS.map(([k, label]) => `<button role="tab" data-tab="${k}">${label}</button>`).join("");
 if (!TABS.some(([k]) => k === tab)) tab = "trait";
@@ -45,8 +45,8 @@ window.addEventListener("beforeunload", (e) => { if (pending.size || pendingC.si
 
 function render() {
   const group = ASSESSMENT_GROUPS.find((g) => g.key === tab);
-  if (group?.type === "activity") renderActivities(group);
-  else if (group) renderAssessment(group);
+  if (tab === "act") { location.href = `/activities.html?room=${encodeURIComponent(`${grade}/${room}`)}`; return; }
+  if (group) renderAssessment(group);
   else if (tab === "comments") renderComments();
   else if (tab === "body") renderBody();
   else if (tab === "grades") renderGrades();
@@ -117,36 +117,6 @@ function setValue(group, sid, key, value, sel) {
   if (sum) sum.textContent = summaryCell(group, sid);
   pending.set(`${sid}|${key}`, value);
   schedule();
-}
-
-// ---------- ปพ.5.1 กิจกรรมพัฒนาผู้เรียน: ค่าเริ่มต้นผ่าน ติ๊กออกเฉพาะคนไม่ผ่าน ----------
-function renderActivities(group) {
-  view.innerHTML = `
-    <div class="sheet-tools">
-      <span class="muted small">ทุกคนผ่านเป็นค่าเริ่มต้น ไม่ต้องยืนยันทุกภาค — เอาเครื่องหมายออกเฉพาะคนที่เวลาเรียนไม่ครบหรือไม่ผ่านจุดประสงค์ · บันทึกอัตโนมัติ</span>
-      <span class="save-state" id="saveState">บันทึกแล้ว</span>
-    </div>
-    <div class="sheet-wrap"><table class="sheet" id="sheet">
-      <thead>
-        <tr><th class="stick no col-head" rowspan="2">เลขที่</th><th class="stick name col-head" rowspan="2" style="text-align:left">ชื่อ–สกุล</th>
-          ${group.items.map(([, label]) => `<th class="col-head" colspan="2"><span class="t">${esc(label)}</span></th>`).join("")}<th class="col-head" rowspan="2">สรุป</th></tr>
-        <tr>${group.items.map(() => ACTIVITY_PARTS.map(([, l]) => `<th class="col-head small">${l}</th>`).join("")).join("")}</tr>
-      </thead>
-      <tbody>${data.students.map((s) => `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}">
-        <td class="stick no">${s.number ?? ""}</td><td class="stick name">${esc(s.name)}</td>
-        ${group.items.map(([k, label]) => ACTIVITY_PARTS.map(([pt, pl]) => { const key = `${k}_${pt}`; const ok = valueOf(s.id, key) !== "มผ"; const ro = ACADEMIC_ACTIVITIES.includes(k);
-          return `<td class="chk-cell ${ok ? "" : "fail"} ${ro ? "ro" : ""}"><input type="checkbox" data-key="${key}" ${ok ? "checked" : ""} ${ro ? 'disabled title="ฝ่ายวิชาการเป็นผู้บันทึก"' : ""} aria-label="${esc(s.name)} ${esc(label)} ${pl}"></td>`; }).join("")).join("")}
-        <td class="calc" data-sum>${summaryCell(group, s.id)}</td></tr>`).join("")}</tbody>
-    </table></div>
-    <p class="muted small" style="margin-top:10px">ช่องมีเครื่องหมาย = ผ่าน · ผลกิจกรรมผ่านเมื่อผ่านทั้งเวลาเรียนและจุดประสงค์ · ช่องสีเทา (${group.items.filter(([k]) => ACADEMIC_ACTIVITIES.includes(k)).map(([, l]) => l).join(", ")}) ฝ่ายวิชาการเป็นผู้บันทึก</p>`;
-  document.getElementById("sheet").addEventListener("change", (e) => {
-    const box = e.target;
-    if (!box.dataset.key) return;
-    box.parentElement.classList.toggle("fail", !box.checked);
-    setValue(group, Number(box.closest("tr").dataset.sid), box.dataset.key, box.checked ? "" : "มผ", null);
-    box.closest("tr").querySelector("[data-sum]").textContent = summaryCell(group, Number(box.closest("tr").dataset.sid));
-  });
-  showState();
 }
 
 // ---------- ความคิดเห็นครูประจำชั้น (ปพ.6) ----------
@@ -339,13 +309,13 @@ const REASON = { sick: "ป่วย", personal: "ลากิจ", unknown: "�
 function renderAbsence() {
   const rows = data.students.map((s) => ({ s, list: data.absences[s.id] || [] }));
   view.innerHTML = `
-    <div class="note" style="margin-bottom:14px">บันทึกเฉพาะนักเรียนที่ขาดเรียนบ่อยหรือขาดติดต่อกัน (การเช็กชื่อรายวันยังใช้ Q-info ตามเดิม) แล้วพิมพ์หนังสือแจ้งผู้ปกครองได้จากรายชื่อด้านล่าง</div>
+    <div class="note" style="margin-bottom:14px">บันทึกเฉพาะนักเรียนที่ขาดเรียนบ่อยหรือขาดติดต่อกัน (การเช็กชื่อรายวันยังใช้ Q-info ตามเดิม) · พิมพ์หนังสือแจ้งผู้ปกครองได้ที่ <a href="/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}">คลังเอกสาร</a></div>
     <div class="table-wrap"><table class="list">
       <thead><tr><th class="num">เลขที่</th><th>ชื่อ–สกุล</th><th class="num">วันที่ขาด</th><th>รายการ</th><th></th></tr></thead>
       <tbody>${rows.map(({ s, list }) => `<tr>
         <td class="num">${s.number ?? ""}</td><td>${esc(s.name)}</td><td class="num">${list.length || ""}</td>
         <td class="small">${list.map((a) => `<span class="tag ${a.reason === "unknown" ? "bad" : ""}" title="${esc(a.note || "")}">${thaiDate(a.absence_date)} ${REASON[a.reason]} <button class="linkish" style="color:inherit" data-del="${a.id}" aria-label="ลบ">×</button></span>`).join(" ")}</td>
-        <td class="actions"><button class="btn small" data-add="${s.id}">บันทึกวันขาด</button>${list.length ? `<a class="btn small" target="_blank" rel="noopener" href="/print/absence-letter.html?${q}&student=${s.id}">${ICONS.print} หนังสือแจ้งผู้ปกครอง</a>` : ""}</td>
+        <td class="actions"><button class="btn small" data-add="${s.id}">บันทึกวันขาด</button></td>
       </tr>`).join("")}</tbody></table></div>`;
   for (const b of view.querySelectorAll("[data-add]")) b.onclick = () => addAbsence(Number(b.dataset.add));
   for (const b of view.querySelectorAll("[data-del]")) b.onclick = async () => {

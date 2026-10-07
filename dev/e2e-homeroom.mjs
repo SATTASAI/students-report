@@ -38,32 +38,29 @@ const sums = await t.$$eval("#sheet tbody tr [data-sum]", (els) => els.slice(0, 
 if (sums[0] !== "3 ดีเยี่ยม" || sums[1] !== "2 ดี") errors.push(`สรุปอ่านคิดฯ ไม่ถูก ${sums}`);
 await t.screenshot({ path: `${OUT}/h1-rtw.png` });
 
-// ปพ.5.1: เอาเครื่องหมายออก 1 ช่อง
-await t.click('#tabs button[data-tab="act"]');
+// กิจกรรมพัฒนาผู้เรียน: ครูประจำชั้นบันทึกครบ 4 กิจกรรมจากเมนูซ้าย
+await t.click('.side-nav a[href="/activities.html"]');
 await t.waitForSelector("#sheet");
-await t.locator("#sheet tbody tr").nth(1).locator('input[data-key="act_scout_t"]').uncheck();
+const r2 = t.locator("#sheet tbody tr").nth(1);
+await r2.locator('input[data-key="act_scout_t"]').uncheck();
+await r2.locator('input[data-key="act_club_o"]').uncheck();
 await saved(t);
-const actSum = await t.locator("#sheet tbody tr").nth(1).locator("[data-sum]").innerText();
+const actSum = await r2.locator("[data-sum]").innerText();
 if (actSum !== "ไม่ผ่าน") errors.push(`กิจกรรมควรไม่ผ่าน ได้ ${actSum}`);
+if (await t.locator('#sheet input[data-key="act_club_t"]:disabled').count()) errors.push("ฐานการเรียนรู้ต้องแก้ได้");
+if (!(await t.innerText("#actCount")).includes("ไม่ผ่าน 1 คน")) errors.push("จำนวนไม่ผ่านไม่อัปเดต");
 await t.screenshot({ path: `${OUT}/h2-activity.png` });
-
-// ฐานการเรียนรู้: ครูประจำชั้นแก้ไม่ได้
-if (!(await t.locator("#sheet tbody tr").first().locator('input[data-key="act_club_t"]').isDisabled())) errors.push("ฐานการเรียนรู้ต้องแก้ไม่ได้ในหน้าครูประจำชั้น");
-// ฝ่ายวิชาการบันทึกฐานการเรียนรู้
-await a.goto(`${BASE}/admin.html#activity`);
-await a.waitForSelector('.side-nav a[href="/admin.html#activity"][aria-current="page"]');
-await a.waitForSelector('input[data-key="act_club_o"]');
-await a.click('[data-aroom="ป.4/1"]');
-await a.waitForSelector('[data-aroom="ป.4/1"].primary');
-await a.waitForSelector('input[data-key="act_club_o"]');
-await a.locator("tbody tr").nth(2).locator('input[data-key="act_club_o"]').uncheck();
-await a.waitForFunction(() => document.getElementById("actState")?.textContent === "บันทึกแล้ว");
-await a.screenshot({ path: `${OUT}/h2b-academic-base.png` });
-await t.reload();
-await t.waitForSelector("#sheet");
-const baseSum = await t.locator("#sheet tbody tr").nth(2).locator("[data-sum]").innerText();
-if (baseSum !== "ไม่ผ่าน") errors.push(`ผลฐานการเรียนรู้จากวิชาการต้องขึ้นที่ครูประจำชั้น ได้ ${baseSum}`);
-await t.screenshot({ path: `${OUT}/h2c-homeroom-readonly.png` });
+// ผลขึ้นในข้อมูล ปพ.6
+const rep = await api(t, `/api/reports/room?${Q}`);
+const s2 = rep.students.filter((x) => x.enrollment_status === "enrolled")[1];
+if (s2.assessments.act_club_o !== "มผ" || s2.assessments.act_scout_t !== "มผ") errors.push("ผลกิจกรรมไม่ขึ้นในข้อมูล ปพ.6");
+// ฝ่ายวิชาการเปิดหน้าเดียวกันได้ทุกห้อง
+await a.goto(`${BASE}/activities.html?room=${encodeURIComponent("ป.4/1")}`);
+await a.waitForSelector("#sheet");
+if ((await a.locator("#sheet tbody tr").nth(1).locator("[data-sum]").innerText()) !== "ไม่ผ่าน") errors.push("ฝ่ายวิชาการต้องเห็นผลเดียวกัน");
+await a.screenshot({ path: `${OUT}/h2b-academic.png` });
+await t.goto(`${BASE}/homeroom.html?${Q}`);
+await t.waitForSelector("#tabs button");
 
 // ความคิดเห็น: พิมพ์ เก็บเข้าคลัง ใช้กับทั้งห้อง
 await t.click('#tabs button[data-tab="comments"]');

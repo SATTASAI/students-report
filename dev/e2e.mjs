@@ -152,7 +152,13 @@ await shot(t, "08-homeroom");
 await t.click('#tabs button[data-tab=absence]');
 await t.click("[data-add]");
 await okDialog(t);
+await t.waitForSelector("[data-del]");
+// คลังเอกสาร: ครูประจำชั้นเห็นเอกสารของห้อง และรายชื่อหนังสือแจ้งผู้ปกครอง
+await t.click('.side-nav a[href="/docs.html"]');
+await t.waitForSelector(".room-docs");
+await t.click("[data-letters]");
 await t.waitForSelector("a[href*='absence-letter']");
+await shot(t, "08b-docs");
 
 // เอกสารพิมพ์
 for (const [name, path] of [

@@ -103,31 +103,31 @@ test("ครูประจำชั้น: ความคิดเห็น 4 
   await call("t1", "PUT", `/api/homeroom/body?${Q}`, { changes: [{ student_id: s[0].id, round: 1, weight: "", height: "" }] }, { expect: 200 });
   d = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data;
   assert.equal(d.body[s[0].id], undefined);
-  // กิจกรรม: บันทึกเฉพาะ มผ
-  await call("t1", "PUT", `/api/homeroom/assessments?${Q}`, { changes: [{ student_id: s[0].id, item_key: "act_scout_t", value: "ผ" }] }, { expect: 400 });
-  await call("t1", "PUT", `/api/homeroom/assessments?${Q}`, { changes: [{ student_id: s[0].id, item_key: "act_scout_t", value: "มผ" }, { student_id: s[0].id, item_key: "rtw_5", value: "2" }] }, { expect: 200 });
+  // กิจกรรมพัฒนาผู้เรียนบันทึกที่หน้ากิจกรรมเท่านั้น
+  await call("t1", "PUT", `/api/homeroom/assessments?${Q}`, { changes: [{ student_id: s[0].id, item_key: "act_scout_t", value: "มผ" }] }, { expect: 400 });
+  await call("t1", "PUT", `/api/homeroom/assessments?${Q}`, { changes: [{ student_id: s[0].id, item_key: "rtw_5", value: "2" }] }, { expect: 200 });
 });
 
-test("ฐานการเรียนรู้: ฝ่ายวิชาการบันทึก ครูประจำชั้นแก้ไม่ได้", async () => {
+test("กิจกรรมพัฒนาผู้เรียน: ครูประจำชั้นบันทึกครบ 4 กิจกรรม ผลขึ้น ปพ.6", async () => {
   const { call } = await setup();
   const d = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data;
   const sid = d.students.find((x) => x.enrollment_status === "enrolled").id;
-  // ครูประจำชั้นบันทึกฐานการเรียนรู้ไม่ได้ แต่กิจกรรมอื่นได้
-  await call("t1", "PUT", `/api/homeroom/assessments?${Q}`, { changes: [{ student_id: sid, item_key: "act_club_t", value: "มผ" }] }, { expect: 403 });
-  await call("t1", "PUT", `/api/homeroom/assessments?${Q}`, { changes: [{ student_id: sid, item_key: "act_guidance_t", value: "มผ" }] }, { expect: 200 });
-  // ครูทั่วไปเข้าหน้าวิชาการไม่ได้
-  await call("t1", "GET", `/api/admin/activity?${Q}`, null, { expect: 403 });
-  const a = (await call("admin", "GET", `/api/admin/activity?${Q}`, null, { expect: 200 })).data;
-  assert.deepEqual(a.keys, ["act_club_t", "act_club_o"]);
+  const meta = (await call("t1", "GET", "/api/activities", null, { expect: 200 })).data;
+  assert.equal(meta.activities.length, 4);
+  assert.ok(meta.rooms.some((r) => r.grade_level === "ป.4" && r.classroom === "1"));
   const body = { grade: "ป.4", room: "1" };
-  await call("admin", "PUT", "/api/admin/activity", { ...body, changes: [{ student_id: sid, item_key: "act_scout_t", value: "มผ" }] }, { expect: 400 });
-  await call("admin", "PUT", "/api/admin/activity", { ...body, changes: [{ student_id: sid, item_key: "act_club_o", value: "ผ" }] }, { expect: 400 });
-  await call("admin", "PUT", "/api/admin/activity", { ...body, changes: [{ student_id: 9999, item_key: "act_club_o", value: "มผ" }] }, { expect: 400 });
-  await call("admin", "PUT", "/api/admin/activity", { ...body, changes: [{ student_id: sid, item_key: "act_club_o", value: "มผ" }] }, { expect: 200 });
-  const h = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data;
-  assert.equal(h.assessments[sid].act_club_o, "มผ");
+  // ครูที่ไม่ใช่ครูประจำชั้นห้องนี้บันทึกไม่ได้
+  await call("t2", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_t", value: "มผ" }] }, { expect: 403 });
+  const keys = ["act_guidance_t", "act_scout_o", "act_club_t", "act_social_o"];
+  await call("t1", "PUT", "/api/activities", { ...body, changes: keys.map((item_key) => ({ student_id: sid, item_key, value: "มผ" })) }, { expect: 200 });
+  await call("t1", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_o", value: "ผ" }] }, { expect: 400 });
+  await call("t1", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "rtw_1", value: "มผ" }] }, { expect: 400 });
+  await call("t1", "PUT", "/api/activities", { ...body, changes: [{ student_id: 9999, item_key: "act_club_o", value: "มผ" }] }, { expect: 400 });
+  const g = (await call("t1", "GET", `/api/activities?${Q}`, null, { expect: 200 })).data;
+  assert.deepEqual(Object.keys(g.students.find((x) => x.id === sid).values).sort(), [...keys].sort());
   const rep = (await call("t1", "GET", `/api/reports/room?${Q}`, null, { expect: 200 })).data;
-  assert.equal(rep.students.find((x) => x.id === sid).assessments.act_club_o, "มผ");
-  await call("admin", "PUT", "/api/admin/activity", { ...body, changes: [{ student_id: sid, item_key: "act_club_o", value: "" }] }, { expect: 200 });
-  assert.equal((await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.assessments[sid].act_club_o, undefined);
+  assert.equal(rep.students.find((x) => x.id === sid).assessments.act_club_t, "มผ");
+  // ฝ่ายวิชาการแก้ได้ทุกห้อง
+  await call("admin", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_t", value: "" }] }, { expect: 200 });
+  assert.equal((await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.assessments[sid].act_club_t, undefined);
 });

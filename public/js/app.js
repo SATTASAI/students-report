@@ -109,6 +109,8 @@ function roleMenu(role, me) {
   if (role === "teacher") return [
     { href: "/", icon: "book", label: "รายวิชาที่สอน" },
     ...me.homerooms.map((h) => ({ href: `/homeroom.html?grade=${encodeURIComponent(h.grade_level)}&room=${encodeURIComponent(h.classroom)}`, icon: "room", label: `ประจำชั้น ${h.grade_level}/${h.classroom}` })),
+    ...(me.homerooms.length ? [{ href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" }] : []),
+    { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   if (role === "measure") return [
     { href: "/reports.html#progress", icon: "chart", label: "ติดตามการส่งผล" },
@@ -117,23 +119,24 @@ function roleMenu(role, me) {
     { href: "/admin.html#import", icon: "upload", label: "นำเข้าจาก Excel" },
     { href: "/admin.html#courses", icon: "people", label: "ครูผู้สอน / ส่งคืน" },
     { href: "/admin.html#homerooms", icon: "room", label: "ครูประจำชั้น" },
-    { href: "/admin.html#activity", icon: "check", label: "ฐานการเรียนรู้" },
+    { href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" },
     { href: "/admin.html#bank", icon: "bank", label: "คลังตัวชี้วัด" },
     { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม" },
-    { href: "/reports.html#rooms", icon: "doc", label: "เอกสารรายห้อง" },
     { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
+    { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   if (role === "exec") return [
     { href: "/reports.html#progress", icon: "chart", label: "ภาพรวมการส่งผล" },
     { href: "/admin.html#approve", icon: "check", label: "อนุมัติผลการเรียน" },
     { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
-    { href: "/reports.html#rooms", icon: "doc", label: "เอกสารรายห้อง" },
+    { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   return [
     { href: "/admin.html#start", icon: "flag", label: "ห้องที่เปิดใช้ระบบ" },
     { href: "/admin.html#people", icon: "key", label: "สิทธิ์ทีมวัดผล" },
     { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม" },
     { href: "/admin.html#audit", icon: "clock", label: "ประวัติการใช้งาน" },
+    { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
 }
 

@@ -1,6 +1,6 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll } from "../lib/http.js";
 import { resolveYear, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isPrimaryGrade } from "../lib/data.js";
-import { ASSESSMENT_KEYS, validAssessmentValue, ACADEMIC_ACTIVITIES } from "../../public/js/grading.js";
+import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
 
 const REASONS = ["sick", "personal", "unknown", "other"];
 export const COMMENT_FIELDS = ["learn", "habit", "health", "other"];
@@ -47,7 +47,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       const sid = Number(c.student_id);
       if (!roster.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
       if (!ASSESSMENT_KEYS.has(c.item_key)) fail(400, "หัวข้อประเมินไม่ถูกต้อง");
-      if (ACADEMIC_ACTIVITIES.some((k) => c.item_key.startsWith(`${k}_`))) fail(403, "ฐานการเรียนรู้ ฝ่ายวิชาการเป็นผู้บันทึก");
+      if (c.item_key.startsWith("act_")) fail(400, "บันทึกกิจกรรมพัฒนาผู้เรียนที่หน้า \"กิจกรรมพัฒนาผู้เรียน\"");
       const value = c.value == null ? "" : String(c.value);
       if (!validAssessmentValue(c.item_key, value)) fail(400, "ระดับผลการประเมินไม่ถูกต้อง");
       stmts.push(value === ""

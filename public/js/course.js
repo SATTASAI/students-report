@@ -38,8 +38,8 @@ function renderHeader() {
   else if (me.role === "measure" || me.role === "admin") { back.textContent = "ครูผู้สอน / ส่งคืน"; back.href = "/admin.html#courses"; }
   else back.href = withYear("/", c.academic_year_id);
   const pb = document.getElementById("printBtn");
-  pb.innerHTML = `${ICONS.print} พิมพ์ ปพ.5`;
-  pb.href = `/print/pp5.html?course=${c.id}`;
+  pb.innerHTML = `${ICONS.print} ปพ.5 ในคลังเอกสาร`;
+  pb.href = `/docs.html?room=${encodeURIComponent(`${c.grade_level}/${c.classroom}`)}`;
   const sb = document.getElementById("submitBtn");
   const note = document.getElementById("lockNote");
   const when = (t) => t ? ` เมื่อ ${String(t).slice(0, 16).replace("T", " ")}` : "";
