@@ -22,7 +22,8 @@ async function login(page, email) {
   await page.fill('input[name=email]', email);
   await page.fill('input[name=password]', "test-password-1");
   await page.click("#go");
-  await page.waitForURL(`${BASE}/`);
+  await page.waitForURL((u) => !u.pathname.startsWith("/login"));
+await page.waitForSelector("#main:not([hidden])");
   await page.waitForSelector("#main:not([hidden])");
 }
 const shot = (page, name) => page.screenshot({ path: `${OUT}/${name}.png`, fullPage: false });
@@ -32,7 +33,7 @@ const okDialog = async (page) => { await page.click('dialog[open] button[value=o
 const admin = await newPage();
 await login(admin, "admin@test.local");
 await admin.goto(`${BASE}/admin.html`);
-await admin.click('#tabs button[data-tab=start]');
+await admin.click('.side-nav a[href="/admin.html#start"]');
 await admin.waitForSelector("#tplBtn");
 await admin.click("#tplBtn");
 for (const g of ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"]) await admin.check(`dialog[open] input[name="${g}"]`);
@@ -42,7 +43,7 @@ await admin.click("#genBtn");
 await admin.waitForFunction(() => document.body.innerText.includes("รายวิชา-ห้อง"));
 await shot(admin, "01-admin-start");
 // มอบหมายครูสมใจให้สอนทุกวิชาของ ป.1/1
-await admin.click('#tabs button[data-tab=courses]');
+await admin.click('.side-nav a[href="/admin.html#courses"]');
 await admin.waitForSelector("#assignAll");
 await admin.click('[data-room="ป.1/1"]');
 await admin.waitForSelector("#assignAll");
@@ -51,12 +52,12 @@ await admin.selectOption('dialog[open] select[name=user_id]', { label: "คร�
 await okDialog(admin);
 await admin.waitForFunction(() => document.body.innerText.includes("ครูสมใจ"));
 await shot(admin, "02-admin-courses");
-await admin.click('#tabs button[data-tab=homerooms]');
+await admin.click('.side-nav a[href="/admin.html#homerooms"]');
 await admin.waitForSelector("#importHr");
 await admin.click("#importHr");
 await admin.waitForFunction(() => [...document.querySelectorAll("td")].some((t) => t.textContent.includes("ครูสมใจ")));
 // เพิ่มคลังตัวชี้วัดภาษาไทย ป.1
-await admin.click('#tabs button[data-tab=bank]');
+await admin.click('.side-nav a[href="/admin.html#bank"]');
 await admin.waitForSelector("#bankForm");
 await admin.fill("#bankForm textarea", "ท 1.1 ป.1/1 ออกเสียงคำ คำคล้องจอง และข้อความสั้น ๆ\nท 1.1 ป.1/2 บอกความหมายของคำและข้อความที่อ่าน\nท 2.1 ป.1/1 คัดลายมือตัวบรรจงเต็มบรรทัด");
 await admin.click("#bankForm button");

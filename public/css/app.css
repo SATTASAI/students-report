@@ -45,28 +45,62 @@ p { margin: 0 0 .8em; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
-/* ---------- แถบบน ---------- */
-.topbar {
-  position: sticky; top: 0; z-index: 50;
-  display: flex; align-items: center; gap: 14px;
-  padding: 10px 20px; background: var(--ink); color: #fff;
+/* ---------- เมนูซ้าย ---------- */
+:root { --side-w: 256px; }
+.sidebar {
+  position: fixed; inset: 0 auto 0 0; z-index: 60; width: var(--side-w);
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px 12px 12px; background: var(--ink); color: #fff; overflow-y: auto;
 }
-.topbar a { color: inherit; text-decoration: none; }
-.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.brand img { width: 34px; height: 34px; border-radius: 50%; background: #fff; object-fit: cover; }
+.sidebar a { color: inherit; text-decoration: none; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 2px 6px; }
+.brand img { width: 36px; height: 36px; border-radius: 50%; background: #fff; object-fit: cover; flex: none; }
 .brand strong { font-size: 16px; font-weight: 600; white-space: nowrap; }
-.brand span { display: block; font-size: 12px; opacity: .75; white-space: nowrap; }
-.topnav { display: flex; gap: 4px; margin-left: 18px; }
-.topnav a { padding: 6px 12px; border-radius: 999px; font-size: 14px; opacity: .85; }
-.topnav a:hover { background: rgba(255,255,255,.12); opacity: 1; }
-.topnav a[aria-current="page"] { background: rgba(255,255,255,.18); opacity: 1; }
-.top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.top-right select { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 5px 10px; font: inherit; font-size: 14px; }
-.top-right select option { color: var(--text); }
-.who { font-size: 13px; opacity: .85; white-space: nowrap; }
-.linkish { white-space: nowrap; background: none; border: 0; color: inherit; font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; opacity: .85; padding: 4px; }
+.brand span { display: block; font-size: 12px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-ctl { display: grid; gap: 8px; padding: 10px; border-radius: var(--r-md); background: rgba(255,255,255,.08); }
+.side-ctl label { display: grid; gap: 3px; font-size: 12px; opacity: .9; }
+.side-ctl select { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: var(--r-sm); min-height: 36px; padding: 5px 8px; font-size: 14px; }
+.side-ctl select option { color: var(--text); }
+.side-ctl select:disabled { opacity: 1; }
+.side-nav { display: grid; gap: 2px; align-content: start; flex: 1; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 8px 10px;
+  border: 0; border-radius: var(--r-sm); background: none; color: inherit; font: inherit; font-size: 14px; text-align: left; cursor: pointer; opacity: .82;
+}
+.nav-item svg { width: 18px; height: 18px; flex: none; }
+.nav-item:hover { background: rgba(255,255,255,.1); opacity: 1; }
+.nav-item[aria-current="page"] { background: #fff; color: var(--ink); opacity: 1; font-weight: 600; }
+.side-foot { border-top: 1px solid rgba(255,255,255,.15); padding-top: 10px; display: grid; gap: 4px; }
+.who-box { display: flex; gap: 10px; align-items: center; padding: 4px 6px; font-size: 13px; }
+.who-box b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.who-box small { opacity: .75; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.18); display: grid; place-items: center; font-weight: 600; flex: none; }
+body.with-sidebar { padding-left: var(--side-w); }
+.mobilebar, .scrim { display: none; }
 
-.page { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+/* แท็บเล็ตและมือถือ: เมนูเป็นลิ้นชักเปิดจากซ้าย */
+@media (max-width: 1023px) {
+  body.with-sidebar { padding-left: 0; }
+  .sidebar { transform: translateX(-100%); transition: transform .2s ease; width: min(300px, 86vw); visibility: hidden; }
+  body.nav-open .sidebar { transform: none; visibility: visible; box-shadow: 0 0 40px rgba(0,0,0,.25); }
+  body.nav-open .scrim { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(15,20,50,.45); }
+  body.nav-open { overflow: hidden; }
+  .mobilebar {
+    position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; background: var(--ink); color: #fff;
+  }
+  .mobilebar .brand { padding: 0; color: #fff; text-decoration: none; }
+  .mobilebar .brand img { width: 30px; height: 30px; }
+  .mobilebar .brand strong { font-size: 15px; }
+  .icon-btn { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm); background: rgba(255,255,255,.12); color: #fff; cursor: pointer; }
+  .icon-btn svg { width: 22px; height: 22px; }
+  .role-chip { margin-left: auto; font-size: 12px; padding: 3px 10px; border-radius: 999px; background: rgba(255,255,255,.18); white-space: nowrap; }
+}
+@media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+@media print { .sidebar, .mobilebar, .scrim { display: none !important; } body.with-sidebar { padding-left: 0; } }
+
+.page { max-width: 1180px; margin: 0 auto; padding: 28px 24px 60px; }
+@media (max-width: 640px) { .page { padding: 18px 16px 48px; } h1 { font-size: 22px; } }
 .page.wide { max-width: none; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
 .page-head p { margin: 0; color: var(--muted); }
@@ -234,24 +268,18 @@ table.sheet { border-collapse: separate; border-spacing: 0; font-size: 14px; }
 
 @media (max-width: 860px) {
   .dash { grid-template-columns: 1fr; }
-  .topnav { display: none; }
-  .brand span { display: none; }
-  .who { display: none; }
   .course-row { grid-template-columns: 64px minmax(0, 1fr); }
   .course-row .meter-cell, .course-row .go { grid-column: 2; }
   .item { grid-template-columns: 1fr auto; }
   .item .code, .item > span:nth-child(2) { grid-column: 1 / -1; }
-  .page { padding: 18px 12px 48px; }
   .sheet .name { min-width: 120px; max-width: 130px; }
-  .topbar { padding: 8px 12px; gap: 8px; }
-  .brand strong { font-size: 14px; }
-  .top-right select { max-width: 132px; }
 }
 @media (max-width: 480px) {
-  .brand div { display: none; }
   .sheet-wrap { max-height: calc(100dvh - 240px); }
 }
-@media print { .topbar, .no-print { display: none !important; } }
+@media print { .no-print { display: none !important; } }
+/* แท็บในหน้า: เมนูซ้ายเลือกส่วนให้แล้ว จึงซ่อนแถบแท็บของหน้าตั้งค่า/รายงาน */
+.tabs.by-menu { display: none; }
 
 /* ขั้นตอนเริ่มต้นปี (หน้าตั้งค่า) */
 .step-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }

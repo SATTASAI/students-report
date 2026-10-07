@@ -1,4 +1,4 @@
-import { shell, api, esc, toast, showError, dialog, confirmBox } from "/js/app.js";
+import { shell, api, esc, toast, showError, dialog, confirmBox, hashTab } from "/js/app.js";
 import { parseIndicatorLines } from "/js/indicators.js";
 import { IMPORT_KINDS, parseGrid, gridToRows } from "/js/paste.js";
 import { loadXlsx } from "/js/export.js";
@@ -18,22 +18,27 @@ const yq = `year=${Y}`;
 main.hidden = false;
 document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} — ใช้ข้อมูลห้องเรียนและนักเรียนจากระบบบริหารโรงเรียน`;
 const GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
-let tab = sessionStorage.getItem("sr-admin-tab") || "start";
-if (["import", "bank"].includes(tab) && !me.user.can_import) tab = "start";
+// ส่วนของหน้า เลือกจากเมนูซ้ายผ่าน #hash
+const SECTIONS = {
+  start: "เริ่มต้นปีการศึกษา", subjects: "รายวิชา", import: "นำเข้าจาก Excel", courses: "ครูผู้สอน / ส่งคืน", homerooms: "ครูประจำชั้น",
+  bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน",
+};
+const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super));
+let tab = hashTab(allowed, me.role === "exec" && allowed.includes("approve") ? "approve" : "start");
+document.getElementById("tabs")?.classList.add("by-menu");
+window.addEventListener("hashchange", () => { tab = hashTab(allowed, "start"); renderTabs(); render(); });
 let teachersCache;
 const teachers = async () => (teachersCache ||= (await api("/api/admin/teachers")).teachers);
 
 function renderTabs() {
-  for (const b of document.querySelectorAll("#tabs button")) {
-    b.setAttribute("aria-selected", String(b.dataset.tab === tab));
-    b.onclick = () => { tab = b.dataset.tab; sessionStorage.setItem("sr-admin-tab", tab); renderTabs(); render(); };
-  }
+  document.getElementById("pageTitle").textContent = SECTIONS[tab];
+  document.title = `${SECTIONS[tab]} — รายงานผลการเรียน`;
 }
 
 async function render() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   try {
-    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, bank: renderBank, settings: renderSettings, people: renderPeople })[tab]();
+    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, bank: renderBank, settings: renderSettings, people: renderPeople, approve: renderApprove, audit: renderAudit })[tab]();
   } catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong>${esc(err.message)}</div>`; }
 }
 
@@ -99,8 +104,8 @@ async function renderStart() {
     try { const r = await api("/api/admin/courses/generate", { method: "POST", body: { year: Y } }); toast(`เพิ่ม ${r.created} รายวิชา-ห้อง`); render(); } catch (err) { showError(err); }
   };
   for (const b of view.querySelectorAll("[data-go]")) b.onclick = () => {
-    tab = b.dataset.go; if (b.dataset.kind) importKind = b.dataset.kind;
-    sessionStorage.setItem("sr-admin-tab", tab); renderTabs(); render();
+    if (b.dataset.kind) importKind = b.dataset.kind;
+    location.hash = b.dataset.go;
   };
 }
 
@@ -194,7 +199,7 @@ async function renderSubjects() {
       <div class="table-wrap"><table class="list"><thead><tr><th>รหัส</th><th>ชื่อวิชา</th><th>กลุ่มสาระ</th><th>ประเภท</th><th class="num">ชม./ปี</th><th class="num">เก็บ:สอบ</th><th class="num">ห้อง</th><th></th></tr></thead>
       <tbody>${list.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td class="small">${esc(s.learning_area)}</td><td>${s.subject_type === "basic" ? "พื้นฐาน" : "เพิ่มเติม"}</td>
         <td class="num">${s.hours_per_year}</td><td class="num">${s.collect_ratio}:${100 - s.collect_ratio}</td><td class="num">${s.course_count}</td>
-        <td class="actions"><button class="btn small" data-edit="${s.id}">แก้ไข</button><button class="btn small danger" data-del="${s.id}">ลบ</button></td></tr>`).join("")}</tbody></table></div>` : ""; }).join("") || `<div class="empty"><strong>ยังไม่มีรายวิชา</strong>เริ่มจากแท็บ "เริ่มต้นปีการศึกษา" หรือกดเพิ่มรายวิชา</div>`}
+        <td class="actions"><button class="btn small" data-edit="${s.id}">แก้ไข</button><button class="btn small danger" data-del="${s.id}">ลบ</button></td></tr>`).join("")}</tbody></table></div>` : ""; }).join("") || `<div class="empty"><strong>ยังไม่มีรายวิชา</strong>เริ่มจากเมนู "เริ่มต้นปีการศึกษา" หรือกดเพิ่มรายวิชา</div>`}
   </div>`;
   const form = (s = {}) => `<div class="form-grid">
     <label class="field">ระดับชั้น<select name="grade_level">${GRADES.map((g) => `<option ${s.grade_level === g ? "selected" : ""}>${g}</option>`).join("")}</select></label>
@@ -237,7 +242,7 @@ let selRoom = sessionStorage.getItem("sr-admin-room") || "";
 async function renderCourses() {
   const [{ courses }, list] = await Promise.all([api(`/api/admin/courses?${yq}`), teachers()]);
   const rooms = [...new Set(courses.map((c) => `${c.grade_level}/${c.classroom}`))];
-  if (!rooms.length) { view.innerHTML = `<div class="panel empty"><strong>ยังไม่มีรายวิชาของห้องเรียน</strong>ทำขั้นตอนในแท็บ "เริ่มต้นปีการศึกษา" ก่อน</div>`; return; }
+  if (!rooms.length) { view.innerHTML = `<div class="panel empty"><strong>ยังไม่มีรายวิชาของห้องเรียน</strong>ทำขั้นตอนในเมนู "เริ่มต้นปีการศึกษา" ก่อน</div>`; return; }
   if (!rooms.includes(selRoom)) selRoom = rooms[0];
   const inRoom = courses.filter((c) => `${c.grade_level}/${c.classroom}` === selRoom);
   const missing = (r) => courses.filter((c) => `${c.grade_level}/${c.classroom}` === r && !c.teachers.length).length;
@@ -379,13 +384,64 @@ async function renderPeople() {
   teachersCache = null;
   const list = await teachers();
   view.innerHTML = `<div class="panel"><div class="panel-head"><h2>ทีมวัดและประเมินผล</h2></div>
-    <p class="muted small">ผู้บริหารและผู้ดูแลระบบมีสิทธิ์อยู่แล้ว เพิ่มสิทธิ์ให้ครูฝ่ายวิชาการ/วัดผลที่ต้องตั้งค่ารายวิชา ดูรายงาน และปลดล็อกได้ที่นี่</p>
+    <p class="muted small">ผู้ที่ได้สิทธิ์จะเห็นบทบาท "เจ้าหน้าที่วัดผล" ในเมนูซ้าย: ตั้งค่ารายวิชา นำเข้าข้อมูล ติดตามและส่งคืนงาน · ผู้ดูแลระบบมีทุกสิทธิ์อยู่แล้ว · ผู้บริหารอนุมัติผลได้โดยไม่ต้องมีสิทธิ์นี้</p>
     <div class="table-wrap"><table class="list"><thead><tr><th>ชื่อ</th><th>บทบาทในระบบบริหารฯ</th><th>ทีมวัดและประเมินผล</th></tr></thead>
-    <tbody>${list.map((t) => { const built = ["superadmin", "executive"].includes(t.role); return `<tr><td>${esc(t.full_name)}</td><td class="small muted">${esc(t.role)}</td>
+    <tbody>${list.map((t) => { const built = t.role === "superadmin"; return `<tr><td>${esc(t.full_name)}</td><td class="small muted">${esc(t.role)}</td>
       <td>${built ? '<span class="tag ok">มีสิทธิ์อยู่แล้ว</span>' : `<label class="check"><input type="checkbox" data-u="${t.id}" ${t.grade_role ? "checked" : ""}> ให้สิทธิ์</label>`}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   for (const c of view.querySelectorAll("[data-u]")) c.onchange = async () => {
     try { await api("/api/admin/staff-roles", { method: "PUT", body: { user_id: Number(c.dataset.u), grant: c.checked } }); toast(c.checked ? "ให้สิทธิ์แล้ว" : "ยกเลิกสิทธิ์แล้ว"); } catch (err) { c.checked = !c.checked; showError(err); }
   };
+}
+
+// ---------- อนุมัติผลการเรียน (ผู้บริหาร) ----------
+async function renderApprove() {
+  const { courses } = await api(`/api/admin/courses?${yq}`);
+  const waiting = courses.filter((c) => c.status === "submitted");
+  const done = courses.filter((c) => c.status === "approved");
+  const rooms = [...new Set(waiting.map((c) => `${c.grade_level}/${c.classroom}`))];
+  view.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2>รอการอนุมัติ <span class="tag">${waiting.length} รายวิชา</span></h2>
+      ${waiting.length ? '<div class="actions"><label class="check"><input type="checkbox" id="allChk"> เลือกทั้งหมด</label><button class="btn primary" id="approveSel" disabled>อนุมัติที่เลือก</button></div>' : ""}</div>
+    ${waiting.length ? rooms.map((r) => `<h3 style="margin-top:14px">${esc(r)}</h3>
+      <div class="table-wrap"><table class="list"><thead><tr><th style="width:36px"></th><th>รหัส</th><th>วิชา</th><th>ครูผู้สอน</th><th>ส่งเมื่อ</th><th></th></tr></thead>
+      <tbody>${waiting.filter((c) => `${c.grade_level}/${c.classroom}` === r).map((c) => `<tr>
+        <td><input type="checkbox" class="pick" value="${c.id}" aria-label="เลือก ${esc(c.code)}" style="width:18px;height:18px;min-height:0"></td>
+        <td>${esc(c.code)}</td><td><a href="/course.html?id=${c.id}&year=${Y}">${esc(c.name)}</a></td>
+        <td class="small">${c.teachers.map((t) => esc(t.full_name)).join(", ")}</td><td class="small muted">${esc(String(c.submitted_at || "").slice(0, 16))}</td>
+        <td class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/pp5.html?course=${c.id}">ดู ปพ.5</a></td></tr>`).join("")}</tbody></table></div>`).join("")
+      : `<div class="empty"><strong>ไม่มีรายวิชารออนุมัติ</strong>เมื่อครูส่งผลแล้ว รายวิชาจะขึ้นที่นี่</div>`}
+  </div>
+  <div class="panel"><div class="panel-head"><h2>อนุมัติแล้ว <span class="tag ok">${done.length}</span></h2></div>
+    <p class="muted small">ถ้าต้องแก้ผลหลังอนุมัติ ให้ฝ่ายวิชาการส่งคืนพร้อมเหตุผลจากหน้ารายวิชา แล้วอนุมัติใหม่</p></div>`;
+  const picks = () => [...view.querySelectorAll(".pick")];
+  const sync = () => { const n = picks().filter((p) => p.checked).length; const b = document.getElementById("approveSel"); if (b) { b.disabled = !n; b.textContent = n ? `อนุมัติที่เลือก (${n})` : "อนุมัติที่เลือก"; } };
+  for (const p of picks()) p.onchange = sync;
+  const all = document.getElementById("allChk");
+  if (all) all.onchange = () => { for (const p of picks()) p.checked = all.checked; sync(); };
+  const btn = document.getElementById("approveSel");
+  if (btn) btn.onclick = async () => {
+    const ids = picks().filter((p) => p.checked).map((p) => Number(p.value));
+    if (!(await confirmBox("อนุมัติผลการเรียน", `อนุมัติ ${ids.length} รายวิชา`, "อนุมัติ"))) return;
+    try { const r = await api("/api/admin/courses/approve", { method: "POST", body: { course_ids: ids } }); toast(`อนุมัติ ${r.approved} รายวิชา`); render(); } catch (err) { showError(err); }
+  };
+}
+
+// ---------- ประวัติการใช้งาน ----------
+const ACTION_TEXT = {
+  "course.submit": "ส่งผลการเรียน", "course.return": "ส่งคืนให้ครูแก้", "course.reopen_approved": "ส่งคืนหลังอนุมัติ", "course.approve": "อนุมัติผล",
+  "settings.update": "แก้เกณฑ์/ผู้ลงนาม", "pilot.set": "ตั้งห้องที่เปิดใช้", "import.subjects": "นำเข้ารายวิชา", "import.teachers": "นำเข้าครูผู้สอน",
+  "import.homerooms": "นำเข้าครูประจำชั้น", "template.save": "บันทึกแม่แบบ", "template.apply": "ใช้แม่แบบ", "scores.remedial": "บันทึกคะแนนแก้ตัว",
+  "results.update": "แก้เวลาเรียน/ผลพิเศษ", "items.add": "เพิ่มช่องคะแนน", "item.update": "แก้ช่องคะแนน", "item.delete": "ลบช่องคะแนน",
+  "staff_role": "ให้/ถอนสิทธิ์ทีมวัดผล", "subject.create": "เพิ่มรายวิชา", "subject.update": "แก้รายวิชา", "subject.delete": "ลบรายวิชา",
+};
+async function renderAudit() {
+  const { entries } = await api("/api/admin/audit");
+  view.innerHTML = `<div class="panel"><div class="panel-head"><h2>200 รายการล่าสุด</h2><input type="search" id="auditQ" placeholder="ค้นหาชื่อหรือการกระทำ" style="max-width:260px"></div>
+    <div class="table-wrap"><table class="list"><thead><tr><th>เวลา (UTC)</th><th>ผู้ใช้</th><th>การกระทำ</th><th>รายละเอียด</th></tr></thead>
+    <tbody>${entries.map((e) => `<tr data-q="${esc(`${e.full_name || ""} ${ACTION_TEXT[e.action] || e.action}`)}"><td class="small nowrap">${esc(e.created_at)}</td><td>${esc(e.full_name || "–")}</td>
+      <td>${esc(ACTION_TEXT[e.action] || e.action)}</td><td class="small muted" style="max-width:420px;word-break:break-word">${esc(String(e.detail || "").slice(0, 220))}</td></tr>`).join("")}</tbody></table></div></div>`;
+  const q = document.getElementById("auditQ");
+  q.oninput = () => { for (const tr of view.querySelectorAll("tbody tr")) tr.hidden = !tr.dataset.q.includes(q.value.trim()); };
 }
 
 renderTabs();

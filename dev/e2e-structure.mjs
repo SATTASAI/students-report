@@ -18,7 +18,8 @@ async function login(p, email) {
   await p.fill("input[name=email]", email);
   await p.fill("input[name=password]", "test-password-1");
   await p.click("#go");
-  await p.waitForURL(`${BASE}/`);
+  await p.waitForURL((u) => !u.pathname.startsWith("/login"));
+await p.waitForSelector("#main:not([hidden])");
 }
 const okDialog = async (p) => { await p.click('dialog[open] button[value=ok]'); await p.waitForSelector("dialog[open]", { state: "detached" }); };
 const shot = (p, n, full = false) => p.screenshot({ path: `${OUT}/${n}.png`, fullPage: full });

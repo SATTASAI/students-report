@@ -68,7 +68,86 @@ export function gradeBadge(g) {
   return `<span class="grade ${esc(cls)}">${esc(g)}</span>`;
 }
 
-// แถบบนทุกหน้า (ยกเว้นหน้าเข้าสู่ระบบ/พิมพ์)
+// ---------- บทบาทและเมนู (แบบ Q-Info: ผู้ใช้หนึ่งคนสลับบทบาทได้) ----------
+const I = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const MI = {
+  home: I('<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>'),
+  book: I('<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/>'),
+  room: I('<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><path d="M16 4a3 3 0 0 1 0 6M21 20c0-2-1-4-3-4.5"/>'),
+  chart: I('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+  flag: I('<path d="M5 21V4h11l-2 4 2 4H5"/>'),
+  list: I('<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>'),
+  upload: I('<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>'),
+  people: I('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>'),
+  bank: I('<path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/>'),
+  gear: I('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+  check: I('<path d="M20 6L9 17l-5-5"/>'),
+  doc: I('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>'),
+  key: I('<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>'),
+  clock: I('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  menu: I('<path d="M4 6h16M4 12h16M4 18h16"/>'),
+  out: I('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),
+};
+
+export const ROLES = {
+  teacher: { label: "ครูผู้สอน / ครูประจำชั้น", short: "ครู" },
+  measure: { label: "เจ้าหน้าที่วัดผล", short: "วัดผล" },
+  exec: { label: "ผู้บริหาร", short: "ผู้บริหาร" },
+  admin: { label: "ผู้ดูแลระบบ", short: "ผู้ดูแล" },
+};
+
+// บทบาทที่ผู้ใช้เข้าได้ — ผู้ดูแลระบบ (superadmin) เข้าได้ทุกบทบาท
+export function availableRoles(user) {
+  const out = ["teacher"];
+  if (user.role === "superadmin" || user.grade_role === "grade_admin") out.push("measure");
+  if (user.role === "superadmin" || user.role === "executive") out.push("exec");
+  if (user.role === "superadmin") out.push("admin");
+  return out;
+}
+
+function roleMenu(role, me) {
+  if (role === "teacher") return [
+    { href: "/", icon: "book", label: "รายวิชาที่สอน" },
+    ...me.homerooms.map((h) => ({ href: `/homeroom.html?grade=${encodeURIComponent(h.grade_level)}&room=${encodeURIComponent(h.classroom)}`, icon: "room", label: `ประจำชั้น ${h.grade_level}/${h.classroom}` })),
+  ];
+  if (role === "measure") return [
+    { href: "/reports.html#progress", icon: "chart", label: "ติดตามการส่งผล" },
+    { href: "/admin.html#start", icon: "flag", label: "เริ่มต้นปีการศึกษา" },
+    { href: "/admin.html#subjects", icon: "list", label: "รายวิชา" },
+    { href: "/admin.html#import", icon: "upload", label: "นำเข้าจาก Excel" },
+    { href: "/admin.html#courses", icon: "people", label: "ครูผู้สอน / ส่งคืน" },
+    { href: "/admin.html#homerooms", icon: "room", label: "ครูประจำชั้น" },
+    { href: "/admin.html#bank", icon: "bank", label: "คลังตัวชี้วัด" },
+    { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม" },
+    { href: "/reports.html#rooms", icon: "doc", label: "เอกสารรายห้อง" },
+    { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
+  ];
+  if (role === "exec") return [
+    { href: "/reports.html#progress", icon: "chart", label: "ภาพรวมการส่งผล" },
+    { href: "/admin.html#approve", icon: "check", label: "อนุมัติผลการเรียน" },
+    { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
+    { href: "/reports.html#rooms", icon: "doc", label: "เอกสารรายห้อง" },
+  ];
+  return [
+    { href: "/admin.html#start", icon: "flag", label: "ห้องที่เปิดใช้ระบบ" },
+    { href: "/admin.html#people", icon: "key", label: "สิทธิ์ทีมวัดผล" },
+    { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม" },
+    { href: "/admin.html#audit", icon: "clock", label: "ประวัติการใช้งาน" },
+  ];
+}
+
+const here = () => location.pathname + (location.hash || "");
+const sameItem = (href) => {
+  const [path, hash = ""] = href.split("#");
+  if (path !== location.pathname) return false;
+  if (href.includes("?")) { // ทุกพารามิเตอร์ของเมนูต้องตรง (ไม่สน year)
+    const want = new URLSearchParams(href.split("?")[1].split("#")[0]), cur = new URLSearchParams(location.search);
+    return [...want].every(([k, v]) => cur.get(k) === v);
+  }
+  return hash ? location.hash === `#${hash}` : true;
+};
+
+// โครงหน้าทุกหน้า: เมนูซ้าย (มือถือ/แท็บเล็ตเป็นลิ้นชัก) + สลับบทบาท + ปีการศึกษา
 export async function shell(active) {
   const yearParam = selectedYear();
   let me;
@@ -87,30 +166,76 @@ export async function shell(active) {
     throw err;
   }
   rememberYear(me.year.id);
-  const nav = [
-    ["home", "/", "งานของฉัน"],
-    ...(me.user.is_admin ? [["admin", "/admin.html", "ตั้งค่ารายวิชา"], ["reports", "/reports.html", "รายงาน"]] : []),
-  ];
-  const bar = document.createElement("header");
-  bar.className = "topbar";
-  bar.innerHTML = `
+  const roles = availableRoles(me.user);
+  let role;
+  try { role = localStorage.getItem("sr-role"); } catch { /* */ }
+  if (!roles.includes(role)) role = roles.includes("measure") && !me.courses.length ? "measure" : roles.includes("exec") && !me.courses.length ? "exec" : "teacher";
+  const samePath = (href) => href.split(/[?#]/)[0] === location.pathname;
+  if (location.pathname === "/" && role !== "teacher") {
+    // หน้าแรกเป็นของบทบาทครู — บทบาทอื่นไปหน้าแรกของบทบาทตัวเอง
+    location.replace(roleMenu(role, me)[0].href);
+    return new Promise(() => {});
+  }
+  // เปิดหน้าที่อยู่ในเมนูของบทบาทอื่น (เช่น ลิงก์ตรง) → สลับไปบทบาทนั้นให้เอง
+  if (location.pathname !== "/" && !roleMenu(role, me).some((m) => sameItem(m.href) || samePath(m.href))) {
+    const other = roles.find((r) => roleMenu(r, me).some((m) => sameItem(m.href))) || roles.find((r) => roleMenu(r, me).some((m) => samePath(m.href)));
+    if (other) role = other;
+  }
+  try { localStorage.setItem("sr-role", role); } catch { /* */ }
+  me.role = role;
+
+  const drawMenu = () => roleMenu(role, me).map((m) => `<a href="${m.href}" class="nav-item" ${sameItem(m.href) ? 'aria-current="page"' : ""}>${MI[m.icon]}<span>${esc(m.label)}</span></a>`).join("");
+  const side = document.createElement("aside");
+  side.className = "sidebar";
+  side.id = "sidebar";
+  side.innerHTML = `
     <a class="brand" href="/"><img src="/logo.jpg" alt=""><div><strong>รายงานผลการเรียน</strong><span>${esc(me.settings.school_name || "โรงเรียนบ้านป่าเด็ง")}</span></div></a>
-    <nav class="topnav">${nav.map(([k, href, label]) => `<a href="${href}" ${k === active ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>
-    <div class="top-right">
-      <label class="sr-only" for="yearSel" hidden>ปีการศึกษา</label>
-      <select id="yearSel" aria-label="ปีการศึกษา">${me.years.map((y) => `<option value="${y.id}" ${y.id === me.year.id ? "selected" : ""}>ปีการศึกษา ${y.year_be}</option>`).join("")}</select>
-      <span class="who">${esc(me.user.full_name)}</span>
-      <button class="linkish" id="logoutBtn">ออกจากระบบ</button>
-    </div>`;
-  document.body.prepend(bar);
-  bar.querySelector("#yearSel").onchange = (e) => {
+    <div class="side-ctl">
+      <label>บทบาท<select id="roleSel" ${roles.length < 2 ? "disabled" : ""}>${roles.map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${ROLES[r].label}</option>`).join("")}</select></label>
+      <label>ปีการศึกษา<select id="yearSel">${me.years.map((y) => `<option value="${y.id}" ${y.id === me.year.id ? "selected" : ""}>${y.year_be}</option>`).join("")}</select></label>
+    </div>
+    <nav class="side-nav" id="sideNav" aria-label="เมนู">${drawMenu()}</nav>
+    <div class="side-foot"><div class="who-box"><span class="avatar">${esc((me.user.full_name || "?").replace(/^(นางสาว|นาง|นาย|ครู)/, "").trim().slice(0, 1))}</span>
+      <span><b>${esc(me.user.full_name)}</b><small>${esc(ROLES[role].label)}</small></span></div>
+      <button class="nav-item" id="logoutBtn">${MI.out}<span>ออกจากระบบ</span></button></div>`;
+  const mbar = document.createElement("header");
+  mbar.className = "mobilebar";
+  mbar.innerHTML = `<button class="icon-btn" id="menuBtn" aria-label="เปิดเมนู" aria-controls="sidebar" aria-expanded="false">${MI.menu}</button>
+    <a class="brand" href="/"><img src="/logo.jpg" alt=""><strong>รายงานผลการเรียน</strong></a>
+    <span class="role-chip">${esc(ROLES[role].short)}</span>`;
+  const scrim = document.createElement("div");
+  scrim.className = "scrim";
+  document.body.classList.add("with-sidebar");
+  document.body.prepend(scrim);
+  document.body.prepend(side);
+  document.body.prepend(mbar);
+  const setOpen = (open) => { document.body.classList.toggle("nav-open", open); mbar.querySelector("#menuBtn").setAttribute("aria-expanded", String(open)); };
+  mbar.querySelector("#menuBtn").onclick = () => setOpen(!document.body.classList.contains("nav-open"));
+  scrim.onclick = () => setOpen(false);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
+  side.addEventListener("click", (e) => { if (e.target.closest("a.nav-item")) setOpen(false); });
+  window.addEventListener("hashchange", () => { side.querySelector("#sideNav").innerHTML = drawMenu(); });
+  side.querySelector("#roleSel").onchange = (e) => {
+    try { localStorage.setItem("sr-role", e.target.value); } catch { /* */ }
+    const href = roleMenu(e.target.value, me)[0].href;
+    // หน้าเดียวกัน (ต่างแค่ #) เบราว์เซอร์จะไม่โหลดใหม่ → ต้องโหลดเองเพื่อวาดเมนูของบทบาทใหม่
+    if (href.split("#")[0] === location.pathname) { location.hash = href.split("#")[1] || ""; location.reload(); }
+    else location.href = href;
+  };
+  side.querySelector("#yearSel").onchange = (e) => {
     rememberYear(e.target.value);
     const u = new URL(location.href);
     u.searchParams.set("year", e.target.value);
     location.href = u.pathname === "/course.html" ? "/" : u.toString();
   };
-  bar.querySelector("#logoutBtn").onclick = logout;
+  side.querySelector("#logoutBtn").onclick = logout;
   return me;
+}
+
+// แท็บในหน้าที่ใช้ #hash (เมนูซ้ายลิงก์ตรงมาได้)
+export function hashTab(allowed, fallback) {
+  const h = location.hash.slice(1);
+  return allowed.includes(h) ? h : fallback;
 }
 
 export async function logout() {

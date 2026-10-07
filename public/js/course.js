@@ -33,7 +33,10 @@ function renderHeader() {
   document.getElementById("meta").textContent =
     `${c.grade_level}/${c.classroom} · ปีการศึกษา ${c.year_be} · ${c.hours_per_year} ชม./ปี · ต่อภาค: ระหว่างภาค ${fmt(c.collect_ratio / 2)} + ปลายภาค ${fmt(50 - c.collect_ratio / 2)} = 50` +
     (c.teachers.length ? ` · ครูผู้สอน ${c.teachers.map((t) => t.full_name).join(", ")}` : "");
-  document.getElementById("backLink").href = withYear("/", c.academic_year_id);
+  const back = document.getElementById("backLink");
+  if (me.role === "exec") { back.textContent = "อนุมัติผลการเรียน"; back.href = "/admin.html#approve"; }
+  else if (me.role === "measure" || me.role === "admin") { back.textContent = "ครูผู้สอน / ส่งคืน"; back.href = "/admin.html#courses"; }
+  else back.href = withYear("/", c.academic_year_id);
   const pb = document.getElementById("printBtn");
   pb.innerHTML = `${ICONS.print} พิมพ์ ปพ.5`;
   pb.href = `/print/pp5.html?course=${c.id}`;

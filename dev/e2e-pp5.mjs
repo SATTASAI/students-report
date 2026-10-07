@@ -14,7 +14,8 @@ await page.goto(`${BASE}/login.html`);
 await page.fill("input[name=email]", "admin@test.local");
 await page.fill("input[name=password]", "test-password-1");
 await page.click("#go");
-await page.waitForURL(`${BASE}/`);
+await page.waitForURL((u) => !u.pathname.startsWith("/login"));
+await page.waitForSelector("#main:not([hidden])");
 const api = (path, method = "GET", body) => page.evaluate(async ([path, method, body]) => {
   const r = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
   const j = await r.json(); if (!r.ok && r.status !== 409) throw new Error(path + " " + JSON.stringify(j)); return j;

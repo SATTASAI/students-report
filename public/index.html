@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>งานของฉัน — รายงานผลการเรียน</title>
+<title>รายวิชาที่สอน — รายงานผลการเรียน</title>
 <link rel="icon" href="/logo.jpg">
 <link rel="stylesheet" href="/css/app.css">
 </head>
@@ -11,7 +11,7 @@
 <main class="page" id="main" hidden>
   <div class="page-head">
     <div>
-      <h1 id="hello">งานของฉัน</h1>
+      <h1 id="hello">รายวิชาที่สอน</h1>
       <p id="yearLine"></p>
     </div>
   </div>
@@ -26,11 +26,6 @@
         <div class="panel-head"><h2>ห้องที่เป็นครูประจำชั้น</h2></div>
         <div id="homerooms"></div>
       </section>
-      <section class="panel" id="adminPanel" hidden>
-        <div class="panel-head"><h2>ภาพรวมทั้งโรงเรียน</h2></div>
-        <dl class="stat-list" id="adminStats"></dl>
-        <div class="actions" style="margin-top:14px"><a class="btn" href="/admin.html">ตั้งค่ารายวิชา</a><a class="btn" href="/reports.html">ติดตามและรายงาน</a></div>
-      </section>
     </aside>
   </div>
 </main>
@@ -39,8 +34,7 @@ import { shell, esc, withYear } from "/js/app.js";
 const me = await shell("home");
 document.getElementById("main").hidden = false;
 const y = me.year.id;
-document.getElementById("hello").textContent = `สวัสดี ${me.user.full_name}`;
-document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be}`;
+document.getElementById("yearLine").textContent = `สวัสดี ${me.user.full_name} · ปีการศึกษา ${me.year.year_be}`;
 document.getElementById("closedNote").hidden = !!me.settings.entry_open;
 
 const cbox = document.getElementById("courses");
@@ -62,15 +56,6 @@ hbox.innerHTML = me.homerooms.length ? me.homerooms.map((h) => `
     <span><span class="title">ประเมินและ ปพ.6</span><span class="sub"> · ${h.students} คน</span></span>
   </a>`).join("") : `<p class="muted small">ยังไม่ได้เป็นครูประจำชั้นของห้องใดในปีนี้</p>`;
 
-if (me.summary) {
-  document.getElementById("adminPanel").hidden = false;
-  const s = me.summary;
-  document.getElementById("adminStats").innerHTML = `
-    <div><dt>รายวิชาทุกห้อง</dt><dd>${s.courses}</dd></div>
-    <div><dt>ยังไม่มีครูผู้สอน</dt><dd>${s.without_teacher}</dd></div>
-    <div><dt>ส่งผลแล้ว</dt><dd>${s.locked}</dd></div>
-    <div><dt>กรอกคะแนนเฉลี่ย</dt><dd>${s.avg_progress}%</dd></div>`;
-}
 </script>
 </body>
 </html>

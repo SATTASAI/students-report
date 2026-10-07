@@ -1,4 +1,4 @@
-import { shell, api, esc, showError, gradeBadge, fmt, ICONS } from "/js/app.js";
+import { shell, api, esc, showError, gradeBadge, fmt, ICONS, hashTab } from "/js/app.js";
 import { NUMERIC_GRADES } from "/js/grading.js";
 import { exportRoomsExcel, exportRoomCsv } from "/js/export.js";
 
@@ -11,12 +11,13 @@ if (!me.user.is_admin) {
 }
 const Y = me.year.id;
 document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be}`;
-let tab = sessionStorage.getItem("sr-rep-tab") || "progress";
+const SECTIONS = { progress: me.role === "exec" ? "ภาพรวมการส่งผล" : "ติดตามการส่งผล", rooms: "เอกสารรายห้อง", summary: "สรุปผลสัมฤทธิ์" };
+let tab = hashTab(Object.keys(SECTIONS), "progress");
+document.getElementById("tabs")?.classList.add("by-menu");
+window.addEventListener("hashchange", () => { tab = hashTab(Object.keys(SECTIONS), "progress"); renderTabs(); render(); });
 function renderTabs() {
-  for (const b of document.querySelectorAll("#tabs button")) {
-    b.setAttribute("aria-selected", String(b.dataset.tab === tab));
-    b.onclick = () => { tab = b.dataset.tab; sessionStorage.setItem("sr-rep-tab", tab); renderTabs(); render(); };
-  }
+  document.getElementById("pageTitle").textContent = SECTIONS[tab];
+  document.title = `${SECTIONS[tab]} — รายงานผลการเรียน`;
 }
 
 async function render() {
