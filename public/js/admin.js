@@ -21,9 +21,9 @@ const GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
 // ส่วนของหน้า เลือกจากเมนูซ้ายผ่าน #hash
 const SECTIONS = {
   start: "เริ่มต้นปีการศึกษา", subjects: "รายวิชา", import: "นำเข้าจาก Excel", courses: "ครูผู้สอน / ส่งคืน", homerooms: "ครูประจำชั้น",
-  bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน",
+  bank: "คลังตัวชี้วัด", activity: "ฐานการเรียนรู้", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน",
 };
-const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super));
+const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "activity"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super));
 let tab = hashTab(allowed, me.role === "exec" && allowed.includes("approve") ? "approve" : "start");
 document.getElementById("tabs")?.classList.add("by-menu");
 window.addEventListener("hashchange", () => { tab = hashTab(allowed, "start"); renderTabs(); render(); });
@@ -38,7 +38,7 @@ function renderTabs() {
 async function render() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   try {
-    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, bank: renderBank, settings: renderSettings, people: renderPeople, approve: renderApprove, audit: renderAudit })[tab]();
+    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, bank: renderBank, settings: renderSettings, people: renderPeople, approve: renderApprove, audit: renderAudit, activity: renderActivity })[tab]();
   } catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong>${esc(err.message)}</div>`; }
 }
 
@@ -390,6 +390,41 @@ async function renderPeople() {
       <td>${built ? '<span class="tag ok">มีสิทธิ์อยู่แล้ว</span>' : `<label class="check"><input type="checkbox" data-u="${t.id}" ${t.grade_role ? "checked" : ""}> ให้สิทธิ์</label>`}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   for (const c of view.querySelectorAll("[data-u]")) c.onchange = async () => {
     try { await api("/api/admin/staff-roles", { method: "PUT", body: { user_id: Number(c.dataset.u), grant: c.checked } }); toast(c.checked ? "ให้สิทธิ์แล้ว" : "ยกเลิกสิทธิ์แล้ว"); } catch (err) { c.checked = !c.checked; showError(err); }
+  };
+}
+
+// ---------- ฐานการเรียนรู้ (ฝ่ายวิชาการบันทึก) ----------
+let actRoom = sessionStorage.getItem("sr-act-room") || "";
+async function renderActivity() {
+  const [{ rooms }, { settings }] = await Promise.all([api(`/api/admin/rooms?${yq}`), api(`/api/admin/settings?${yq}`)]);
+  const list = rooms.filter((r) => GRADES.includes(r.grade_level)).map((r) => `${r.grade_level}/${r.classroom}`);
+  const scoped = settings.pilot_rooms ? list.filter((r) => settings.pilot_rooms.includes(r)) : list;
+  if (!scoped.length) { view.innerHTML = `<div class="panel empty"><strong>ยังไม่มีห้องเรียน</strong></div>`; return; }
+  if (!scoped.includes(actRoom)) actRoom = scoped[0];
+  const [g, r] = actRoom.split("/");
+  const d = await api(`/api/admin/activity?${yq}&grade=${encodeURIComponent(g)}&room=${encodeURIComponent(r)}`);
+  const parts = [["t", "เวลาเรียน"], ["o", "จุดประสงค์"]];
+  const res = (s) => parts.some(([p]) => s.values[`act_club_${p}`] === "มผ") ? '<span class="tag bad">ไม่ผ่าน</span>' : '<span class="tag ok">ผ่าน</span>';
+  view.innerHTML = `<div class="panel">
+    <div class="panel-head"><div class="actions">${scoped.map((x) => `<button class="btn small ${x === actRoom ? "primary" : ""}" data-aroom="${esc(x)}">${esc(x)}</button>`).join("")}</div>
+      <span class="save-state" id="actState">บันทึกแล้ว</span></div>
+    <p class="muted small" style="margin-top:0">ทุกคนผ่านเป็นค่าเริ่มต้น — เอาเครื่องหมายออกเฉพาะคนที่เวลาเรียนไม่ครบหรือไม่ผ่านจุดประสงค์ · ผลขึ้นใน ปพ.5.1 และ ปพ.6 ของนักเรียน · ครูประจำชั้นดูได้อย่างเดียว</p>
+    <div class="table-wrap"><table class="list"><thead><tr><th class="num">เลขที่</th><th>ชื่อ–สกุล</th>${parts.map(([, l]) => `<th style="text-align:center">${l}</th>`).join("")}<th>ผล</th></tr></thead>
+    <tbody>${d.students.map((s) => `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "muted" : ""}"><td class="num">${s.number ?? ""}</td><td>${esc(s.name)}</td>
+      ${parts.map(([p]) => `<td style="text-align:center"><input type="checkbox" data-key="act_club_${p}" ${s.values[`act_club_${p}`] === "มผ" ? "" : "checked"} style="width:20px;height:20px;min-height:0;accent-color:var(--ok)" aria-label="${esc(s.name)} ${p === "t" ? "เวลาเรียน" : "จุดประสงค์"}"></td>`).join("")}
+      <td data-res>${res(s)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  for (const b of view.querySelectorAll("[data-aroom]")) b.onclick = () => { actRoom = b.dataset.aroom; sessionStorage.setItem("sr-act-room", actRoom); render(); };
+  const state = document.getElementById("actState");
+  for (const box of view.querySelectorAll("input[data-key]")) box.onchange = async () => {
+    const tr = box.closest("tr"), sid = Number(tr.dataset.sid), s = d.students.find((x) => x.id === sid);
+    const value = box.checked ? "" : "มผ";
+    state.textContent = "กำลังบันทึก…"; state.className = "save-state pending";
+    try {
+      await api(`/api/admin/activity?${yq}`, { method: "PUT", body: { grade: g, room: r, changes: [{ student_id: sid, item_key: box.dataset.key, value }] } });
+      if (value) s.values[box.dataset.key] = value; else delete s.values[box.dataset.key];
+      tr.querySelector("[data-res]").innerHTML = res(s);
+      state.textContent = "บันทึกแล้ว"; state.className = "save-state";
+    } catch (err) { box.checked = !box.checked; state.textContent = "บันทึกไม่สำเร็จ"; state.className = "save-state error"; showError(err); }
   };
 }
 

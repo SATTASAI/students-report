@@ -283,6 +283,8 @@ export const ASSESSMENT_GROUPS = [
 ];
 
 export const ACTIVITY_PARTS = [["t", "เวลาเรียน"], ["o", "จุดประสงค์"]];
+// กิจกรรมที่ฝ่ายวิชาการเป็นผู้บันทึก (ครูประจำชั้นดูได้อย่างเดียว)
+export const ACADEMIC_ACTIVITIES = ["act_club"];
 export const ASSESSMENT_KEYS = new Set(ASSESSMENT_GROUPS.flatMap((g) => g.type === "activity"
   ? g.items.flatMap(([k]) => ACTIVITY_PARTS.map(([p]) => `${k}_${p}`))
   : g.items.map((i) => i[0])));

@@ -1,5 +1,5 @@
 import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear } from "/js/app.js";
-import { ASSESSMENT_GROUPS, ACTIVITY_PARTS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
+import { ASSESSMENT_GROUPS, ACTIVITY_PARTS, ACADEMIC_ACTIVITIES, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
 
 await shell("home");
 const p = params();
@@ -134,11 +134,11 @@ function renderActivities(group) {
       </thead>
       <tbody>${data.students.map((s) => `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}">
         <td class="stick no">${s.number ?? ""}</td><td class="stick name">${esc(s.name)}</td>
-        ${group.items.map(([k, label]) => ACTIVITY_PARTS.map(([pt, pl]) => { const key = `${k}_${pt}`; const ok = valueOf(s.id, key) !== "มผ";
-          return `<td class="chk-cell ${ok ? "" : "fail"}"><input type="checkbox" data-key="${key}" ${ok ? "checked" : ""} aria-label="${esc(s.name)} ${esc(label)} ${pl}"></td>`; }).join("")).join("")}
+        ${group.items.map(([k, label]) => ACTIVITY_PARTS.map(([pt, pl]) => { const key = `${k}_${pt}`; const ok = valueOf(s.id, key) !== "มผ"; const ro = ACADEMIC_ACTIVITIES.includes(k);
+          return `<td class="chk-cell ${ok ? "" : "fail"} ${ro ? "ro" : ""}"><input type="checkbox" data-key="${key}" ${ok ? "checked" : ""} ${ro ? 'disabled title="ฝ่ายวิชาการเป็นผู้บันทึก"' : ""} aria-label="${esc(s.name)} ${esc(label)} ${pl}"></td>`; }).join("")).join("")}
         <td class="calc" data-sum>${summaryCell(group, s.id)}</td></tr>`).join("")}</tbody>
     </table></div>
-    <p class="muted small" style="margin-top:10px">ช่องมีเครื่องหมาย = ผ่าน · ผลกิจกรรมผ่านเมื่อผ่านทั้งเวลาเรียนและจุดประสงค์</p>`;
+    <p class="muted small" style="margin-top:10px">ช่องมีเครื่องหมาย = ผ่าน · ผลกิจกรรมผ่านเมื่อผ่านทั้งเวลาเรียนและจุดประสงค์ · ช่องสีเทา (${group.items.filter(([k]) => ACADEMIC_ACTIVITIES.includes(k)).map(([, l]) => l).join(", ")}) ฝ่ายวิชาการเป็นผู้บันทึก</p>`;
   document.getElementById("sheet").addEventListener("change", (e) => {
     const box = e.target;
     if (!box.dataset.key) return;

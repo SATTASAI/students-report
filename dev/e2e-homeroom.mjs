@@ -47,6 +47,24 @@ const actSum = await t.locator("#sheet tbody tr").nth(1).locator("[data-sum]").i
 if (actSum !== "ไม่ผ่าน") errors.push(`กิจกรรมควรไม่ผ่าน ได้ ${actSum}`);
 await t.screenshot({ path: `${OUT}/h2-activity.png` });
 
+// ฐานการเรียนรู้: ครูประจำชั้นแก้ไม่ได้
+if (!(await t.locator("#sheet tbody tr").first().locator('input[data-key="act_club_t"]').isDisabled())) errors.push("ฐานการเรียนรู้ต้องแก้ไม่ได้ในหน้าครูประจำชั้น");
+// ฝ่ายวิชาการบันทึกฐานการเรียนรู้
+await a.goto(`${BASE}/admin.html#activity`);
+await a.waitForSelector('.side-nav a[href="/admin.html#activity"][aria-current="page"]');
+await a.waitForSelector('input[data-key="act_club_o"]');
+await a.click('[data-aroom="ป.4/1"]');
+await a.waitForSelector('[data-aroom="ป.4/1"].primary');
+await a.waitForSelector('input[data-key="act_club_o"]');
+await a.locator("tbody tr").nth(2).locator('input[data-key="act_club_o"]').uncheck();
+await a.waitForFunction(() => document.getElementById("actState")?.textContent === "บันทึกแล้ว");
+await a.screenshot({ path: `${OUT}/h2b-academic-base.png` });
+await t.reload();
+await t.waitForSelector("#sheet");
+const baseSum = await t.locator("#sheet tbody tr").nth(2).locator("[data-sum]").innerText();
+if (baseSum !== "ไม่ผ่าน") errors.push(`ผลฐานการเรียนรู้จากวิชาการต้องขึ้นที่ครูประจำชั้น ได้ ${baseSum}`);
+await t.screenshot({ path: `${OUT}/h2c-homeroom-readonly.png` });
+
 // ความคิดเห็น: พิมพ์ เก็บเข้าคลัง ใช้กับทั้งห้อง
 await t.click('#tabs button[data-tab="comments"]');
 await t.waitForSelector(".cm-row textarea");
