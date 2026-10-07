@@ -333,3 +333,12 @@ window.addEventListener("scroll", () => {
   if (!tipFor.isConnected || r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) hideTip();
   else showTip(tipFor);
 }, { passive: true, capture: true });
+
+// เวลาจากฐานข้อมูล (SQLite datetime('now') เป็น UTC) → เวลาไทย เช่น "8 ต.ค. 69 04:25"
+export function thaiTime(s, withTime = true) {
+  if (!s) return "";
+  const str = String(s).replace(" ", "T");
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(str) || str.length <= 10 ? str : `${str}Z`);
+  if (Number.isNaN(d.getTime())) return String(s);
+  return d.toLocaleString("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", year: "2-digit", ...(withTime && str.length > 10 ? { hour: "2-digit", minute: "2-digit" } : {}) });
+}

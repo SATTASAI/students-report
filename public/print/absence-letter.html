@@ -31,10 +31,10 @@ document.getElementById("doc").innerHTML = `<section class="sheet">
   <p><b>เรียน</b> ${esc(guardianName || "ผู้ปกครองนักเรียน")}${g.guardian_relationship ? ` (${esc(g.guardian_relationship)})` : ""}</p>
   ${address ? `<p style="margin-top:-2mm" class="muted">${esc(td(address))}</p>` : ""}
   <p style="text-indent:2.5cm;text-align:justify">ด้วย ${esc(d.student.name)} นักเรียนชั้น ${esc(td(d.grade))}/${esc(td(d.room))} เลขประจำตัว ${esc(td(d.student.student_code))}
-    ได้ขาดเรียนในปีการศึกษา ${td(d.year.year_be)} รวม ${td(d.absences.length)} วัน${unknown ? ` โดยไม่ทราบสาเหตุ ${td(unknown)} วัน` : ""} ดังนี้</p>
+    ได้ขาดเรียนในปีการศึกษา ${td(d.year.year_be)} รวม ${td(d.absences.length)} วัน${unknown ? ` ในจำนวนนี้ขาดเรียนโดยไม่ได้ลา ${td(unknown)} วัน` : ""} ดังนี้</p>
   <table class="t small" style="width:80%;margin:0 auto">
-    <tr><th style="width:12mm">ที่</th><th>วันที่</th><th>สาเหตุ</th><th>หมายเหตุ</th></tr>
-    ${d.absences.map((a, i) => `<tr><td class="c">${td(i + 1)}</td><td>${thaiDate(a.absence_date)}</td><td>${REASON[a.reason]}</td><td>${esc(a.note || "")}</td></tr>`).join("")}
+    <thead><tr><th style="width:12mm">ที่</th><th>วันที่</th><th>สาเหตุ</th></tr></thead>
+    <tbody>${d.absences.map((a, i) => `<tr><td class="c">${td(i + 1)}</td><td>${thaiDate(a.absence_date)}</td><td>${REASON[a.reason]}</td></tr>`).join("")}</tbody>
   </table>
   <p style="text-indent:2.5cm;text-align:justify;margin-top:4mm">การขาดเรียนบ่อยส่งผลต่อเวลาเรียน ซึ่งนักเรียนต้องมีเวลาเรียนไม่น้อยกว่าร้อยละ ${td(s.attendance_pass_pct)} ของเวลาเรียนทั้งหมดจึงจะมีสิทธิ์รับการประเมินผล
     โรงเรียนจึงขอแจ้งให้ท่านทราบ และขอความร่วมมือดูแลให้นักเรียนมาเรียนสม่ำเสมอ หากมีเหตุจำเป็นโปรดแจ้งครูประจำชั้น</p>

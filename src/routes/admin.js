@@ -20,6 +20,9 @@ const BASIC_TEMPLATE = [
 ];
 
 const PRIMARY_GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
+// สัดส่วนคะแนนเก็บ:ปลายภาคที่ตกลงกันไว้ (ต้องหาร 2 ลงตัวเป็นทศนิยมไม่เกิน 1 ตำแหน่ง เพราะคิดภาคละครึ่ง)
+export const ALLOWED_RATIOS = [50, 60, 70, 75, 80, 90, 100];
+const RATIO_TEXT = ALLOWED_RATIOS.map((r) => `${r}:${100 - r}`).join(", ");
 
 function cleanSubject(body, settings) {
   const grade = text(body.grade_level, 10);
@@ -35,7 +38,7 @@ function cleanSubject(body, settings) {
   const hours = Number(body.hours_per_year);
   if (!Number.isInteger(hours) || hours < 1 || hours > 400) fail(400, "เวลาเรียนต้องเป็นจำนวนเต็ม 1–400 ชั่วโมง");
   const ratio = body.collect_ratio == null || body.collect_ratio === "" ? settings.collect_ratio : Number(body.collect_ratio);
-  if (!Number.isInteger(ratio) || ratio < 0 || ratio > 100) fail(400, "สัดส่วนคะแนนเก็บต้องเป็น 0–100");
+  if (!ALLOWED_RATIOS.includes(ratio)) fail(400, `สัดส่วนคะแนนเก็บต้องเป็นหนึ่งใน ${RATIO_TEXT}`);
   const sort = Number.isInteger(Number(body.sort_order)) ? Number(body.sort_order) : 0;
   return { grade, code, name, area, type, hours, ratio, sort };
 }
@@ -53,8 +56,10 @@ export async function handleAdmin(request, env, user, parts, method, url) {
     if (method === "PUT") {
       const b = await readJson(request);
       const pct = (v, label) => { const n = Number(v); if (v === "" || v == null || !Number.isInteger(n) || n < 0 || n > 100) fail(400, `${label}ต้องเป็นจำนวนเต็ม 0–100`); return n; };
+      const ratio = pct(b.collect_ratio, "สัดส่วนคะแนนเก็บ");
+      if (!ALLOWED_RATIOS.includes(ratio)) fail(400, `สัดส่วนคะแนนเก็บต้องเป็นหนึ่งใน ${RATIO_TEXT}`);
       const s = {
-        collect_ratio: pct(b.collect_ratio, "สัดส่วนคะแนนเก็บ"),
+        collect_ratio: ratio,
         indicator_pass_pct: pct(b.indicator_pass_pct, "เกณฑ์ผ่านตัวชี้วัดภาค 1 "),
         indicator_pass_pct_t2: b.indicator_pass_pct_t2 === "" || b.indicator_pass_pct_t2 == null ? null : pct(b.indicator_pass_pct_t2, "เกณฑ์ผ่านตัวชี้วัดภาค 2 "),
         attendance_pass_pct: pct(b.attendance_pass_pct, "เกณฑ์เวลาเรียน"),
@@ -64,8 +69,17 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         academic_head_name: text(b.academic_head_name, 120), measurement_head_name: text(b.measurement_head_name, 120),
         entry_open: b.entry_open ? 1 : 0, roster_order: b.roster_order === "code" ? "code" : "gender",
       };
+      // เกณฑ์ผ่าน/เกณฑ์เวลาเรียนเปลี่ยนผลของรายวิชาที่ส่งแล้วได้ — ต้องยืนยันก่อน (confirm_locked)
+      const before = await getSettings(env, year.id);
+      const changed = ["indicator_pass_pct", "indicator_pass_pct_t2", "attendance_pass_pct"].filter((k) => (before[k] ?? null) !== (s[k] ?? null));
+      if (changed.length && !b.confirm_locked) {
+        const locked = await env.DB.prepare(
+          "SELECT COUNT(*) AS n FROM gr_courses c JOIN gr_subjects x ON x.id = c.subject_id WHERE x.academic_year_id = ? AND c.locked = 1"
+        ).bind(year.id).first();
+        if (locked.n > 0) return json({ error: `มี ${locked.n} รายวิชาส่งผลแล้ว การเปลี่ยนเกณฑ์ผ่านหรือเกณฑ์เวลาเรียนจะเปลี่ยนผลของรายวิชาเหล่านั้นด้วย`, needs_confirm: true, locked: locked.n }, 409);
+      }
       await upsertSettings(env, year.id, s, user);
-      await audit(env, user, "settings.update", { year: year.id, ...s });
+      await audit(env, user, "settings.update", { year: year.id, ...s, ...(changed.length ? { criteria_changed: changed } : {}) });
       return json({ ok: true, settings: await getSettings(env, year.id) });
     }
   }
@@ -132,8 +146,21 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         if (!r.sort_order && r.sort_order !== 0) s.sort = (i + 1) * 10;
         return s;
       }));
-      const { results: existing } = await env.DB.prepare("SELECT grade_level, code FROM gr_subjects WHERE academic_year_id = ?").bind(year.id).all();
+      const { results: existing } = await env.DB.prepare(
+        `SELECT s.grade_level, s.code, s.collect_ratio, s.hours_per_year,
+                (SELECT COUNT(*) FROM gr_courses c WHERE c.subject_id = s.id AND c.locked = 1) AS locked
+           FROM gr_subjects s WHERE s.academic_year_id = ?`
+      ).bind(year.id).all();
       const have = new Set(existing.map((e) => `${e.grade_level}|${e.code}`));
+      // เหมือนการแก้ทีละวิชา: วิชาที่มีห้องส่งผลแล้ว เปลี่ยนสัดส่วน/เวลาเรียนผ่านการนำเข้าไม่ได้
+      const byKey = Object.fromEntries(existing.map((e) => [`${e.grade_level}|${e.code}`, e]));
+      plan.forEach((s) => {
+        const e = byKey[`${s.grade}|${s.code}`];
+        if (e && e.locked > 0 && (e.collect_ratio !== s.ratio || e.hours_per_year !== s.hours)) {
+          errors.push({ row: rows.findIndex((r) => text(r.code, 20).replace(/\s+/g, "") === s.code && text(r.grade_level, 10) === s.grade) + 1,
+            error: `${s.code} ${s.grade}: เปลี่ยนสัดส่วนคะแนน/เวลาเรียนไม่ได้ เพราะมี ${e.locked} ห้องส่งผลแล้ว — ส่งคืนให้ครูก่อน` });
+        }
+      });
       const summary = { add: plan.filter((s) => !have.has(`${s.grade}|${s.code}`)).length, update: plan.filter((s) => have.has(`${s.grade}|${s.code}`)).length };
       if (b.dry_run || errors.length) return json({ ok: !errors.length, dry_run: true, errors, summary, preview: plan });
       await batchAll(env, plan.map((s) => env.DB.prepare(`INSERT INTO gr_subjects (academic_year_id, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order)

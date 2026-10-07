@@ -39,7 +39,7 @@ export function longRows(data) {
   const rows = [];
   for (const st of data.students) for (const g of st.subjects) {
     rows.push([data.year.year_be, data.grade, data.room, st.student_code, st.national_id || "", st.name, g.code, g.name,
-      g.subject_type === "basic" ? "พื้นฐาน" : "เพิ่มเติม", g.hours_per_year, g.total ?? "", g.grade ?? "", g.original_grade !== g.grade ? g.original_grade ?? "" : ""]);
+      g.subject_type === "basic" ? "พื้นฐาน" : "เพิ่มเติม", g.hours_per_year, g.total == null || g.missing || g.total_max !== 100 ? "" : g.total, g.grade ?? "", g.original_grade !== g.grade ? g.original_grade ?? "" : ""]);
   }
   return [header, ...rows];
 }

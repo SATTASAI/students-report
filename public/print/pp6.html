@@ -31,7 +31,7 @@ function page(st) {
   const basic = st.subjects.filter((x) => x.subject_type === "basic");
   const add = st.subjects.filter((x) => x.subject_type === "additional");
   const row = (x) => `<tr><td class="c">${esc(td(x.code))}</td><td>${esc(x.name)}</td><td class="c">${td(x.hours_per_year)}</td>
-    <td class="c">${x.total == null ? "" : fmt(x.total)}</td><td class="c"><b>${gradeOut(x.grade)}</b></td><td style="font-size:13pt">${esc(GRADE_TEXT[x.grade] || "")}</td></tr>`;
+    <td class="c">${x.total == null || x.missing || x.total_max !== 100 ? "" : fmt(x.total)}</td><td class="c"><b>${gradeOut(x.grade)}</b></td><td style="font-size:13pt">${esc(GRADE_TEXT[x.grade] || "")}</td></tr>`;
   const hours = st.subjects.reduce((a, x) => a + x.hours_per_year, 0);
   return `<section class="sheet">
     <div class="form-no">ปพ.6</div>
@@ -44,7 +44,7 @@ function page(st) {
       <div>ชั้น ${esc(td(d.grade))}/${esc(td(d.room))}</div><div>เลขประจำตัวประชาชน ${esc(td(st.national_id || ""))}</div>
     </div>
     <table class="t tiny" style="font-size:14pt">
-      <thead><tr><th style="width:22mm">รหัสวิชา</th><th>รายวิชา</th><th style="width:18mm">เวลาเรียน<br>(ชม.)</th><th style="width:18mm">คะแนน<br>(100)</th><th style="width:16mm">ผลการ<br>เรียน</th><th style="width:30mm">ความหมาย</th></tr></thead>
+      <thead><tr><th style="width:22mm">รหัสวิชา</th><th>รายวิชา</th><th style="width:18mm">เวลาเรียน<br>(ชม.)</th><th style="width:18mm">คะแนน<br>(${td(100)})</th><th style="width:16mm">ผลการ<br>เรียน</th><th style="width:30mm">ความหมาย</th></tr></thead>
       <tbody>
         ${basic.length ? `<tr><td colspan="6"><b>รายวิชาพื้นฐาน</b></td></tr>${basic.map(row).join("")}` : ""}
         ${add.length ? `<tr><td colspan="6"><b>รายวิชาเพิ่มเติม</b></td></tr>${add.map(row).join("")}` : ""}

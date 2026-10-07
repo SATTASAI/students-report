@@ -43,12 +43,12 @@ async function renderProgress() {
 
 async function renderSummary() {
   const s = await api(`/api/reports/summary?year=${Y}`);
-  const cols = [...NUMERIC_GRADES, "ร", "มส"];
+  const cols = [...NUMERIC_GRADES, "ร", "มส", ...(s.subjects.some((x) => x.counts["ยังไม่มีผล"]) ? ["ยังไม่มีผล"] : [])];
   const grades = [...new Set(s.subjects.map((x) => x.grade_level))];
   view.innerHTML = `<p class="muted small">พิมพ์รายงานนี้ได้ที่เมนู <a href="/docs.html">คลังเอกสาร</a></p>
     ${grades.map((g) => `<div class="panel"><div class="panel-head"><h2>${g}</h2>
       <span class="muted small">${s.rooms.filter((r) => r.grade_level === g).map((r) => `${esc(r.grade_level)}/${esc(r.classroom)} เฉลี่ย ${r.avg_gpa ?? "–"}`).join(" · ")}</span></div>
-      <div class="table-wrap"><table class="list"><thead><tr><th>วิชา</th><th class="num">คน</th>${cols.map((c) => `<th class="num">${gradeBadge(c)}</th>`).join("")}<th class="num">เฉลี่ย</th><th class="num">3 ขึ้นไป</th></tr></thead>
+      <div class="table-wrap"><table class="list"><thead><tr><th>วิชา</th><th class="num">คน</th>${cols.map((c) => `<th class="num">${c === "ยังไม่มีผล" ? '<span class="small">ยังไม่มีผล</span>' : gradeBadge(c)}</th>`).join("")}<th class="num">เฉลี่ย</th><th class="num">3 ขึ้นไป</th></tr></thead>
       <tbody>${s.subjects.filter((x) => x.grade_level === g).map((x) => `<tr><td>${esc(x.code)} ${esc(x.name)}</td><td class="num">${x.n}</td>
         ${cols.map((c) => `<td class="num">${x.counts[c] || ""}</td>`).join("")}<td class="num">${x.mean ?? "–"}</td><td class="num">${x.good_pct == null ? "–" : `${fmt(x.good_pct, 1)}%`}</td></tr>`).join("")}</tbody></table></div></div>`).join("") || `<div class="panel empty"><strong>ยังไม่มีผลการเรียน</strong></div>`}`;
 }

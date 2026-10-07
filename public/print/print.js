@@ -48,3 +48,12 @@ export function status(msg) {
 
 export const GRADE_TEXT = { "4": "ดีเยี่ยม", "3.5": "ดีมาก", "3": "ดี", "2.5": "ค่อนข้างดี", "2": "น่าพอใจ", "1.5": "พอใช้", "1": "ผ่านเกณฑ์ขั้นต่ำ", "0": "ต่ำกว่าเกณฑ์", "ร": "รอการตัดสิน", "มส": "ไม่มีสิทธิ์สอบ" };
 export const gradeOut = (g) => g == null ? "" : td(g);
+
+// วันที่จากฐานข้อมูล (UTC) → วันที่ไทยแบบเต็ม เช่น "8 ตุลาคม 2569" (ตามตัวเลือกเลขไทย)
+export function thaiDateUtc(s) {
+  if (!s) return "";
+  const str = String(s).replace(" ", "T");
+  const d = new Date(str.length > 10 && !/[zZ]$/.test(str) ? `${str}Z` : str);
+  if (Number.isNaN(d.getTime())) return td(String(s));
+  return thaiDate(new Date(d.getTime() + 7 * 3600e3).toISOString().slice(0, 10));
+}

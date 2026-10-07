@@ -17,7 +17,7 @@ if (!meta.rooms.length) {
 const key = (r) => `${r.grade_level}/${r.classroom}`;
 let room = params().get("room") || sessionStorage.getItem("sr-act-room");
 if (!meta.rooms.some((r) => key(r) === room)) room = key(meta.rooms[0]);
-const pending = new Map(); // "sid|item_key" → "" | "มผ"
+const pending = new Map(); // "ห้อง|sid|item_key" → "" | "มผ" (เก็บห้องไว้ในคีย์ — เปลี่ยนห้องระหว่างบันทึกแล้วไม่ส่งผิดห้อง)
 let saving = false, timer, d;
 
 async function load() {
@@ -54,7 +54,10 @@ function draw() {
     </table></div>
     <p class="muted small" style="margin-top:10px">ช่องมีเครื่องหมาย = ผ่าน · แต่ละกิจกรรมผ่านเมื่อผ่านทั้งเวลาเรียนและจุดประสงค์ · ไม่ต้องยืนยันนักเรียนใหม่ทุกภาค · บันทึกอัตโนมัติ</p>`;
   for (const b of view.querySelectorAll("[data-room]")) b.onclick = async () => {
-    await flush(); room = b.dataset.room; sessionStorage.setItem("sr-act-room", room); load().catch(showError);
+    await flush();
+    for (let i = 0; i < 100 && (saving || pending.size); i++) { await new Promise((ok) => setTimeout(ok, 100)); if (!saving && pending.size) await flush(); }
+    if (pending.size) { showError("ยังบันทึกห้องเดิมไม่สำเร็จ — กดลองใหม่ก่อนเปลี่ยนห้อง"); return; }
+    room = b.dataset.room; sessionStorage.setItem("sr-act-room", room); load().catch(showError);
   };
   document.getElementById("sheet").addEventListener("change", (e) => {
     const box = e.target;
@@ -68,7 +71,7 @@ function draw() {
     tr.querySelector("[data-sum]").innerHTML = result(s) === "ผ" ? "ผ่าน" : '<b style="color:var(--bad)">ไม่ผ่าน</b>';
     const act = d.students.filter((x) => x.enrollment_status === "enrolled");
     document.getElementById("actCount").textContent = `${act.length} คน · ไม่ผ่าน ${act.filter((x) => result(x) === "มผ").length} คน`;
-    pending.set(`${sid}|${box.dataset.key}`, value);
+    pending.set(`${room}|${sid}|${box.dataset.key}`, value);
     state(); clearTimeout(timer); timer = setTimeout(flush, 600);
   });
 }
@@ -78,14 +81,21 @@ async function flush() {
   saving = true;
   const batch = [...pending.entries()];
   pending.clear(); state();
-  const [g, r] = room.split("/");
-  try {
-    await api(`/api/activities?year=${Y}`, { method: "PUT", body: { grade: g, room: r, changes: batch.map(([k, value]) => { const [sid, item_key] = k.split("|"); return { student_id: Number(sid), item_key, value }; }) } });
-    saving = false; state();
-  } catch (err) {
-    for (const [k, v] of batch) if (!pending.has(k)) pending.set(k, v);
-    saving = false; state(err); showError(err); return;
+  const byRoom = {};
+  for (const [k, v] of batch) { const [rm, sid, item_key] = k.split("|"); (byRoom[rm] ||= []).push({ k, v, change: { student_id: Number(sid), item_key, value: v } }); }
+  let failed = null;
+  for (const [rm, list] of Object.entries(byRoom)) {
+    const [g, r] = rm.split("/");
+    try { await api(`/api/activities?year=${Y}`, { method: "PUT", body: { grade: g, room: r, changes: list.map((x) => x.change) } }); }
+    catch (err) {
+      failed = err;
+      if (err.status >= 500 || !err.status) for (const x of list) if (!pending.has(x.k)) pending.set(x.k, x.v); // เครือข่าย: เก็บไว้ลองใหม่
+      else showError(`${rm}: ${err.message} — รายการนี้ไม่ถูกบันทึก`);
+    }
   }
+  saving = false;
+  if (failed && pending.size) { state(failed); showError(failed); return; }
+  state();
   if (pending.size) flush();
 }
 function state(err) {

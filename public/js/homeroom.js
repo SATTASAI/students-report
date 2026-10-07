@@ -299,8 +299,11 @@ function renderBody() {
     const t = e.target;
     if (!t.matches("input")) return;
     const v = t.value.trim().replace(",", ".");
-    const ok = v === "" || /^\d{1,3}(\.\d)?$/.test(v);
+    // ช่วงเดียวกับเซิร์ฟเวอร์: น้ำหนัก 0–200 กก. ส่วนสูง 30–230 ซม. (ส่วนสูงต้องเป็นเซนติเมตร ไม่ใช่เมตร)
+    const n = Number(v), [lo, hi] = t.dataset.f === "height" ? [30, 230] : [0, 200];
+    const ok = v === "" || (/^\d{1,3}(\.\d)?$/.test(v) && n > lo && n < hi);
     t.parentElement.classList.toggle("invalid", !ok);
+    t.title = ok ? "" : (t.dataset.f === "height" ? "ส่วนสูงเป็นเซนติเมตร 30–230" : "น้ำหนักเป็นกิโลกรัม มากกว่า 0 และไม่เกิน 200");
     if (!ok) return;
     const tr = t.closest("tr"), sid = Number(tr.dataset.sid), r = Number(t.dataset.r);
     const cur = { ...bodyOf(sid, r), [t.dataset.f]: v === "" ? null : Number(v) };
@@ -321,24 +324,47 @@ async function flush() {
   const a = [...pending.entries()], c = [...pendingC.entries()], b = [...pendingB.entries()], at = [...pendingA.entries()];
   pending.clear(); pendingC.clear(); pendingB.clear(); pendingA.clear();
   showState();
-  try {
-    if (a.length) await api(`/api/homeroom/assessments?${q}`, { method: "PUT", body: { changes: a.map(([k, value]) => { const [sid, item_key] = k.split("|"); return { student_id: Number(sid), item_key, value }; }) } });
-    for (const t of [1, 2]) {
-      const list = c.filter(([k]) => k.startsWith(`${t}|`));
-      if (list.length) await api(`/api/homeroom/comments?${q}`, { method: "PUT", body: { term: t, changes: list.map(([k, body]) => { const [, sid, field] = k.split("|"); return { student_id: Number(sid), field, body }; }) } });
+  // ส่งแยกทีละหมวด: หมวดหนึ่งผิด (400) ไม่ทำให้หมวดอื่นค้าง · เครือข่ายขัดข้อง → เก็บไว้ลองใหม่
+  const jobs = [
+    [a, pending, (l) => api(`/api/homeroom/assessments?${q}`, { method: "PUT", body: { changes: l.map(([k, value]) => { const [sid, item_key] = k.split("|"); return { student_id: Number(sid), item_key, value }; }) } }), "การประเมิน"],
+    ...[1, 2].map((t) => [c.filter(([k]) => k.startsWith(`${t}|`)), pendingC,
+      (l) => api(`/api/homeroom/comments?${q}`, { method: "PUT", body: { term: t, changes: l.map(([k, body]) => { const [, sid, field] = k.split("|"); return { student_id: Number(sid), field, body }; }) } }), `ความคิดเห็นภาค ${t}`]),
+    [b, pendingB, (l) => api(`/api/homeroom/body?${q}`, { method: "PUT", body: { changes: l.map(([k, v]) => { const [sid, round] = k.split("|").map(Number); return { student_id: sid, round, weight: v.weight, height: v.height }; }) } }), "น้ำหนักส่วนสูง"],
+    [at, pendingA, (l) => api(`/api/homeroom/attendance?${q}`, { method: "PUT", body: { changes: l.map(([k, code]) => { const [sid, date] = k.split("|"); return { student_id: Number(sid), date, code }; }) } }), "การมาเรียน"],
+  ];
+  let netErr = null, rejected = 0;
+  for (const [list, map, send, label] of jobs) {
+    if (!list.length) continue;
+    try { await send(list); }
+    catch (err) {
+      if (err.status >= 400 && err.status < 500) {
+        // ข้อมูลบางรายการไม่ผ่านการตรวจ (เช่น วันนั้นถูกตั้งเป็นวันหยุด นักเรียนย้ายออกไปแล้ว):
+        // ส่งทีละรายการเพื่อบันทึกรายการที่ถูกต้องให้ครบ และทิ้งเฉพาะรายการที่ผิด
+        const bad = [];
+        if (list.length === 1) bad.push(err.message);
+        else for (const one of list) {
+          try { await send([one]); }
+          catch (e1) {
+            if (e1.status >= 400 && e1.status < 500) bad.push(e1.message);
+            else { netErr = e1; if (!map.has(one[0])) map.set(one[0], one[1]); }
+          }
+        }
+        if (bad.length) { rejected += bad.length; showError(`${label}: บันทึกไม่ได้ ${bad.length} รายการ — ${bad[0]}`); reloadSoon(); }
+      } else { netErr = err; for (const [k, v] of list) if (!map.has(k)) map.set(k, v); }
     }
-    if (b.length) await api(`/api/homeroom/body?${q}`, { method: "PUT", body: { changes: b.map(([k, v]) => { const [sid, round] = k.split("|").map(Number); return { student_id: sid, round, weight: v.weight, height: v.height }; }) } });
-    if (at.length) await api(`/api/homeroom/attendance?${q}`, { method: "PUT", body: { changes: at.map(([k, code]) => { const [sid, date] = k.split("|"); return { student_id: Number(sid), date, code }; }) } });
-    saving = false; showState();
-  } catch (err) {
-    for (const [k, v] of at) if (!pendingA.has(k)) pendingA.set(k, v);
-    for (const [k, v] of a) if (!pending.has(k)) pending.set(k, v);
-    for (const [k, v] of c) if (!pendingC.has(k)) pendingC.set(k, v);
-    for (const [k, v] of b) if (!pendingB.has(k)) pendingB.set(k, v);
-    saving = false; showState(err); showError(err);
-    return;
   }
+  saving = false;
+  if (netErr) { showState(netErr); showError(netErr); return; }
+  showState();
   if (pending.size || pendingC.size || pendingB.size || pendingA.size) flush();
+}
+let reloadTimer;
+function reloadSoon() {
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(async () => {
+    if (pending.size || pendingC.size || pendingB.size || pendingA.size || saving) return reloadSoon();
+    try { data = await api(`/api/homeroom?${q}`); render(); } catch { /* ลองครั้งหน้า */ }
+  }, 1500);
 }
 
 function showState(err) {

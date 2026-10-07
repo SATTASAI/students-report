@@ -124,11 +124,14 @@ function sortRoster(rows, order = "gender") {
     (order === "gender" ? genderRank(a.gender) - genderRank(b.gender) : 0) ||
     String(a.student_code).localeCompare(String(b.student_code), "th", { numeric: true }));
   // เลขที่ที่ฝ่ายวัดผลกำหนดเอง (manual_number) ตรึงไว้ คนอื่นได้เลขที่ว่างถัดไปตามลำดับปกติ
-  const fixed = new Set(rows.filter((r) => active(r) && r.manual_number).map((r) => r.manual_number));
+  // ถ้าเลขที่ตรึงซ้ำกัน (ข้อมูลเก่า) ให้คนแรกได้เลขนั้น คนถัดไปได้เลขอัตโนมัติ — ห้ามมีเลขที่ซ้ำในห้อง
+  const owner = new Map();
+  for (const r of rows) if (active(r) && r.manual_number && !owner.has(r.manual_number)) owner.set(r.manual_number, r);
+  const fixed = new Set(owner.keys());
   let n = 0;
   for (const r of rows) {
     if (!active(r)) { r.number = null; continue; }
-    if (r.manual_number) { r.number = r.manual_number; continue; }
+    if (r.manual_number && owner.get(r.manual_number) === r) { r.number = r.manual_number; continue; }
     do n++; while (fixed.has(n));
     r.number = n;
   }

@@ -118,6 +118,8 @@ export async function handleMoves(request, env, user, parts, method, url) {
     if (!cur || LEFT_STATUSES.includes(cur.status)) fail(409, "นักเรียนคนนี้ไม่ได้เรียนอยู่ในปีการศึกษานี้");
     await env.DB.batch([
       ...enrollStatements(env, year.id, term, sid, cur.grade_level, cur.classroom, status),
+      // เลขที่ที่เคยตรึงไว้ไม่ตามไป (กลับมาแล้วต่อท้ายห้อง ไม่ชนกับเลขที่ของคนอื่น)
+      env.DB.prepare("DELETE FROM gr_roster_numbers WHERE academic_year_id = ? AND student_id = ?").bind(year.id, sid),
       env.DB.prepare(`INSERT INTO gr_transfers (academic_year_id, student_id, direction, reason, term_number, move_date, school, note, grade_level, classroom, created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(year.id, sid, "out", b.reason, termNo, dateOrNull(b.move_date), text(b.school, 200) || null, text(b.note, 300) || null, cur.grade_level, cur.classroom, user.id),
     ]);
@@ -165,6 +167,8 @@ export async function handleMoves(request, env, user, parts, method, url) {
     }
     await env.DB.batch([
       ...enrollStatements(env, year.id, term, sid, grade, room, "enrolled"),
+      // เลขที่ที่เคยตรึงไว้ไม่ตามไป (กลับมาแล้วต่อท้ายห้อง ไม่ชนกับเลขที่ของคนอื่น)
+      env.DB.prepare("DELETE FROM gr_roster_numbers WHERE academic_year_id = ? AND student_id = ?").bind(year.id, sid),
       env.DB.prepare(`INSERT INTO gr_transfers (academic_year_id, student_id, direction, reason, term_number, move_date, school, note, grade_level, classroom, created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(year.id, sid, "in", reason, termNo, dateOrNull(b.move_date), text(b.school, 200) || null, text(b.note, 300) || null, grade, room, user.id),
     ]);

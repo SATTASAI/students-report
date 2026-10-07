@@ -57,7 +57,10 @@ test("ส่ง → ส่งคืนพร้อมเหตุผล → ส�
   let r = await call("admin", "POST", "/api/admin/courses/approve", { course_ids: [c.id] }, { expect: 200 });
   assert.equal(r.data.approved, 0);
   // ส่ง (ไม่มีอะไรต้องเตือน)
-  let dd = (await call("t1", "POST", `/api/courses/${c.id}/submit`, {}, { expect: 200 })).data;
+  // ภาค 1 ไม่มีโครงสร้างและไม่มีคะแนนยกมา → ต้องยืนยันก่อน (เกรดทั้งปียังไม่ออก)
+  const w1 = (await call("t1", "POST", `/api/courses/${c.id}/submit`, {}, { expect: 409 })).data;
+  assert.deepEqual(w1.checks.missing_terms, [{ term: 1, students: s.length }]);
+  let dd = (await call("t1", "POST", `/api/courses/${c.id}/submit`, { force: true }, { expect: 200 })).data;
   assert.equal(dd.course.status, "submitted");
   assert.equal(dd.course.submitted_by_name, "ครูสมใจ ใจดี");
   await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: ind.id, student_id: s[0].id, score: 1 }] }, { expect: 409 });

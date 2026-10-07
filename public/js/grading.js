@@ -34,7 +34,9 @@ export function floor2(n) {
 }
 
 export function requiredHours(hoursPerYear, attendancePassPct) {
-  return (Number(hoursPerYear) || 0) * (Number(attendancePassPct) || 80) / 100;
+  // ค่าว่าง = 80% แต่ 0 คือ 0 จริง (ไม่ใช้ || เพราะ 0 จะกลายเป็น 80)
+  const pct = attendancePassPct == null || attendancePassPct === "" || !Number.isFinite(Number(attendancePassPct)) ? 80 : Number(attendancePassPct);
+  return (Number(hoursPerYear) || 0) * pct / 100;
 }
 
 // เกณฑ์ผ่านรายตัวชี้วัดของภาคเรียนนั้น (ร้อยละของคะแนนเต็ม) — ภาค 2 ใช้ค่าของภาค 1 ถ้าไม่ได้ตั้งแยก
@@ -55,16 +57,19 @@ export function indicatorResult(item, score, settings) {
 const sum2 = (a, b) => Math.round((a + b) * 100) / 100;
 
 // คะแนนที่นับได้สูงสุดจากการสอบแก้ตัวของตัวชี้วัด = เกณฑ์ผ่านของภาคนั้น
+// ใช้คะแนนทศนิยม 2 ตำแหน่งที่น้อยที่สุดที่ "ผ่าน" (ปัดขึ้น) เพื่อให้ตรงกับ indicatorResult เสมอ
+// เช่น เต็ม 4.35 เกณฑ์ 55% = 2.3925 → นับได้ 2.40 (ถ้าปัดเป็น 2.39 จะยังขึ้นว่าไม่ผ่าน)
 export function remedialCap(item, settings) {
   const max = Number(item.max_score) || 0;
-  return Math.round(max * indicatorPassPct(settings, item.term_number)) / 100;
+  return Math.ceil(Math.round(max * indicatorPassPct(settings, item.term_number) * 1e6) / 1e6 - 1e-9) / 100;
 }
 
 // คะแนนที่ใช้คิดผล: ถ้ามีคะแนนแก้ตัว นับ max(คะแนนเดิม, min(แก้ตัว, เกณฑ์ผ่าน))
 export function effectiveScore(item, score, remedial, settings) {
   if (remedial == null || remedial === "" || item.kind === "final") return score;
   const capped = Math.min(Number(remedial), remedialCap(item, settings));
-  return score == null || score === "" ? capped : Math.max(Number(score), capped);
+  // ไม่มีคะแนนเดิม = ยังไม่ครบ (คะแนนแก้ตัวที่ค้างอยู่จะกลับมานับเมื่อกรอกคะแนนเดิมอีกครั้ง)
+  return score == null || score === "" ? null : Math.max(Number(score), capped);
 }
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 
@@ -127,8 +132,10 @@ export function computeStudentResult(items, scores, result, settings, remedials,
     const ok = (b.collectMax === 0 || near(cw, 1)) && (b.finalMax === 0 || near(fw, 1));
     if (!ok) exact = false;
     const sc = (c, f) => ok ? sum2(c, f) : floor2(c * cw + f * fw);
+    const collect = sc(b.collect, 0), final = sc(0, b.final);
     return {
-      collect: sc(b.collect, 0), final: sc(0, b.final), total: sc(b.collect, b.final),
+      // รวมภาค = ระหว่างภาค + ปลายภาค ที่แสดง (กรณีย่อขยาย ตัดเศษแต่ละส่วนก่อนแล้วจึงรวม ตัวเลขบนเอกสารจึงบวกกันลงตัว)
+      collect, final, total: sum2(collect, final),
       collect_max: sc(b.collectMax, 0), final_max: sc(0, b.finalMax), max: sc(b.collectMax, b.finalMax),
       missing: b.missing, complete: b.missing === 0, exact: ok,
     };

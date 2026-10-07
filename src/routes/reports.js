@@ -189,7 +189,7 @@ export async function handleReports(request, env, user, parts, method, url) {
     }
     const subjects = Object.values(bySubject).map((r) => ({
       ...r, mean: r.graded ? Math.floor((r.sum / r.graded) * 100) / 100 : null,
-      good_pct: r.n ? Math.round((((r.counts["4"] || 0) + (r.counts["3.5"] || 0) + (r.counts["3"] || 0)) / r.n) * 1000) / 10 : null,
+      good_pct: r.graded && r.n ? Math.round((((r.counts["4"] || 0) + (r.counts["3.5"] || 0) + (r.counts["3"] || 0)) / r.n) * 1000) / 10 : null,
     })).sort((a, b) => compareGrade(a.grade_level, b.grade_level) || (a.subject_type === "additional") - (b.subject_type === "additional") || a.code.localeCompare(b.code));
     return json({ year, settings: await getSettings(env, year.id), subjects, rooms: byRoom });
   }

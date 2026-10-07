@@ -35,8 +35,12 @@ table.t.tiny { font-size: 12.5pt; line-height: 1.05; }
 .sign { text-align: center; }
 .sign .line { border-bottom: 1px dotted #000; height: 9mm; margin: 0 8mm 1mm; }
 .dots { border-bottom: 1px dotted #000; min-height: 8mm; }
-.draft-mark { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
-.draft-mark span { transform: rotate(-30deg); font-size: 60pt; color: rgba(200, 0, 0, .12); font-weight: 700; white-space: nowrap; }
+/* ลายน้ำฉบับร่าง: พื้นหลังลายซ้ำทุก 110×55 มม. — ทุกหน้าที่พิมพ์ (รวมหน้าต่อที่มีตารางสั้น ๆ) จะเห็นข้อความเต็มอย่างน้อยหนึ่งครั้ง */
+.draft-mark { position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22440%22%20height%3D%22220%22%20viewBox%3D%220%200%20440%20220%22%3E%3Ctext%20x%3D%22220%22%20y%3D%22110%22%20text-anchor%3D%22middle%22%20dominant-baseline%3D%22middle%22%20transform%3D%22rotate%28-20%20220%20110%29%22%20font-family%3D%22Sarabun%2C%20%27TH%20Sarabun%20PSK%27%2C%20Tahoma%2C%20sans-serif%22%20font-size%3D%2234%22%20font-weight%3D%22700%22%20fill%3D%22rgba%28200%2C0%2C0%2C0.13%29%22%3E%E0%B8%89%E0%B8%9A%E0%B8%B1%E0%B8%9A%E0%B8%A3%E0%B9%88%E0%B8%B2%E0%B8%87%20%E0%B8%A2%E0%B8%B1%E0%B8%87%E0%B9%84%E0%B8%A1%E0%B9%88%E0%B8%AD%E0%B8%99%E0%B8%B8%E0%B8%A1%E0%B8%B1%E0%B8%95%E0%B8%B4%3C/text%3E%3C/svg%3E") left top / 110mm 55mm repeat;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.draft-foot { margin-top: 3mm; text-align: center; font-size: 16pt; font-weight: 700; color: rgba(200, 0, 0, .55); letter-spacing: .5px; break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.draft-mark span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .note { font-size: 13pt; margin-top: 3mm; }
 .muted { color: #555; }
 .status { padding: 40px; text-align: center; font-family: "IBM Plex Sans Thai", system-ui, sans-serif; font-size: 15px; }
@@ -65,7 +69,8 @@ table.t.tiny { font-size: 12.5pt; line-height: 1.05; }
 .box { border: 1px solid #000; padding: 1mm 3mm 2mm; }
 .checks { display: flex; gap: 8mm; font-size: 14pt; }
 .sys-note { margin-top: 2mm; font-size: 11pt; color: #444; text-align: right; }
-table.t td.nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ชื่อในเอกสารทางการต้องครบ ห้ามตัด — ชื่อยาวให้ขึ้นบรรทัดใหม่ */
+table.t td.nm { white-space: normal; overflow-wrap: anywhere; line-height: 1.15; }
 table.t th.r { text-align: right; font-weight: 400; }
 table.t th.xs { font-size: 10pt; font-weight: 400; }
 table.t td.small-note { font-size: 11pt; text-align: center; }

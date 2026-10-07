@@ -88,3 +88,14 @@ export async function audit(env, user, action, detail) {
 export async function batchAll(env, statements, size = 90) {
   for (let i = 0; i < statements.length; i += size) await env.DB.batch(statements.slice(i, i + size));
 }
+
+// ตัวเลขจากผู้ใช้แบบเข้มงวด (ฝั่งเซิร์ฟเวอร์ต้องเข้มเท่าหน้าเว็บ):
+// null/""/ช่องว่าง → null · ตัวเลข หรือข้อความแบบ 12 / 12.5 / 12,5 → number · อย่างอื่น (1e2, 0x5, true, [5], -1) → NaN
+export function decimalOf(v) {
+  if (v == null) return null;
+  if (typeof v === "number") return Number.isFinite(v) && v >= 0 ? v : NaN;
+  if (typeof v !== "string") return NaN;
+  const t = v.trim().replace(",", ".");
+  if (t === "") return null;
+  return /^\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
+}

@@ -1,4 +1,4 @@
-import { shell, api, esc, toast, showError, dialog, confirmBox, hashTab } from "/js/app.js";
+import { shell, api, esc, toast, showError, dialog, confirmBox, hashTab, thaiTime } from "/js/app.js";
 import { parseIndicatorLines } from "/js/indicators.js";
 import { IMPORT_KINDS, parseGrid, gridToRows } from "/js/paste.js";
 import { loadXlsx } from "/js/export.js";
@@ -444,7 +444,7 @@ async function renderMoves() {
       <div class="panel-head"><h2>รายการปีการศึกษา ${me.year.year_be}</h2></div>
       <div class="table-wrap"><table class="list"><thead><tr><th>วันที่</th><th>นักเรียน</th><th>รายการ</th><th>ห้อง</th><th>ภาค</th><th>โรงเรียน / หมายเหตุ</th><th>บันทึกโดย</th><th></th></tr></thead>
       <tbody>${m.moves.map((x) => `<tr class="${x.undone_at ? "muted" : ""}">
-        <td class="small">${esc(x.move_date || x.created_at.slice(0, 10))}</td><td>${esc(x.student_code)} ${esc(x.name)}</td>
+        <td class="small">${esc(x.move_date ? thaiTime(x.move_date, false) : thaiTime(x.created_at, false))}</td><td>${esc(x.student_code)} ${esc(x.name)}</td>
         <td><span class="tag ${x.direction === "out" ? "warn" : "ok"}">${esc(x.label)}</span>${x.undone_at ? ' <span class="tag">ยกเลิกแล้ว</span>' : ""}</td>
         <td>${esc(x.grade_level || "")}/${esc(x.classroom || "")}</td><td class="num">${x.term_number}</td>
         <td class="small">${esc([x.school, x.note].filter(Boolean).join(" · "))}</td><td class="small">${esc(x.by_name || "")}</td>
@@ -555,7 +555,7 @@ async function renderSettings() {
   view.innerHTML = `<form class="panel" id="setForm">
     <div class="panel-head"><h2>เกณฑ์การวัดผล ปีการศึกษา ${me.year.year_be}</h2></div>
     <div class="form-grid">
-      <label class="field">สัดส่วนระหว่างภาคเริ่มต้นของวิชาใหม่ (%)<input name="collect_ratio" inputmode="numeric" value="${s.collect_ratio}" required></label>
+      <label class="field">สัดส่วนเริ่มต้นของวิชาใหม่ (ระหว่างภาค : ปลายภาค)<select name="collect_ratio">${ratioOptions(s.collect_ratio)}</select></label>
       <label class="field">เกณฑ์ผ่านตัวชี้วัด ภาค 1 (%)<input name="indicator_pass_pct" inputmode="numeric" value="${s.indicator_pass_pct}" required></label>
       <label class="field">เกณฑ์ผ่านตัวชี้วัด ภาค 2 (%)<input name="indicator_pass_pct_t2" inputmode="numeric" value="${s.indicator_pass_pct_t2 ?? ""}" placeholder="ว่าง = ใช้ค่าภาค 1"></label>
       <label class="field">เกณฑ์เวลาเรียน (%)<input name="attendance_pass_pct" inputmode="numeric" value="${s.attendance_pass_pct}" required></label>
@@ -582,7 +582,13 @@ async function renderSettings() {
     e.preventDefault();
     const d = Object.fromEntries(new FormData(e.target));
     d.entry_open = !!d.entry_open;
-    try { await api(`/api/admin/settings?${yq}`, { method: "PUT", body: d }); toast("บันทึกแล้ว"); } catch (err) { showError(err); }
+    try { await api(`/api/admin/settings?${yq}`, { method: "PUT", body: d }); toast("บันทึกแล้ว"); }
+    catch (err) {
+      // เปลี่ยนเกณฑ์ผ่าน/เวลาเรียนหลังมีรายวิชาส่งผลแล้ว → ยืนยันก่อน
+      if (err.data?.needs_confirm && await confirmBox("เกณฑ์มีผลกับรายวิชาที่ส่งแล้ว", `${esc(err.message)}<br><br>ยืนยันเปลี่ยนเกณฑ์หรือไม่`, "ยืนยันเปลี่ยน", true)) {
+        try { await api(`/api/admin/settings?${yq}`, { method: "PUT", body: { ...d, confirm_locked: true } }); toast("บันทึกแล้ว"); } catch (e2) { showError(e2); }
+      } else if (!err.data?.needs_confirm) showError(err);
+    }
   };
 }
 
@@ -620,7 +626,7 @@ async function renderApprove(mode = "approve") {
       <tbody>${waiting.filter((c) => `${c.grade_level}/${c.classroom}` === r).map((c) => `<tr>
         <td><input type="checkbox" class="pick" value="${c.id}" aria-label="เลือก ${esc(c.code)}" style="width:18px;height:18px;min-height:0"></td>
         <td>${esc(c.code)}</td><td><a href="/course.html?id=${c.id}&year=${Y}">${esc(c.name)}</a>${c.edit_count ? ` <span class="tag warn" title="ฝ่ายวัดผลแก้ไขหลังส่ง">แก้ ${c.edit_count}</span>` : ""}</td>
-        <td class="small">${c.teachers.map((t) => esc(t.full_name)).join(", ")}</td><td class="small muted">${esc(String((R ? c.submitted_at : c.reviewed_at) || "").slice(0, 16))}</td>
+        <td class="small">${c.teachers.map((t) => esc(t.full_name)).join(", ")}</td><td class="small muted">${esc(thaiTime(R ? c.submitted_at : c.reviewed_at))}</td>
         <td class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/pp5.html?course=${c.id}">ตรวจ ปพ.5</a></td></tr>`).join("")}</tbody></table></div>`).join("")
       : `<div class="empty"><strong>${R ? "ไม่มีรายวิชารอตรวจ" : "ไม่มีรายวิชารออนุมัติ"}</strong>${R ? "เมื่อครูส่งผลแล้ว รายวิชาจะขึ้นที่นี่" : "เมื่อฝ่ายวัดผลตรวจแล้ว รายวิชาจะขึ้นที่นี่"}</div>`}
   </div>

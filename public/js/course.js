@@ -1,4 +1,4 @@
-import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, fmt, ICONS, params, withYear } from "/js/app.js";
+import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, fmt, ICONS, params, withYear, thaiTime } from "/js/app.js";
 import { computeStudentResult, resultWithAttendance, NUMERIC_GRADES, indicatorWord, indicatorResult, structureIssues, indicatorPassPct, remedialCap } from "/js/grading.js";
 import { parseIndicatorLines } from "/js/indicators.js";
 
@@ -22,8 +22,20 @@ document.getElementById("main").hidden = false;
 const W = indicatorWord(data.course.grade_level); // ป.1–3 = ผลการเรียนรู้, ป.4–6 = ตัวชี้วัด
 if (!data.items.length && tab !== "setup") tab = "setup";
 window.addEventListener("beforeunload", (e) => {
-  if (pending.size || saving) { e.preventDefault(); e.returnValue = ""; }
+  if (pending.size || saving || invalidCount()) { e.preventDefault(); e.returnValue = ""; }
 });
+const invalidCount = () => document.querySelectorAll("#sheet td.cell.invalid").length;
+// ค่าก่อนเริ่มพิมพ์ในช่อง (ใช้คืนค่าเมื่อพิมพ์ผิด เช่นพิมพ์ 12 ในช่องเต็ม 10 — ห้ามให้ "1" ที่พิมพ์ระหว่างทางถูกบันทึก)
+const editStart = new Map(); // "item:sid" → { val, pend }
+// ข้อมูลที่โหลดใหม่จากเซิร์ฟเวอร์อาจยังไม่มีคะแนนที่รอบันทึก — ใส่กลับก่อนแสดงผล
+function reapplyPending() {
+  for (const [k, v] of pending) {
+    const [itemId, sid] = k.split(":").map(Number);
+    const sc = studentScores(sid);
+    if (v == null) delete sc[itemId]; else sc[itemId] = v;
+  }
+  for (const sid of new Set([...pending.keys()].map((k) => Number(k.split(":")[1])))) if (data.computed) recompute(sid);
+}
 
 // ---------------- ส่วนหัว ----------------
 function renderHeader() {
@@ -42,7 +54,7 @@ function renderHeader() {
   pb.href = `/docs.html?room=${encodeURIComponent(`${c.grade_level}/${c.classroom}`)}`;
   const sb = document.getElementById("submitBtn");
   const note = document.getElementById("lockNote");
-  const when = (t) => t ? ` เมื่อ ${String(t).slice(0, 16).replace("T", " ")}` : "";
+  const when = (t) => t ? ` เมื่อ ${thaiTime(t)}` : "";
   note.className = "note";
   if (c.locked) {
     // ครูส่ง → ฝ่ายวัดผลตรวจ → ผู้บริหารอนุมัติ
@@ -80,8 +92,8 @@ function renderEdits() {
   let box = document.getElementById("editLog");
   if (!data.edits?.length) { box?.remove(); return; }
   if (!box) { box = document.createElement("details"); box.id = "editLog"; box.className = "note"; document.getElementById("lockNote").after(box); }
-  box.innerHTML = `<summary>ฝ่ายวัดผลแก้ไขรายวิชานี้ ${data.edits.length} ครั้ง (ล่าสุด ${esc(String(data.edits[0].created_at).slice(0, 16))})</summary>
-    <ul class="small" style="margin:8px 0 0;padding-left:20px">${data.edits.map((e) => `<li>${esc(String(e.created_at).slice(0, 16))} · ${esc(e.by_name || "")} · ${esc(e.what)}${e.detail ? ` (${esc(e.detail)})` : ""}</li>`).join("")}</ul>`;
+  box.innerHTML = `<summary>ฝ่ายวัดผลแก้ไขรายวิชานี้ ${data.edits.length} ครั้ง (ล่าสุด ${esc(thaiTime(data.edits[0].created_at))})</summary>
+    <ul class="small" style="margin:8px 0 0;padding-left:20px">${data.edits.map((e) => `<li>${esc(thaiTime(e.created_at))} · ${esc(e.by_name || "")} · ${esc(e.what)}${e.detail ? ` (${esc(e.detail)})` : ""}</li>`).join("")}</ul>`;
 }
 
 function renderTabs() {
@@ -92,6 +104,7 @@ function renderTabs() {
 }
 
 function render() {
+  reapplyPending();
   if (tab === "t1" || tab === "t2") renderSheet(tab === "t1" ? 1 : 2);
   else if (tab === "sum") renderSummary();
   else if (tab === "rem") renderRemedial();
@@ -220,7 +233,17 @@ function bindSheet(items, term) {
     if (target) { target.focus(); target.select(); }
   };
 
-  table.addEventListener("focusin", (e) => { if (e.target.matches("input")) e.target.select(); });
+  table.addEventListener("focusin", (e) => {
+    const t = e.target;
+    if (!t.matches("input")) return;
+    t.select();
+    const key = `${t.dataset.item}:${t.closest("tr").dataset.sid}`;
+    if (!editStart.has(key)) editStart.set(key, { val: studentScores(Number(t.closest("tr").dataset.sid))[Number(t.dataset.item)], pend: pending.has(key) ? pending.get(key) : undefined });
+  });
+  table.addEventListener("focusout", (e) => {
+    const t = e.target;
+    if (t.matches("input") && !t.parentElement.classList.contains("invalid")) editStart.delete(`${t.dataset.item}:${t.closest("tr").dataset.sid}`);
+  });
   table.addEventListener("keydown", (e) => {
     const t = e.target;
     if (!t.matches("input")) return;
@@ -242,16 +265,15 @@ function bindSheet(items, term) {
     const all = inputs();
     const start = all.indexOf(t);
     const r0 = Math.floor(start / cols), c0 = start % cols;
-    let count = 0, skipped = 0;
+    let count = 0, skipped = 0, bad = 0;
     rows.forEach((row, dr) => row.forEach((val, dc) => {
       const target = all[(r0 + dr) * cols + (c0 + dc)];
       if (!target || c0 + dc >= cols) { skipped++; return; }
       if (target.readOnly) return; // ภาคที่ใช้คะแนนยกมา
       target.value = val.trim();
-      acceptCell(target, items, term);
-      count++;
+      if (acceptCell(target, items, term)) count++; else bad++;
     }));
-    toast(`วางคะแนน ${count} ช่อง${skipped ? ` (ข้อมูลเกินตาราง ${skipped} ช่องไม่ได้วาง)` : ""}`);
+    toast(`วางคะแนน ${count} ช่อง${bad ? ` · ไม่ถูกต้อง ${bad} ช่อง (ช่องสีแดง ยังไม่บันทึก)` : ""}${skipped ? ` · ข้อมูลเกินตาราง ${skipped} ช่องไม่ได้วาง` : ""}`, bad ? "bad" : "");
   });
 }
 
@@ -274,7 +296,21 @@ function acceptCell(input, items, term) {
   if (!p.ok || (p.value != null && p.value > max)) {
     markCell(input, false);
     input.title = !p.ok ? "กรอกได้เฉพาะตัวเลข ทศนิยมไม่เกิน 2 ตำแหน่ง" : `เกินคะแนนเต็ม ${fmt(max)}`;
-    return;
+    // คืนค่าที่บันทึก/รอบันทึกไว้ก่อนเริ่มพิมพ์ช่องนี้ — ค่าที่พิมพ์ผิดไม่ถูกส่ง
+    const key = `${itemId}:${sid}`, start = editStart.get(key);
+    if (start) {
+      const sc0 = studentScores(sid);
+      if (start.val == null) delete sc0[itemId]; else sc0[itemId] = start.val;
+      // ส่งค่าเดิมกลับเสมอ — ถ้าตัวเลขบางส่วน (เช่น "1" ของ "12") ถูกบันทึกไปแล้วระหว่างพิมพ์ จะถูกแก้กลับเป็นค่าเดิม
+      pending.set(key, start.pend === undefined ? (start.val ?? null) : start.pend);
+      scheduleSave();
+      const calc0 = recompute(sid);
+      tr.querySelector("[data-termsum]").textContent = termSumText(calc0, items, sc0);
+      tr.querySelector("[data-total]").textContent = yearTotalText(calc0);
+      tr.querySelector("[data-grade]").innerHTML = sheetGrade(calc0);
+    }
+    showSaveState();
+    return false;
   }
   markCell(input, true);
   input.title = "";
@@ -289,6 +325,7 @@ function acceptCell(input, items, term) {
   tr.querySelector("[data-grade]").innerHTML = sheetGrade(calc);
   updateAverages(items);
   scheduleSave();
+  return true;
 }
 
 function scheduleSave() {
@@ -311,15 +348,27 @@ async function flush() {
     saving = false;
     showSaveState();
   } catch (err) {
-    // คืนรายการที่ยังไม่บันทึก (ถ้ามีการแก้ใหม่ระหว่างนั้น ให้ใช้ค่าใหม่)
-    for (const [k, v] of batch) if (!pending.has(k)) pending.set(k, v);
     saving = false;
+    if (err.status === 409) { showSaveState(err); showError(err); pending.clear(); setTimeout(() => location.reload(), 2500); return; }
+    if (err.status === 400 && Array.isArray(err.data?.errors) && err.data.errors.length) {
+      // บางช่องไม่ถูกต้อง (เช่น ครูอีกคนลดคะแนนเต็มหรือลบช่อง): ทิ้งเฉพาะช่องนั้น ทำเครื่องหมายสีแดง แล้วบันทึกช่องที่เหลือต่อ
+      const badIdx = new Set(err.data.errors.map((x) => x.index));
+      batch.forEach(([k, v], i) => {
+        if (badIdx.has(i)) {
+          const [itemId, sid] = k.split(":");
+          const cell = document.querySelector(`#sheet tr[data-sid="${sid}"] input[data-item="${itemId}"]`);
+          if (cell) { markCell(cell, false); cell.title = err.data.errors.find((x) => x.index === i)?.error || "บันทึกไม่ได้"; }
+        } else if (!pending.has(k)) pending.set(k, v);
+      });
+      showError(`บันทึกไม่ได้ ${badIdx.size} ช่อง: ${err.data.errors[0].error} — โหลดหน้าใหม่เพื่อดูโครงสร้างล่าสุด`);
+      showSaveState();
+      if (pending.size) flush();
+      return;
+    }
+    // เครือข่าย/เซิร์ฟเวอร์ขัดข้อง: คืนรายการที่ยังไม่บันทึก (ถ้ามีการแก้ใหม่ระหว่างนั้น ให้ใช้ค่าใหม่) แล้วให้กดลองใหม่
+    for (const [k, v] of batch) if (!pending.has(k)) pending.set(k, v);
     showSaveState(err);
-    if (err.data?.errors) {
-      const first = err.data.errors[0];
-      showError(`${err.message}: ${first.error}`);
-    } else showError(err);
-    if (err.status === 409) { pending.clear(); setTimeout(() => location.reload(), 2500); return; }
+    showError(err);
     return;
   }
   if (pending.size) flush();
@@ -331,6 +380,7 @@ function showSaveState(err) {
   el.className = "save-state";
   if (err) { el.classList.add("error"); el.innerHTML = `บันทึกไม่สำเร็จ <button class="btn small" id="retry">ลองอีกครั้ง</button>`; document.getElementById("retry").onclick = () => flush(); }
   else if (saving || pending.size) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
+  else if (invalidCount()) { el.classList.add("error"); el.textContent = `มีช่องไม่ถูกต้อง ${invalidCount()} ช่อง (ยังไม่บันทึก)`; }
   else el.textContent = "บันทึกแล้ว";
 }
 
@@ -714,6 +764,7 @@ async function submitCourse() {
     const ok = await dialog({
       title: "ตรวจก่อนส่งผล", okText: "ส่งผลตามนี้", okClass: "primary", wide: true,
       body: `<p class="muted" style="margin-top:0">ระบบไม่ปัดเศษและไม่แก้คะแนนให้ ตรวจรายการต่อไปนี้ ถ้าถูกต้องแล้วกด "ส่งผลตามนี้" หรือกดยกเลิกเพื่อกลับไปแก้</p>
+        ${block("ยังไม่มีคะแนนครบ 2 ภาค — เกรดทั้งปีจะยังไม่ออก (แสดง –) จนกว่าจะมีคะแนนภาคนั้น", ch.missing_terms || [], (x) => `ภาคเรียนที่ ${x.term}: ยังไม่มีโครงสร้างคะแนน และนักเรียน ${x.students} คนไม่มีคะแนนยกมา`, "bad")}
         ${block("คะแนนยังไม่ครบ (จะได้ ร เมื่อปิดปี)", ch.blanks, (x) => `${esc(x.name)} — ว่าง ${x.missing} ช่อง`, "bad")}
         ${block("คะแนนรวมมีทศนิยม — ครูตัดสินใจปัดเองได้", ch.decimals, (x) => `${esc(x.name)} — ${esc(x.detail)}`)}
         ${block("ขาดอีกไม่ถึง 1 คะแนนจะได้เกรดถัดไป", ch.borderline, (x) => `${esc(x.name)} — ${fmt(x.total)} (เกรด ${esc(x.grade)} ต้องได้ ${x.need})`)}

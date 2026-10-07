@@ -1,4 +1,4 @@
-import { json, readJson, fail, requireUser, intParam, text, audit, batchAll } from "../lib/http.js";
+import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
 import { resolveYear, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday } from "../lib/data.js";
 import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
 
@@ -109,8 +109,8 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     const b = await readJson(request);
     const changes = Array.isArray(b.changes) ? b.changes.slice(0, 1000) : [];
     const num = (v, lo, hi, label) => {
-      if (v === "" || v == null) return null;
-      const n = Number(v);
+      const n = decimalOf(v);
+      if (n === null) return null;
       if (!Number.isFinite(n) || n <= lo || n >= hi) fail(400, `${label}ต้องอยู่ระหว่าง ${lo}–${hi}`);
       return Math.round(n * 10) / 10;
     };
@@ -217,9 +217,9 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       const subj = new Map(subjects.map((x) => [x.code, x]));
       const changes = Array.isArray(b.changes) ? b.changes.slice(0, 500) : [];
       const num = (v, label) => {
-        if (v === "" || v == null) return null;
-        const n = Number(v);
-        if (!Number.isFinite(n) || n < 0 || n > 50) fail(400, `${label} ต้องอยู่ระหว่าง 0–50`);
+        const n = decimalOf(v);
+        if (n === null) return null;
+        if (!Number.isFinite(n) || n > 50) fail(400, `${label} ต้องอยู่ระหว่าง 0–50`);
         if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) fail(400, `${label} ทศนิยมได้ไม่เกิน 2 ตำแหน่ง`);
         return n;
       };

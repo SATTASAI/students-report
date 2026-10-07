@@ -1,4 +1,4 @@
-import { json, readJson, fail, requireUser, intParam, text, audit, batchAll } from "../lib/http.js";
+import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
 import { assertCourseAccess, courseBundle, loadCourse, canViewCourse, studentName } from "../lib/data.js";
 import { computeStudentResult, resultWithAttendance, validateRemedial, structureIssues, indicatorWord, indicatorResult, submissionChecks } from "../../public/js/grading.js";
 import { gradeSettings, getSettings, assessmentsFor } from "../lib/data.js";
@@ -40,8 +40,8 @@ function cleanItem(raw, i = 0) {
   const kind = raw.kind === "final" ? "final" : "indicator";
   const title = text(raw.title, 500);
   if (!title) fail(400, `รายการที่ ${i + 1}: กรุณาระบุชื่อตัวชี้วัด/การสอบ`);
-  const max = Number(raw.max_score);
-  if (!Number.isFinite(max) || max <= 0 || max > 1000) fail(400, `รายการที่ ${i + 1}: คะแนนเต็มต้องมากกว่า 0 และไม่เกิน 1000`);
+  const max = decimalOf(raw.max_score);
+  if (max == null || !Number.isFinite(max) || max <= 0 || max > 1000) fail(400, `รายการที่ ${i + 1}: คะแนนเต็มต้องมากกว่า 0 และไม่เกิน 1000`);
   if (!twoDecimals(max)) fail(400, `รายการที่ ${i + 1}: คะแนนเต็มมีทศนิยมได้ไม่เกิน 2 ตำแหน่ง`);
   const unit = raw.unit_id === "" || raw.unit_id == null ? null : Number(raw.unit_id);
   return { term, kind, code: text(raw.code, 60) || null, title, max: Math.round(max * 100) / 100, unit: kind === "final" ? null : unit };
@@ -160,6 +160,8 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     if (it.max < existing.max_score) {
       const over = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_scores WHERE item_id = ? AND score > ?").bind(itemId, it.max).first();
       if (over.n > 0) fail(409, `ลดคะแนนเต็มไม่ได้ — มีนักเรียน ${over.n} คนได้คะแนนเกิน ${it.max} แล้ว`);
+      const remOver = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_scores WHERE item_id = ? AND remedial > ?").bind(itemId, it.max).first();
+      if (remOver.n > 0) fail(409, `ลดคะแนนเต็มไม่ได้ — มีนักเรียน ${remOver.n} คนได้คะแนนแก้ตัวเกิน ${it.max} แล้ว`);
     }
     await env.DB.prepare("UPDATE gr_items SET term_number=?, kind=?, code=?, title=?, max_score=?, unit_id=? WHERE id=?")
       .bind(it.term, it.kind, it.code, it.title, it.max, it.unit, itemId).run();
@@ -317,12 +319,12 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     const stmts = [];
     const rawAfter = (sid, itemId) => { // คะแนนเดิมหลังรวมการแก้ในชุดนี้
       const inBatch = changes.find((x) => "score" in x && Number(x.item_id) === itemId && Number(x.student_id) === sid);
-      if (inBatch) return inBatch.score === "" || inBatch.score == null ? null : Number(inBatch.score);
+      if (inBatch) return decimalOf(inBatch.score);
       return bundle.scores[sid]?.[itemId] ?? null;
     };
     const num = (v, item, label) => {
-      const n = Number(v);
-      if (!Number.isFinite(n) || n < 0) return `${label}ต้องเป็นตัวเลขไม่ติดลบ`;
+      const n = decimalOf(v);
+      if (n == null || !Number.isFinite(n)) return `${label}ต้องเป็นตัวเลขไม่ติดลบ`;
       if (n > item.max_score + 1e-9) return `${label}เกินคะแนนเต็ม ${item.max_score}`;
       if (!twoDecimals(n)) return `${label}มีทศนิยมได้ไม่เกิน 2 ตำแหน่ง`;
       return null;
@@ -334,21 +336,23 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
       if (!students.has(sid)) { errors.push({ index: i, error: "นักเรียนไม่อยู่ในรายวิชานี้" }); continue; }
       const where = { index: i, item_id: c.item_id, student_id: c.student_id };
       if ("score" in c) {
-        let score = c.score === "" || c.score == null ? null : Number(c.score);
-        if (score != null) {
+        let score = decimalOf(c.score);
+        if (score !== null) {
           const err = num(c.score, item, "คะแนน");
           if (err) { errors.push({ ...where, error: err }); continue; }
           score = Math.round(score * 100) / 100;
         }
-        stmts.push(score == null
-          ? env.DB.prepare("DELETE FROM gr_scores WHERE item_id = ? AND student_id = ?").bind(item.id, sid)
-          : env.DB.prepare(`INSERT INTO gr_scores (item_id, student_id, score, updated_by, updated_at) VALUES (?,?,?,?,datetime('now'))
+        // ลบคะแนนเดิม: ถ้ามีคะแนนแก้ตัวอยู่ เก็บแถวไว้ (score = NULL) เพื่อไม่ให้คะแนนแก้ตัวหายตาม
+        if (score == null) stmts.push(
+          env.DB.prepare("UPDATE gr_scores SET score = NULL, updated_by = ?, updated_at = datetime('now') WHERE item_id = ? AND student_id = ?").bind(user.id, item.id, sid),
+          env.DB.prepare("DELETE FROM gr_scores WHERE item_id = ? AND student_id = ? AND score IS NULL AND remedial IS NULL").bind(item.id, sid));
+        else stmts.push(env.DB.prepare(`INSERT INTO gr_scores (item_id, student_id, score, updated_by, updated_at) VALUES (?,?,?,?,datetime('now'))
               ON CONFLICT(item_id, student_id) DO UPDATE SET score = excluded.score, updated_by = excluded.updated_by, updated_at = datetime('now')`)
             .bind(item.id, sid, score, user.id));
       }
       if ("remedial" in c) {
         // คะแนนแก้ตัว: เฉพาะตัวชี้วัดที่คะแนนเดิมไม่ผ่าน, เก็บคะแนนจริง นับได้ไม่เกินเกณฑ์ผ่าน
-        const rem = c.remedial === "" || c.remedial == null ? null : Number(c.remedial);
+        const rem = decimalOf(c.remedial);
         if (rem != null) {
           if (item.kind !== "indicator") { errors.push({ ...where, error: "บันทึกแก้ตัวได้เฉพาะคะแนนระหว่างภาค" }); continue; }
           const raw = rawAfter(sid, item.id);
@@ -387,9 +391,10 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
       if ("hours_attended" in c) {
         if (c.hours_attended === "" || c.hours_attended == null) next.hours_attended = null;
         else {
-          const h = Number(c.hours_attended);
-          if (!Number.isFinite(h) || h < 0 || h > course.hours_per_year) fail(400, `เวลาเรียนต้องอยู่ระหว่าง 0–${course.hours_per_year} ชั่วโมง`);
-          next.hours_attended = Math.round(h * 10) / 10;
+          const h = decimalOf(c.hours_attended);
+          if (h == null || !Number.isFinite(h) || h > course.hours_per_year) fail(400, `เวลาเรียนต้องอยู่ระหว่าง 0–${course.hours_per_year} ชั่วโมง`);
+          if (!twoDecimals(h)) fail(400, "เวลาเรียนมีทศนิยมได้ไม่เกิน 2 ตำแหน่ง");
+          next.hours_attended = h; // เก็บตามที่กรอก ไม่ปัด (ปัดขึ้นอาจทำให้ มส กลายเป็นมีสิทธิ์)
         }
       }
       if ("special" in c) {
@@ -432,12 +437,18 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     const issues = structureIssues(bundle.items, course.collect_ratio, indicatorWord(course.grade_level));
     if (issues.length) return json({ error: `ยืนยันผลไม่ได้: ${issues.join(" และ ")}`, structure_issues: issues }, 400);
     const b = await readJson(request);
+    // ผลการเรียนคิดจาก 2 ภาค: ภาคที่ยังไม่มีช่องคะแนนและนักเรียนไม่มีคะแนนยกมา → ส่งแล้วเกรดจะยังเป็น "-" (เช่น ห้องนำร่องที่ภาค 1 อยู่ใน Q-Info)
+    // ไม่บล็อก แต่ให้ครูเห็นและยืนยันเอง
+    const active = bundle.roster.filter((s) => s.enrollment_status === "enrolled");
+    const missingTerms = [1, 2].filter((t) => !bundle.items.some((i) => Number(i.term_number) === t))
+      .map((t) => ({ term: t, students: active.filter((s) => !(bundle.carry?.[s.id]?.[t]?.total != null)).length }))
+      .filter((x) => x.students > 0);
     // ตรวจก่อนส่ง: ครูต้องเห็นและยืนยันเอง (ไม่บล็อก ยกเว้นโครงสร้างไม่ตรงสัดส่วน)
     const checks = submissionChecks(bundle.roster.map((s) => ({ id: s.id, name: studentName(s), enrollment_status: s.enrollment_status })), bundle.computed);
     const pending = checks.blanks.filter((x) => !bundle.results[x.id]?.special);
-    const warn = pending.length + checks.decimals.length + checks.borderline.length + checks.ms.length;
+    const warn = pending.length + checks.decimals.length + checks.borderline.length + checks.ms.length + missingTerms.length;
     if (warn && !b.force) {
-      return json({ error: "ตรวจพบรายการที่ควรดูก่อนส่ง", needs_confirm: true, checks, pending: pending.map((x) => x.name) }, 409);
+      return json({ error: "ตรวจพบรายการที่ควรดูก่อนส่ง", needs_confirm: true, checks: { ...checks, missing_terms: missingTerms }, pending: pending.map((x) => x.name) }, 409);
     }
     await env.DB.prepare("UPDATE gr_courses SET locked = 1, submitted_at = datetime('now'), submitted_by = ?, approved_at = NULL, approved_by = NULL, reviewed_at = NULL, reviewed_by = NULL WHERE id = ?").bind(user.id, course.id).run();
     await audit(env, user, "course.submit", { course: course.id, blanks: pending.length, decimals: checks.decimals.length, borderline: checks.borderline.length, ms: checks.ms.length });

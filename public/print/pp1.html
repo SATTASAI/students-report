@@ -10,7 +10,7 @@
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
 import { esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDate } from "/print/print.js";
-import { ASSESSMENT_GROUPS, summarizeGroup, summaryText } from "/js/grading.js";
+import { ASSESSMENT_GROUPS, summarizeGroup, summaryText, weightedGPA } from "/js/grading.js";
 
 const p = params();
 let ids = [];
@@ -37,9 +37,8 @@ function page(d) {
   const years = d.years;
   const allSubjects = years.flatMap((y) => y.subjects.map((x) => ({ ...x, year_be: y.year_be, grade_level: y.grade_level })));
   const hours = (type) => allSubjects.filter((x) => x.subject_type === type).reduce((a, x) => a + x.hours_per_year, 0);
-  let w = 0, sum = 0;
-  for (const x of allSubjects) { const g = Number(x.grade); if (x.grade != null && !Number.isNaN(g) && /^[0-4](\.5)?$/.test(x.grade)) { w += x.hours_per_year; sum += g * x.hours_per_year; } }
-  const gpa = w ? Math.floor((sum / w) * 100) / 100 : null;
+  // ใช้สูตรเดียวกับ ปพ.6 และไฟล์ Excel (ถ้ายังมีวิชาที่เป็น ร/มส/ยังไม่มีผล จะยังไม่คิดผลการเรียนเฉลี่ย)
+  const gpa = weightedGPA(allSubjects);
   const last = years[years.length - 1];
   return `<section class="sheet">
     <div class="draft-mark"><span>ฉบับตรวจทาน</span></div>
@@ -55,7 +54,7 @@ function page(d) {
     </div>
     <table class="t tiny">
       <thead><tr><th style="width:20mm">ปีการศึกษา / ชั้น</th><th style="width:20mm">รหัสวิชา</th><th>รายวิชา</th><th style="width:16mm">เวลาเรียน</th><th style="width:14mm">ผลการเรียน</th></tr></thead>
-      <tbody>${years.length ? years.map((y) => y.subjects.map((x, i) => `<tr>${i === 0 ? `<td class="c" rowspan="${y.subjects.length}">${td(y.year_be)}<br>${esc(td(y.grade_level))}</td>` : ""}
+      <tbody>${allSubjects.length ? years.filter((y) => y.subjects.length).map((y) => y.subjects.map((x, i) => `<tr>${i === 0 ? `<td class="c" rowspan="${y.subjects.length}">${td(y.year_be)}<br>${esc(td(y.grade_level))}</td>` : ""}
         <td class="c">${esc(td(x.code))}</td><td>${esc(x.name)}${x.subject_type === "additional" ? " (เพิ่มเติม)" : ""}</td><td class="c">${td(x.hours_per_year)}</td><td class="c">${gradeOut(x.grade)}</td></tr>`).join("")).join("")
         : `<tr><td colspan="5" class="c">ยังไม่มีผลการเรียนในระบบ</td></tr>`}</tbody>
     </table>
