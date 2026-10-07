@@ -31,7 +31,10 @@ const pp6 = document.getElementById("pp6Btn");
 pp6.innerHTML = `${ICONS.print} ปพ.6 และเอกสารของห้อง`;
 pp6.href = `/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}`;
 
-const TABS = [...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["act", "กิจกรรมพัฒนาผู้เรียน"], ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"], ["grades", "ผลการเรียนรวม"], ["absence", "ขาดเรียน (บค.)"]];
+const hasMovers = data.students.some((s) => s.transfer_in_term > 1);
+const TABS = [...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["act", "กิจกรรมพัฒนาผู้เรียน"], ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"],
+  ...(hasMovers ? [["carry", "คะแนนยกมา (ย้ายเข้า)"]] : []), ["grades", "ผลการเรียนรวม"], ["absence", "ขาดเรียน (บค.)"]];
+if (location.hash === "#carry" && hasMovers) tab = "carry";
 const tabs = document.getElementById("tabs");
 tabs.innerHTML = TABS.map(([k, label]) => `<button role="tab" data-tab="${k}">${label}</button>`).join("");
 if (!TABS.some(([k]) => k === tab)) tab = "trait";
@@ -49,8 +52,57 @@ function render() {
   if (group) renderAssessment(group);
   else if (tab === "comments") renderComments();
   else if (tab === "body") renderBody();
+  else if (tab === "carry") renderCarry().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
   else if (tab === "grades") renderGrades();
   else renderAbsence();
+}
+
+// ---------- คะแนนยกมาจาก ปพ.6 ของโรงเรียนเดิม (นักเรียนย้ายเข้าระหว่างปี) ----------
+async function renderCarry() {
+  view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
+  const c = await api(`/api/homeroom/carryover?${q}`);
+  const v = (sid, code, t) => c.values[sid]?.[code]?.[t] || {};
+  const val = (n) => (n == null ? "" : n);
+  view.innerHTML = `<p class="muted small" style="margin:0 0 12px">นักเรียนที่ย้ายเข้าระหว่างปีจะมี ปพ.6 ของภาคก่อนหน้าติดตัวมา ให้กรอกคะแนนของภาคนั้นทีละวิชา (เต็มภาคละ 50 คะแนน)
+      ระบบจะใช้แทนช่องคะแนนของภาคนั้นทั้งภาค แล้วรวมกับภาคที่เรียนที่นี่เพื่อตัดเกรด · ถ้า ปพ.6 แยกระหว่างภาค/ปลายภาค ให้กรอกทั้งสองช่อง (ระบบรวมให้) ถ้ามีแต่คะแนนรวม กรอกช่องรวมอย่างเดียว</p>
+    ${c.students.map((st) => `<div class="panel" data-st="${st.id}">
+      <div class="panel-head"><h2>${esc(st.number ?? "")} ${esc(st.name)}</h2>
+        <span class="muted small">ย้ายเข้าภาคเรียนที่ ${st.transfer_in_term}${st.school ? ` จาก${esc(st.school)}` : ""}</span></div>
+      ${st.terms.length ? `<div class="table-wrap"><table class="list carry"><thead><tr><th>รายวิชา</th>${st.terms.map((t) => `<th class="num">ภาค ${t} ระหว่างภาค</th><th class="num">ปลายภาค</th><th class="num">รวม (50)</th>`).join("")}<th></th></tr></thead>
+        <tbody>${c.subjects.map((sj) => `<tr data-code="${esc(sj.code)}"><td>${esc(sj.code)} ${esc(sj.name)}</td>
+          ${st.terms.map((t) => { const x = v(st.id, sj.code, t), dis = sj.locked ? "disabled" : "";
+            return `<td><input class="num-in" inputmode="decimal" data-t="${t}" data-f="collect" value="${val(x.collect)}" ${dis} aria-label="${esc(sj.name)} ภาค ${t} ระหว่างภาค"></td>
+              <td><input class="num-in" inputmode="decimal" data-t="${t}" data-f="final" value="${val(x.final)}" ${dis} aria-label="${esc(sj.name)} ภาค ${t} ปลายภาค"></td>
+              <td><input class="num-in" inputmode="decimal" data-t="${t}" data-f="total" value="${val(x.total)}" ${dis} aria-label="${esc(sj.name)} ภาค ${t} รวม"></td>`; }).join("")}
+          <td class="small">${sj.locked ? '<span class="tag">ส่งผลแล้ว</span>' : ""}</td></tr>`).join("")}</tbody></table></div>
+        <div class="actions" style="margin-top:10px"><button class="btn primary" data-save="${st.id}">บันทึกคะแนนยกมา</button></div>`
+      : `<p class="muted">ย้ายเข้าตั้งแต่ภาคเรียนที่ 1 — ไม่มีคะแนนภาคก่อนหน้าในปีการศึกษานี้ ครูผู้สอนประเมินตามปกติ</p>`}
+    </div>`).join("") || `<div class="panel empty"><strong>ไม่มีนักเรียนย้ายเข้าระหว่างปี</strong></div>`}`;
+  // ระหว่างภาค + ปลายภาค → เติมรวมให้
+  view.addEventListener("input", (e) => {
+    const inp = e.target;
+    if (!inp.dataset.f || inp.dataset.f === "total") return;
+    const tr = inp.closest("tr"), t = inp.dataset.t;
+    const a = tr.querySelector(`[data-t="${t}"][data-f="collect"]`).value.trim(), b = tr.querySelector(`[data-t="${t}"][data-f="final"]`).value.trim();
+    if (a !== "" && b !== "" && Number.isFinite(+a) && Number.isFinite(+b)) tr.querySelector(`[data-t="${t}"][data-f="total"]`).value = String(Math.round((+a + +b) * 100) / 100);
+  });
+  for (const b of view.querySelectorAll("[data-save]")) b.onclick = async () => {
+    const sid = Number(b.dataset.save), st = c.students.find((x) => x.id === sid), box = view.querySelector(`[data-st="${sid}"]`);
+    const changes = [];
+    for (const tr of box.querySelectorAll("tr[data-code]")) for (const t of st.terms) {
+      const get = (f) => tr.querySelector(`[data-t="${t}"][data-f="${f}"]`);
+      if (get("total").disabled) continue;
+      const row = { student_id: sid, subject_code: tr.dataset.code, term_number: t, collect: get("collect").value.trim(), final: get("final").value.trim(), total: get("total").value.trim() };
+      const old = v(sid, tr.dataset.code, t);
+      if (String(val(old.collect)) === row.collect && String(val(old.final)) === row.final && String(val(old.total)) === row.total) continue;
+      changes.push(row);
+    }
+    if (!changes.length) { toast("ไม่มีอะไรเปลี่ยน"); return; }
+    b.disabled = true;
+    try { const r = await api(`/api/homeroom/carryover?${q}`, { method: "PUT", body: { changes } }); c.values = r.values; toast("บันทึกคะแนนยกมาแล้ว"); }
+    catch (err) { showError(err); }
+    finally { b.disabled = false; }
+  };
 }
 
 const RULE_TEXT = {

@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-5";
+export const SCHEMA_VERSION = "gr-6";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -136,6 +136,28 @@ export const SCHEMA_SQL = [
     height REAL CHECK (height IS NULL OR (height > 30 AND height < 230)),
     updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (academic_year_id, student_id, round))`,
+  // gr-6: ประวัติย้ายเข้า/ย้ายออก/ออกกลางคัน (soft delete — ข้อมูลนักเรียนและคะแนนไม่ถูกลบ รับกลับด้วยเลขประจำตัวเดิม)
+  `CREATE TABLE IF NOT EXISTS gr_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    academic_year_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    direction TEXT NOT NULL CHECK (direction IN ('in','out')),
+    reason TEXT NOT NULL CHECK (reason IN ('new','return','transfer','dropout')),
+    term_number INTEGER NOT NULL CHECK (term_number IN (1,2)),
+    move_date TEXT, school TEXT, note TEXT,
+    grade_level TEXT, classroom TEXT,
+    undone_at TEXT, undone_by INTEGER,
+    created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  // gr-6: คะแนนรายภาคที่ยกมาจาก ปพ.6 ของโรงเรียนเดิม (ครูประจำชั้นกรอก) — ใช้แทนช่องคะแนนของภาคนั้นทั้งภาค
+  `CREATE TABLE IF NOT EXISTS gr_carryover (
+    academic_year_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    subject_code TEXT NOT NULL,
+    term_number INTEGER NOT NULL CHECK (term_number IN (1,2)),
+    collect REAL, final REAL,
+    total REAL NOT NULL CHECK (total >= 0 AND total <= 50),
+    updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (academic_year_id, student_id, subject_code, term_number))`,
   `CREATE TABLE IF NOT EXISTS gr_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER, action TEXT NOT NULL, detail TEXT,
@@ -148,6 +170,7 @@ export const SCHEMA_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_gr_course_teachers_user ON gr_course_teachers(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_gr_homerooms_user ON gr_homerooms(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_gr_absences_year ON gr_absences(academic_year_id, student_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_gr_transfers_year ON gr_transfers(academic_year_id, student_id)`,
   `CREATE INDEX IF NOT EXISTS idx_gr_bank_lookup ON gr_indicator_bank(grade_level, learning_area)`,
 ];
 

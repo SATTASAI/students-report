@@ -1,5 +1,5 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll } from "../lib/http.js";
-import { resolveYear, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isPrimaryGrade } from "../lib/data.js";
+import { resolveYear, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isPrimaryGrade, carryoverFor } from "../lib/data.js";
 import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
 
 const REASONS = ["sick", "personal", "unknown", "other"];
@@ -32,7 +32,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     ]);
     return json({
       year, grade, room,
-      students: roster.map((s) => ({ id: s.id, number: s.number, student_code: s.student_code, name: studentName(s), enrollment_status: s.enrollment_status, gender: s.gender, birth_date: s.birth_date })),
+      students: roster.map((s) => ({ id: s.id, number: s.number, student_code: s.student_code, name: studentName(s), enrollment_status: s.enrollment_status, gender: s.gender, birth_date: s.birth_date, transfer_in_term: s.transfer_in_term || null })),
       assessments, grades, absences, comments, body, comment_bank: bank,
     });
   }
@@ -156,6 +156,69 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     await env.DB.prepare("DELETE FROM gr_absences WHERE id = ?").bind(row.id).run();
     await audit(env, user, "absence.delete", row);
     return json({ ok: true, absences: await listAbsences(env, year.id, roster.map((s) => s.id)) });
+  }
+
+  // ---------- คะแนนยกมาจาก ปพ.6 ของโรงเรียนเดิม (นักเรียนย้ายเข้าระหว่างปี) ----------
+  // กรอกได้เฉพาะภาคเรียนก่อนภาคที่ย้ายเข้า (เช่น ย้ายเข้าภาค 2 → กรอกคะแนนภาค 1 จาก ปพ.6 ที่ติดตัวมา)
+  if (sub === "carryover") {
+    const { year, grade, room } = await roomContext(env, user, url);
+    const roster = await roomRoster(env, year.id, grade, room);
+    const movers = roster.filter((s) => s.transfer_in_term > 1);
+    const { results: subjects } = await env.DB.prepare(
+      `SELECT s.code, s.name, s.subject_type, s.collect_ratio, c.locked FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
+        WHERE s.academic_year_id = ? AND s.grade_level = ? AND c.classroom = ? ORDER BY s.subject_type, s.sort_order, s.code`
+    ).bind(year.id, grade, room).all();
+    if (method === "GET") {
+      const ids = movers.map((s) => s.id);
+      const schools = ids.length ? (await env.DB.prepare(
+        `SELECT student_id, school, move_date FROM gr_transfers WHERE academic_year_id = ? AND direction = 'in' AND undone_at IS NULL AND student_id IN (${ids.map(() => "?").join(",")}) ORDER BY id`
+      ).bind(year.id, ...ids).all()).results : [];
+      const from = Object.fromEntries(schools.map((r) => [r.student_id, r]));
+      return json({
+        year, grade, room, subjects: subjects.map((x) => ({ ...x, locked: !!x.locked })),
+        students: movers.map((s) => ({ id: s.id, number: s.number, name: studentName(s), student_code: s.student_code, transfer_in_term: s.transfer_in_term,
+          terms: [1, 2].filter((t) => t < s.transfer_in_term), school: from[s.id]?.school || null, move_date: from[s.id]?.move_date || null })),
+        values: await carryoverFor(env, year.id, ids),
+      });
+    }
+    if (method === "PUT") {
+      const b = await readJson(request);
+      const byId = new Map(movers.map((s) => [s.id, s]));
+      const subj = new Map(subjects.map((x) => [x.code, x]));
+      const changes = Array.isArray(b.changes) ? b.changes.slice(0, 500) : [];
+      const num = (v, label) => {
+        if (v === "" || v == null) return null;
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0 || n > 50) fail(400, `${label} ต้องอยู่ระหว่าง 0–50`);
+        if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) fail(400, `${label} ทศนิยมได้ไม่เกิน 2 ตำแหน่ง`);
+        return n;
+      };
+      const stmts = [];
+      for (const c of changes) {
+        const st = byId.get(Number(c.student_id));
+        if (!st) fail(400, "กรอกคะแนนยกมาได้เฉพาะนักเรียนที่ย้ายเข้าระหว่างปีของห้องนี้");
+        const sj = subj.get(String(c.subject_code));
+        if (!sj) fail(400, "ไม่พบรายวิชานี้ในห้อง");
+        const term = Number(c.term_number);
+        if (!(term >= 1 && term < st.transfer_in_term)) fail(400, "กรอกได้เฉพาะภาคเรียนก่อนภาคที่ย้ายเข้า");
+        if (sj.locked) fail(409, `${sj.code} ${sj.name} ส่งผลแล้ว ต้องให้ฝ่ายวิชาการส่งคืนก่อนแก้คะแนนยกมา`);
+        const label = `${st.name_prefix || ""}${st.first_name || ""} ${sj.code}`;
+        const collect = num(c.collect, `${label} ระหว่างภาค`), final = num(c.final, `${label} ปลายภาค`);
+        let total = num(c.total, `${label} รวม`);
+        if (total == null && collect != null && final != null) total = Math.round((collect + final) * 100) / 100;
+        if (collect != null && final != null && Math.abs(collect + final - total) > 1e-6) fail(400, `${label}: ระหว่างภาค + ปลายภาค ต้องเท่ากับคะแนนรวม`);
+        if (total == null && (collect != null || final != null)) fail(400, `${label}: กรอกคะแนนรวมของภาค (เต็ม 50)`);
+        stmts.push(total == null
+          ? env.DB.prepare("DELETE FROM gr_carryover WHERE academic_year_id = ? AND student_id = ? AND subject_code = ? AND term_number = ?").bind(year.id, st.id, sj.code, term)
+          : env.DB.prepare(`INSERT INTO gr_carryover (academic_year_id, student_id, subject_code, term_number, collect, final, total, updated_by, updated_at)
+              VALUES (?,?,?,?,?,?,?,?,datetime('now'))
+              ON CONFLICT(academic_year_id, student_id, subject_code, term_number) DO UPDATE SET collect = excluded.collect, final = excluded.final,
+                total = excluded.total, updated_by = excluded.updated_by, updated_at = datetime('now')`).bind(year.id, st.id, sj.code, term, collect, final, total, user.id));
+      }
+      await batchAll(env, stmts);
+      await audit(env, user, "carryover.update", { grade, room, changes: stmts.length });
+      return json({ ok: true, values: await carryoverFor(env, year.id, movers.map((s) => s.id)) });
+    }
   }
 
   fail(404, "ไม่พบเส้นทาง API");

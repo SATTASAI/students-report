@@ -98,10 +98,11 @@ const studentScores = (sid) => data.scores[sid] || (data.scores[sid] = {});
 const studentRemedials = (sid) => data.remedials?.[sid] || {};
 const unitOf = (it) => (data.units || []).find((u) => u.id === it.unit_id);
 function recompute(sid) {
-  data.computed[sid] = computeStudentResult(data.items, studentScores(sid), data.results[sid] || {}, settingsForCalc(), studentRemedials(sid));
+  data.computed[sid] = computeStudentResult(data.items, studentScores(sid), data.results[sid] || {}, settingsForCalc(), studentRemedials(sid), data.carry?.[sid]);
   return data.computed[sid];
 }
-const statusTag = (s) => s.enrollment_status === "transferred" ? ' <span class="tag warn">ย้ายออก</span>'
+const statusTag = (s) => s.transfer_in_term ? ` <span class="tag" title="ย้ายเข้าระหว่างปี">ย้ายเข้าภาค ${s.transfer_in_term}</span>`
+  : s.enrollment_status === "transferred" ? ' <span class="tag warn">ย้ายออก</span>'
   : s.enrollment_status === "withdrawn" ? ' <span class="tag warn">ออกกลางคัน</span>'
   : s.enrollment_status === "moved" ? ' <span class="tag">ย้ายห้อง</span>' : "";
 
@@ -149,10 +150,12 @@ function rowHtml(s, items, term) {
   const calc = data.computed[s.id];
   const inactive = s.enrollment_status !== "enrolled";
   const rem = studentRemedials(s.id);
+  const carried = !!calc?.term_scores?.[term]?.carried;
   return `<tr data-sid="${s.id}" class="${inactive ? "inactive" : ""}">
     <td class="stick no">${s.number ?? ""}</td>
     <td class="stick name" title="${esc(s.name)}">${esc(s.name)}${statusTag(s)}</td>
     ${items.map((it) => {
+      if (carried) return `<td class="cell carried-cell" title="ใช้คะแนนภาค ${term} ที่ยกมาจาก ปพ.6 โรงเรียนเดิม"><input readonly tabindex="-1" placeholder="ยกมา" aria-label="${esc(s.name)} ${esc(it.title)} (ยกมา)" data-item="${it.id}" data-max="${it.max_score}" value=""></td>`;
       const v = sc[it.id];
       const hasRem = rem[it.id] != null;
       const low = it.kind === "indicator" && !hasRem && indicatorResult(it, v, data.settings) === "มผ";
@@ -167,6 +170,8 @@ function rowHtml(s, items, term) {
 
 // รวมภาค: ว่างถ้ายังไม่กรอกเลย; รวมทั้งปี: แสดงเมื่อมีโครงสร้างครบ 2 ภาค (ภาคเดียวยังไม่ใช่คะแนนทั้งปี)
 function termSumText(calc, items, sc) {
+  const t = calc.term_scores?.[items[0].term_number];
+  if (t?.carried) return `${fmt(t.total)} <span class="tag" title="ยกมาจาก ปพ.6 โรงเรียนเดิม">ยกมา</span>`;
   if (!items.some((i) => sc[i.id] != null)) return "";
   return fmt(calc.term_scores?.[items[0].term_number]?.total ?? 0);
 }
@@ -230,6 +235,7 @@ function bindSheet(items, term) {
     rows.forEach((row, dr) => row.forEach((val, dc) => {
       const target = all[(r0 + dr) * cols + (c0 + dc)];
       if (!target || c0 + dc >= cols) { skipped++; return; }
+      if (target.readOnly) return; // ภาคที่ใช้คะแนนยกมา
       target.value = val.trim();
       acceptCell(target, items, term);
       count++;

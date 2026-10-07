@@ -84,8 +84,10 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
  * - ระหว่างปี (ยังไม่ยืนยันผล) ถ้ายังไม่ครบ 2 ภาค หรือคะแนนยังไม่ครบ → ยังไม่มีผลการเรียน ("-")
  *   เมื่อยืนยันผลแล้วคะแนนยังไม่ครบ → ร
  * - รายการที่ไม่ระบุภาค (ข้อมูลรุ่นเก่า/ทดสอบ) คิดรวมทั้งปีเป็นก้อนเดียวเต็ม 100
+ * - carry = { 1: {collect, final, total} } คะแนนภาคที่ยกมาจาก ปพ.6 โรงเรียนเดิม (นักเรียนย้ายเข้า) ใช้แทนช่องคะแนนของภาคนั้นทั้งภาค
  */
-export function computeStudentResult(items, scores, result, settings, remedials) {
+export function computeStudentResult(items, scores, result, settings, remedials, carry) {
+  const carried = (t) => { const c = carry?.[t]; return c && c.total != null && c.total !== "" ? c : null; };
   const pick = (m, id) => { const v = m instanceof Map ? m.get(id) : m?.[id]; return v == null || v === "" ? null : Number(v); };
   const remediated = [];
   const getItem = (item) => {
@@ -104,6 +106,7 @@ export function computeStudentResult(items, scores, result, settings, remedials)
     const t = yearly ? 0 : Number(item.term_number);
     const b = per[t] ||= { collect: 0, collectMax: 0, final: 0, finalMax: 0, missing: 0 };
     if (item.kind === "final") b.finalMax = sum2(b.finalMax, max); else b.collectMax = sum2(b.collectMax, max);
+    if (!yearly && carried(t)) continue; // ภาคนี้ใช้คะแนนยกมา ไม่นับช่องคะแนน
     const v = getItem(item);
     if (v == null) { missing++; b.missing++; continue; }
     if (item.kind === "final") b.final = sum2(b.final, v);
@@ -135,15 +138,22 @@ export function computeStudentResult(items, scores, result, settings, remedials)
   if (yearly) {
     if (per[0]) { const p = part(per[0], 100); total = p.total; collectScaled = p.collect; finalScaled = p.final; }
   } else {
-    for (const t of [1, 2]) if (per[t]) {
+    for (const t of [1, 2]) if (carried(t)) {
+      const c = carried(t), n = (v) => v == null || v === "" ? null : Number(v);
+      term_scores[t] = { collect: n(c.collect), final: n(c.final), total: Number(c.total), collect_max: null, final_max: null, max: 50,
+        missing: 0, complete: true, exact: true, carried: true };
+      total = sum2(total ?? 0, term_scores[t].total);
+      collectScaled = sum2(collectScaled, term_scores[t].collect ?? 0);
+      finalScaled = sum2(finalScaled, term_scores[t].final ?? 0);
+    } else if (per[t]) {
       term_scores[t] = part(per[t], 50);
       total = sum2(total ?? 0, term_scores[t].total);
       collectScaled = sum2(collectScaled, term_scores[t].collect);
       finalScaled = sum2(finalScaled, term_scores[t].final);
     }
   }
-  const bothTerms = yearly || (!!per[1] && !!per[2]);
-  const hasItems = items.length > 0 && Object.values(per).some((b) => b.collectMax + b.finalMax > 0);
+  const bothTerms = yearly || ((!!per[1] || !!carried(1)) && (!!per[2] || !!carried(2)));
+  const hasItems = (items.length > 0 && Object.values(per).some((b) => b.collectMax + b.finalMax > 0)) || (!yearly && !!(carried(1) || carried(2)));
   const raw = (k) => Object.values(per).reduce((a, b) => sum2(a, b[k]), 0);
 
   const hoursPerYear = Number(settings.hours_per_year) || 0;
@@ -171,7 +181,7 @@ export function computeStudentResult(items, scores, result, settings, remedials)
     collect_scaled: hasItems ? collectScaled : 0, final_scaled: hasItems ? finalScaled : 0,
     exact, total: hasItems ? total : null, total_max: yearly ? 100 : Object.keys(term_scores).length * 50,
     missing, term_scores, hours, need_hours: needHours, low_attendance: lowAttendance,
-    original_grade: original, reason, grade: finalGrade,
+    original_grade: original, reason, grade: finalGrade, carried_terms: yearly ? [] : [1, 2].filter((t) => carried(t)),
     failed_indicators: failedIndicators, remediated,
   };
 }

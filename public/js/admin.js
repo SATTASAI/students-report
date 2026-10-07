@@ -21,9 +21,9 @@ const GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
 // ส่วนของหน้า เลือกจากเมนูซ้ายผ่าน #hash
 const SECTIONS = {
   start: "เริ่มต้นปีการศึกษา", subjects: "รายวิชา", import: "นำเข้าจาก Excel", courses: "ครูผู้สอน / ส่งคืน", homerooms: "ครูประจำชั้น",
-  bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน",
+  moves: "นักเรียนย้ายเข้า/ย้ายออก", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน",
 };
-const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super));
+const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super));
 let tab = hashTab(allowed, me.role === "exec" && allowed.includes("approve") ? "approve" : "start");
 document.getElementById("tabs")?.classList.add("by-menu");
 if (location.hash === "#activity") location.replace("/activities.html"); // ลิงก์เก่า
@@ -39,7 +39,7 @@ function renderTabs() {
 async function render() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   try {
-    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, bank: renderBank, settings: renderSettings, people: renderPeople, approve: renderApprove, audit: renderAudit })[tab]();
+    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, bank: renderBank, settings: renderSettings, people: renderPeople, approve: renderApprove, audit: renderAudit })[tab]();
   } catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong>${esc(err.message)}</div>`; }
 }
 
@@ -334,6 +334,109 @@ async function renderHomerooms() {
     });
     if (!r.ok) return;
     try { await api("/api/admin/homerooms", { method: "PUT", body: { year: Y, grade_level: r0.grade_level, classroom: r0.classroom, user_ids: list.filter((t) => r.data[`t${t.id}`]).map((t) => t.id) } }); toast("บันทึกแล้ว"); render(); } catch (err) { showError(err); }
+  };
+}
+
+// ---------- นักเรียนย้ายเข้า / ย้ายออก / ออกกลางคัน (soft delete) ----------
+const STATUS_TH = { enrolled: "กำลังเรียน", transferred: "ย้ายออก", withdrawn: "ออกกลางคัน", graduated: "จบการศึกษา" };
+let moveQuery = "";
+async function renderMoves() {
+  const m = await api(`/api/moves?${yq}`);
+  const termSel = (name = "term_number") => `<label>ภาคเรียน<select name="${name}">${[1, 2].map((t) => `<option value="${t}" ${t === m.term_number ? "selected" : ""}>ภาคเรียนที่ ${t}</option>`).join("")}</select></label>`;
+  const roomSel = () => `<label>เข้าเรียนห้อง<select name="room" required><option value="">เลือกห้อง</option>${m.rooms.map((r) => `<option value="${esc(r.grade_level)}|${esc(r.classroom)}">${esc(r.grade_level)}/${esc(r.classroom)}</option>`).join("")}</select></label>`;
+  view.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>ค้นหานักเรียน</h2><button class="btn primary" id="newKid">+ นักเรียนย้ายเข้าใหม่</button></div>
+      <p class="muted small">นักเรียนที่ย้ายออกหรือออกกลางคันจะไม่แสดงในรายชื่อทุกหน้า แต่ระบบไม่ลบข้อมูล — ถ้ากลับมาเรียนอีก ให้ค้นหาแล้วกด "รับกลับเข้าเรียน" จะได้เลขประจำตัวเดิมและข้อมูลเดิมทั้งหมด
+        · นักเรียนที่เข้าระหว่างปีได้เลขที่ต่อท้ายห้อง เลขที่ของคนเดิมไม่เลื่อน</p>
+      <form id="findForm" class="row-form" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <input type="search" name="q" value="${esc(moveQuery)}" placeholder="เลขประจำตัว / เลขบัตรประชาชน 13 หลัก / ชื่อ" style="flex:1;min-width:220px" required>
+        <button class="btn">ค้นหา</button>
+      </form>
+      <div id="found"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>รายการปีการศึกษา ${me.year.year_be}</h2></div>
+      <div class="table-wrap"><table class="list"><thead><tr><th>วันที่</th><th>นักเรียน</th><th>รายการ</th><th>ห้อง</th><th>ภาค</th><th>โรงเรียน / หมายเหตุ</th><th>บันทึกโดย</th><th></th></tr></thead>
+      <tbody>${m.moves.map((x) => `<tr class="${x.undone_at ? "muted" : ""}">
+        <td class="small">${esc(x.move_date || x.created_at.slice(0, 10))}</td><td>${esc(x.student_code)} ${esc(x.name)}</td>
+        <td><span class="tag ${x.direction === "out" ? "warn" : "ok"}">${esc(x.label)}</span>${x.undone_at ? ' <span class="tag">ยกเลิกแล้ว</span>' : ""}</td>
+        <td>${esc(x.grade_level || "")}/${esc(x.classroom || "")}</td><td class="num">${x.term_number}</td>
+        <td class="small">${esc([x.school, x.note].filter(Boolean).join(" · "))}</td><td class="small">${esc(x.by_name || "")}</td>
+        <td>${x.direction === "out" && !x.undone_at ? `<button class="btn small" data-undo="${x.id}">ยกเลิก</button>` : x.direction === "in" ? `<a class="small" href="/homeroom.html?grade=${encodeURIComponent(x.grade_level)}&room=${encodeURIComponent(x.classroom)}&year=${Y}#carry">คะแนนยกมา</a>` : ""}</td></tr>`).join("")
+        || `<tr><td colspan="8" class="empty">ยังไม่มีรายการ</td></tr>`}</tbody></table></div>
+    </div>`;
+
+  const showFound = async () => {
+    const box = document.getElementById("found");
+    if (!moveQuery) { box.innerHTML = ""; return; }
+    box.innerHTML = `<p class="muted small">กำลังค้นหา…</p>`;
+    const { results } = await api(`/api/moves?${yq}&q=${encodeURIComponent(moveQuery)}`);
+    box.innerHTML = results.length ? `<div class="table-wrap" style="margin-top:10px"><table class="list"><thead><tr><th>เลขประจำตัว</th><th>ชื่อ–สกุล</th><th>เลขประจำตัวประชาชน</th><th>ห้องล่าสุด</th><th>สถานะ</th><th></th></tr></thead>
+      <tbody>${results.map((x, i) => `<tr><td>${esc(x.student_code)}</td><td>${esc(x.name)}</td><td class="small">${esc(x.national_id)}</td>
+        <td>${x.grade_level ? `${esc(x.grade_level)}/${esc(x.classroom)}${x.in_year ? "" : ` <span class="muted small">(ปี ${esc(x.last_year_be || "")})</span>`}` : "–"}</td>
+        <td><span class="tag ${x.enrolled ? "ok" : "warn"}">${esc(STATUS_TH[x.status] || x.status)}</span></td>
+        <td class="actions">${x.enrolled
+          ? `<button class="btn small" data-out="${i}" data-reason="transfer">ย้ายออก</button><button class="btn small" data-out="${i}" data-reason="dropout">ออกกลางคัน</button>`
+          : `<button class="btn small primary" data-back="${i}">รับกลับเข้าเรียน</button>`}</td></tr>`).join("")}</tbody></table></div>`
+      : `<p class="muted" style="margin-top:10px">ไม่พบนักเรียน — ถ้าเป็นนักเรียนที่ไม่เคยเรียนที่นี่ ให้กด "นักเรียนย้ายเข้าใหม่"</p>`;
+    for (const b of box.querySelectorAll("[data-out]")) b.onclick = async () => {
+      const x = results[Number(b.dataset.out)], transfer = b.dataset.reason === "transfer";
+      const r = await dialog({
+        title: `${transfer ? "ย้ายออก" : "ออกกลางคัน / ติดตามไม่ได้"}: ${x.name}`,
+        okText: "บันทึก", okClass: "danger",
+        body: `<p class="muted small">${esc(x.name)} จะไม่แสดงในรายชื่อ รายวิชา ปพ.5 และ ปพ.6 อีก แต่ข้อมูลและคะแนนยังเก็บไว้ ยกเลิกได้ภายหลัง</p>
+          <div class="form-grid">${termSel()}<label>วันที่${transfer ? "ย้ายออก" : "ออก"}<input type="date" name="move_date"></label>
+          ${transfer ? `<label>ย้ายไปโรงเรียน<input name="school" maxlength="200"></label>` : ""}
+          <label>หมายเหตุ<input name="note" maxlength="300" placeholder="${transfer ? "" : "เช่น ขาดเรียนต่อเนื่อง ติดตามไม่ได้"}"></label></div>`,
+      });
+      if (!r.ok) return;
+      try { await api(`/api/moves/out?${yq}`, { method: "POST", body: { student_id: x.id, reason: b.dataset.reason, ...r.data } }); toast("บันทึกแล้ว"); renderMoves(); } catch (err) { showError(err); }
+    };
+    for (const b of box.querySelectorAll("[data-back]")) b.onclick = async () => {
+      const x = results[Number(b.dataset.back)];
+      const r = await dialog({
+        title: `รับกลับเข้าเรียน: ${x.name}`,
+        body: `<p class="muted small">ใช้ระเบียนเดิม เลขประจำตัว ${esc(x.student_code)}</p>
+          <div class="form-grid">${roomSel()}${termSel()}<label>วันที่เข้าเรียน<input type="date" name="move_date"></label>
+          <label>ย้ายมาจากโรงเรียน<input name="school" maxlength="200"></label><label>หมายเหตุ<input name="note" maxlength="300"></label></div>`,
+      });
+      if (!r.ok) return;
+      const [grade_level, classroom] = String(r.data.room || "").split("|");
+      try { await api(`/api/moves/in?${yq}`, { method: "POST", body: { student_id: x.id, grade_level, classroom, ...r.data } }); toast("รับเข้าแล้ว — ครูประจำชั้นกรอกคะแนนยกมาจาก ปพ.6 ได้ที่หน้าห้อง"); renderMoves(); } catch (err) { showError(err); }
+    };
+  };
+  document.getElementById("findForm").onsubmit = (e) => { e.preventDefault(); moveQuery = e.target.q.value.trim(); showFound().catch(showError); };
+  showFound().catch(showError);
+
+  document.getElementById("newKid").onclick = async () => {
+    const r = await dialog({
+      title: "นักเรียนย้ายเข้าใหม่",
+      body: `<p class="muted small">ค้นหาก่อนเสมอ ถ้าเคยเรียนที่นี่มาก่อนให้ใช้ "รับกลับเข้าเรียน" เพื่อใช้เลขประจำตัวเดิม — ระบบจะไม่ยอมให้เลขประจำตัวหรือเลขบัตรประชาชนซ้ำ</p>
+        <div class="form-grid">
+          <label>เลขประจำตัวนักเรียน<input name="student_code" value="${esc(m.next_code)}" required maxlength="20"></label>
+          <label>คำนำหน้า<select name="name_prefix"><option>เด็กชาย</option><option>เด็กหญิง</option></select></label>
+          <label>ชื่อ<input name="first_name" required maxlength="80"></label>
+          <label>นามสกุล<input name="last_name" required maxlength="80"></label>
+          <label>เลขประจำตัวประชาชน<input name="national_id" inputmode="numeric" maxlength="17"></label>
+          <label>วันเกิด<input type="date" name="birth_date"></label>
+          ${roomSel()}${termSel()}
+          <label>วันที่ย้ายเข้า<input type="date" name="move_date"></label>
+          <label>ย้ายมาจากโรงเรียน<input name="school" maxlength="200"></label>
+        </div>`,
+    });
+    if (!r.ok) return;
+    const d = r.data, [grade_level, classroom] = String(d.room || "").split("|");
+    try {
+      await api(`/api/moves/in?${yq}`, { method: "POST", body: { grade_level, classroom, term_number: d.term_number, move_date: d.move_date, school: d.school,
+        student: { student_code: d.student_code, name_prefix: d.name_prefix, first_name: d.first_name, last_name: d.last_name, national_id: d.national_id, birth_date: d.birth_date } } });
+      toast("เพิ่มนักเรียนแล้ว — ครูประจำชั้นกรอกคะแนนยกมาจาก ปพ.6 ได้ที่หน้าห้อง");
+      moveQuery = d.student_code; renderMoves();
+    } catch (err) { showError(err); }
+  };
+  for (const b of view.querySelectorAll("[data-undo]")) b.onclick = async () => {
+    if (!(await confirmBox("ยกเลิกรายการนี้", "นักเรียนจะกลับมาอยู่ในรายชื่อห้องเดิมพร้อมข้อมูลเดิม"))) return;
+    try { await api(`/api/moves/${b.dataset.undo}/undo?${yq}`, { method: "POST", body: {} }); toast("ยกเลิกแล้ว"); renderMoves(); } catch (err) { showError(err); }
   };
 }
 

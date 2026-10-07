@@ -75,44 +75,67 @@ const ROSTER_CTE = `WITH ranked AS (
 
 const STUDENT_COLUMNS = `s.id, s.student_code, s.national_id, s.name_prefix, s.first_name, s.last_name, s.full_name, s.birth_date, d.gender`;
 
-// รายชื่อนักเรียนของห้อง ณ ภาคเรียนล่าสุดของปีนั้น
+// สถานะที่ถือว่า "ออกจากระบบ" (soft delete): ไม่แสดงในรายชื่อใด ๆ แต่ข้อมูลและคะแนนยังเก็บไว้ รับกลับได้ด้วยเลขประจำตัวเดิม
+export const LEFT_STATUSES = ["transferred", "withdrawn"];
+const LEFT_SQL = `('transferred','withdrawn')`;
+const TRANSFER_IN_SQL = `(SELECT MIN(t.term_number) FROM gr_transfers t WHERE t.student_id = s.id AND t.academic_year_id = ? AND t.direction = 'in' AND t.undone_at IS NULL)`;
+
+// รายชื่อนักเรียนของห้อง ณ ภาคเรียนล่าสุดของปีนั้น (ไม่รวมคนที่ย้ายออก/ออกกลางคัน)
 export async function roomRoster(env, yearId, grade, room) {
   const { results } = await env.DB.prepare(
     `${ROSTER_CTE}
-     SELECT ${STUDENT_COLUMNS}, r.status AS enrollment_status
+     SELECT ${STUDENT_COLUMNS}, r.status AS enrollment_status, ${TRANSFER_IN_SQL} AS transfer_in_term
        FROM ranked r JOIN students s ON s.id = r.student_id
        LEFT JOIN student_details d ON d.student_id = s.id
-      WHERE r.rn = 1 AND r.grade_level = ? AND r.classroom = ?`
-  ).bind(yearId, grade, room).all();
+      WHERE r.rn = 1 AND r.grade_level = ? AND r.classroom = ? AND r.status NOT IN ${LEFT_SQL}`
+  ).bind(yearId, yearId, grade, room).all();
   return sortRoster(results, (await getSettings(env, yearId)).roster_order);
 }
 
-// รายชื่อของรายวิชา = นักเรียนในห้อง + คนที่ย้ายออกจากห้องแต่มีคะแนนในรายวิชานี้แล้ว
+// รายชื่อของรายวิชา = นักเรียนในห้อง + คนที่ย้ายห้อง (ยังเรียนอยู่ในโรงเรียน) แต่มีคะแนนในรายวิชานี้แล้ว
 export async function courseRoster(env, course) {
   const roster = await roomRoster(env, course.academic_year_id, course.grade_level, course.classroom);
   const ids = new Set(roster.map((s) => s.id));
   const { results: extra } = await env.DB.prepare(
-    `SELECT DISTINCT ${STUDENT_COLUMNS}, 'moved' AS enrollment_status
+    `${ROSTER_CTE}
+     SELECT DISTINCT ${STUDENT_COLUMNS}, 'moved' AS enrollment_status
        FROM students s LEFT JOIN student_details d ON d.student_id = s.id
+       LEFT JOIN ranked r ON r.student_id = s.id AND r.rn = 1
       WHERE s.id IN (SELECT sc.student_id FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id = ?
-                     UNION SELECT student_id FROM gr_results WHERE course_id = ?)`
-  ).bind(course.id, course.id).all();
+                     UNION SELECT student_id FROM gr_results WHERE course_id = ?)
+        AND COALESCE(r.status, 'enrolled') NOT IN ${LEFT_SQL}`
+  ).bind(course.academic_year_id, course.id, course.id).all();
   for (const s of extra) if (!ids.has(s.id)) roster.push(s);
   return sortRoster(roster, (await getSettings(env, course.academic_year_id)).roster_order);
 }
 
 // เลขที่ในห้อง: นักเรียนที่ยังเรียนอยู่ขึ้นก่อน (ชายก่อนหญิง แล้วตามเลขประจำตัว หรือตามเลขประจำตัวอย่างเดียว
-// ตามที่ตั้งค่า) แล้วตามด้วยคนที่ย้ายออก/ย้ายห้อง (ไม่มีเลขที่)
+// ตามที่ตั้งค่า) — นักเรียนย้ายเข้าระหว่างปีต่อท้ายเสมอ เลขที่ของคนเดิมจึงไม่เลื่อน — แล้วตามด้วยคนที่ย้ายห้อง (ไม่มีเลขที่)
 // สำคัญ: ลำดับนี้ต้องตรงกับรายชื่อในห้อง เพราะครูวางคะแนนจาก Excel ตามลำดับเลขที่
 const genderRank = (g) => (/^(ช|ชาย|M)/i.test(g || "") ? 0 : /^(ญ|หญิง|F)/i.test(g || "") ? 1 : 2);
 function sortRoster(rows, order = "gender") {
-  const active = (r) => (r.enrollment_status || "enrolled") === "enrolled";
-  rows.sort((a, b) => active(b) - active(a) ||
+  const active = (r) => (r.enrollment_status || "enrolled") !== "moved" && !LEFT_STATUSES.includes(r.enrollment_status);
+  const late = (r) => (r.transfer_in_term ? 1 : 0);
+  rows.sort((a, b) => active(b) - active(a) || late(a) - late(b) ||
     (order === "gender" ? genderRank(a.gender) - genderRank(b.gender) : 0) ||
     String(a.student_code).localeCompare(String(b.student_code), "th", { numeric: true }));
   let n = 0;
   for (const r of rows) r.number = active(r) ? ++n : null;
   return rows;
+}
+
+// คะแนนยกมา: { student_id: { subject_code: { term: {collect, final, total} } } }
+export async function carryoverFor(env, yearId, studentIds) {
+  const out = {};
+  for (let i = 0; i < studentIds.length; i += 90) {
+    const chunk = studentIds.slice(i, i + 90);
+    if (!chunk.length) continue;
+    const { results } = await env.DB.prepare(
+      `SELECT student_id, subject_code, term_number, collect, final, total FROM gr_carryover WHERE academic_year_id = ? AND student_id IN (${chunk.map(() => "?").join(",")})`
+    ).bind(yearId, ...chunk).all();
+    for (const r of results) (((out[r.student_id] ||= {})[r.subject_code]) ||= {})[r.term_number] = { collect: r.collect, final: r.final, total: r.total };
+  }
+  return out;
 }
 
 export function studentName(s) {
@@ -187,9 +210,12 @@ export async function courseBundle(env, course) {
   }
   const results = Object.fromEntries(resultRows.map((r) => [r.student_id, r]));
   const calcSettings = gradeSettings(course, settings);
+  const allCarry = await carryoverFor(env, course.academic_year_id, roster.map((s) => s.id));
+  const carry = {};
+  for (const s of roster) if (allCarry[s.id]?.[course.code]) carry[s.id] = allCarry[s.id][course.code];
   const computed = {};
-  for (const s of roster) computed[s.id] = computeStudentResult(items, scores[s.id] || {}, results[s.id] || {}, calcSettings, remedials[s.id] || {});
-  return { course, settings, items, units, roster, scores, remedials, results, computed };
+  for (const s of roster) computed[s.id] = computeStudentResult(items, scores[s.id] || {}, results[s.id] || {}, calcSettings, remedials[s.id] || {}, carry[s.id]);
+  return { course, settings, items, units, roster, scores, remedials, results, computed, carry };
 }
 
 export function gradeSettings(course, settings) {
@@ -252,6 +278,7 @@ export async function yearResultsForStudents(env, yearId, grade, studentIds) {
     for (const r of rooms) roomOf[r.student_id] = r.classroom;
   }
 
+  const carry = await carryoverFor(env, yearId, studentIds);
   const bySubject = {};
   for (const c of courses) (bySubject[c.code] ||= []).push(c);
   for (const sid of studentIds) {
@@ -260,7 +287,7 @@ export async function yearResultsForStudents(env, yearId, grade, studentIds) {
       const course = options.find((c) => hasData.has(`${c.id}:${sid}`)) || options.find((c) => c.classroom === roomOf[sid]);
       if (!course) continue;
       const key = `${course.id}:${sid}`;
-      const calc = computeStudentResult(itemsByCourse[course.id] || [], scoreIdx[key] || {}, resIdx[key] || {}, gradeSettings(course, settings), remIdx[key] || {});
+      const calc = computeStudentResult(itemsByCourse[course.id] || [], scoreIdx[key] || {}, resIdx[key] || {}, gradeSettings(course, settings), remIdx[key] || {}, carry[sid]?.[code]);
       out[sid].push({
         course_id: course.id, code: course.code, name: course.name, learning_area: course.learning_area,
         subject_type: course.subject_type, hours_per_year: course.hours_per_year, sort_order: course.sort_order,

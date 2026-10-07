@@ -119,6 +119,7 @@ function roleMenu(role, me) {
     { href: "/admin.html#import", icon: "upload", label: "นำเข้าจาก Excel" },
     { href: "/admin.html#courses", icon: "people", label: "ครูผู้สอน / ส่งคืน" },
     { href: "/admin.html#homerooms", icon: "room", label: "ครูประจำชั้น" },
+    { href: "/admin.html#moves", icon: "people", label: "นักเรียนย้ายเข้า/ย้ายออก" },
     { href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" },
     { href: "/admin.html#bank", icon: "bank", label: "คลังตัวชี้วัด" },
     { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม" },

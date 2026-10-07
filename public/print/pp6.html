@@ -19,12 +19,10 @@ if (p.get("student")) q.set("student", p.get("student"));
 let d;
 try { d = await get(`/api/reports/room?${q}`); } catch (e) { status(e.message); throw e; }
 const s = d.settings;
-const includeLeft = p.get("all") === "1";
-toolbar(`ปพ.6 ${d.grade}/${d.room} ปีการศึกษา ${d.year.year_be}`,
-  `<label><input type="checkbox" id="allChk" ${includeLeft ? "checked" : ""}> รวมนักเรียนที่ย้ายออก</label>`);
-document.getElementById("allChk").onchange = (e) => { const u = new URL(location.href); e.target.checked ? u.searchParams.set("all", "1") : u.searchParams.delete("all"); location.href = u; };
+// นักเรียนที่ย้ายออก/ออกกลางคันไม่อยู่ในรายชื่อแล้ว (soft delete) — ดูประวัติได้ที่หน้า "นักเรียนย้ายเข้า/ย้ายออก"
+toolbar(`ปพ.6 ${d.grade}/${d.room} ปีการศึกษา ${d.year.year_be}`);
 document.title = `ปพ.6 ${d.grade}-${d.room} ${d.year.year_be}`;
-const students = d.students.filter((x) => includeLeft || x.enrollment_status === "enrolled");
+const students = d.students;
 if (!students.length) { status("ไม่มีนักเรียนในห้องนี้"); throw new Error("empty"); }
 
 const levelText = (g, v) => summaryText(g, v);

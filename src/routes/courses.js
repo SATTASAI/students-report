@@ -18,8 +18,9 @@ function serializeBundle(b, user) {
     remedials: b.remedials,
     students: b.roster.map((s) => ({
       id: s.id, number: s.number, student_code: s.student_code, name: studentName(s),
-      gender: s.gender || null, enrollment_status: s.enrollment_status,
+      gender: s.gender || null, enrollment_status: s.enrollment_status, transfer_in_term: s.transfer_in_term || null,
     })),
+    carry: b.carry || {},
     scores: b.scores,
     results: b.results,
     computed: b.computed,
@@ -376,7 +377,7 @@ export async function handleCourses(request, env, user, parts, method, url) {
         const type = c.remedial_type || null, grade = c.remedial_grade === "" || c.remedial_grade == null ? null : String(c.remedial_grade);
         if (type || grade) {
           // ตรวจกับผลเดิม (ก่อนแก้) ที่คำนวณจากคะแนนจริง
-          const original = computeStudentResult(bundle.items, bundle.scores[sid] || {}, { ...next, remedial_grade: null }, { ...settings, finalized: true }, bundle.remedials[sid] || {}).original_grade;
+          const original = computeStudentResult(bundle.items, bundle.scores[sid] || {}, { ...next, remedial_grade: null }, { ...settings, finalized: true }, bundle.remedials[sid] || {}, bundle.carry?.[sid]).original_grade;
           const err = validateRemedial(original, type, grade);
           if (err) fail(400, `${studentName(bundle.roster.find((s) => s.id === sid))}: ${err}`);
           next.remedial_type = type; next.remedial_grade = grade;

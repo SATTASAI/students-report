@@ -67,16 +67,14 @@ test("ผู้ดูแลสร้างวิชา/รายวิชาต�
   assert.deepEqual(me1.data.courses.map((c) => c.id), [thai11.id]);
   await call("t2", "GET", `/api/courses/${thai11.id}`, null, { expect: 403 });
   const detail = await call("t1", "GET", `/api/courses/${thai11.id}`, null, { expect: 200 });
-  // ป.1/1 มี 12 คนในภาค 1; ภาค 2 ย้ายห้อง 1 คน → เหลือ 11 (รวมคนที่ย้ายออกจากโรงเรียน 1 คน)
-  assert.equal(detail.data.students.length, 11);
-  assert.ok(detail.data.students.some((s) => s.enrollment_status === "transferred"));
-  // เลขที่: ชายก่อนหญิง และคนที่ย้ายออกอยู่ท้ายสุดโดยไม่มีเลขที่
+  // ป.1/1 มี 12 คนในภาค 1; ภาค 2 ย้ายห้อง 1 คน และย้ายออกจากโรงเรียน 1 คน (ไม่แสดง — soft delete) → เหลือ 10
+  assert.equal(detail.data.students.length, 10);
+  assert.ok(!detail.data.students.some((s) => s.enrollment_status === "transferred"));
+  // เลขที่: ชายก่อนหญิง เรียงต่อเนื่อง
   const active = detail.data.students.filter((s) => s.enrollment_status === "enrolled");
   const genders = active.map((s) => s.gender).join("");
   assert.match(genders, /^ช+ญ+$/);
   assert.deepEqual(active.map((s) => s.number), active.map((_, i) => i + 1));
-  assert.equal(detail.data.students.at(-1).enrollment_status, "transferred");
-  assert.equal(detail.data.students.at(-1).number, null);
   // เปลี่ยนเป็นเรียงตามเลขประจำตัว
   const st = (await call("admin", "GET", "/api/admin/settings", null, { expect: 200 })).data.settings;
   await call("admin", "PUT", "/api/admin/settings", { ...st, roster_order: "code" }, { expect: 200 });

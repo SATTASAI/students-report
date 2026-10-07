@@ -40,7 +40,7 @@ const title = books.length === 1 ? `ปพ.5 ${first.code} ${first.name} ${first
 toolbar(title);
 document.title = books.length === 1 ? `ปพ.5 ${first.code} ${first.grade_level}-${first.classroom}` : `ปพ.5 ${first.grade_level}-${first.classroom} ทุกวิชา`;
 
-const statusNote = (x) => x.enrollment_status === "transferred" ? "ย้ายออก" : x.enrollment_status === "withdrawn" ? "ออกกลางคัน" : x.enrollment_status === "moved" ? "ย้ายห้อง" : "ปกติ";
+const statusNote = (x) => x.transfer_in_term ? `ย้ายเข้าภาค ${td(x.transfer_in_term)}` : x.enrollment_status === "transferred" ? "ย้ายออก" : x.enrollment_status === "withdrawn" ? "ออกกลางคัน" : x.enrollment_status === "moved" ? "ย้ายห้อง" : "ปกติ";
 const pctOf = (n, all) => all ? td((Math.round((n / all) * 10000) / 100).toFixed(2)) : td("0.00");
 const dots = (name, w = "................................................") => name ? esc(name) : w;
 const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
@@ -177,6 +177,9 @@ function book(d) {
           const hasRem = inds.some((it) => rem[it.id] != null);
           const gain = t ? Math.round((t.collect - raw) * 100) / 100 : 0;
           const blank = !t || !inds.some((it) => sc[it.id] != null);
+          if (t?.carried) return `<tr><td class="c">${td(x.number ?? "")}</td><td class="nm">${esc(x.name)}</td>
+            <td class="c" colspan="5">ยกมาจาก ปพ.6 โรงเรียนเดิม${t.collect != null ? ` (${fmt(t.collect)})` : ""}</td><td class="c" colspan="3">${t.final != null ? fmt(t.final) : ""}</td>
+            <td class="c"><b>${fmt(t.total)}</b></td><td class="c">${statusNote(x)}</td></tr>`;
           return `<tr><td class="c">${td(x.number ?? "")}</td><td class="nm">${esc(x.name)}</td>
             <td class="c">${blank ? "" : fmt(raw)}</td><td class="c">${blank ? "" : td("0")}</td><td class="c">${hasRem ? fmt(gain) : blank ? "" : td("0")}</td>
             <td class="c">${blank ? "" : fmt(t.collect)}</td><td class="c">${blank ? "" : fmt(t.collect)}</td>

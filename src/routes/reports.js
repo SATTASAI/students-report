@@ -59,7 +59,7 @@ async function roomReport(env, year, grade, room, onlyStudent) {
     year, grade, room, settings, homeroom_teachers: homeroom,
     students: roster.map((s) => ({
       id: s.id, number: s.number, student_code: s.student_code, national_id: s.national_id, name: studentName(s),
-      birth_date: s.birth_date, gender: s.gender, enrollment_status: s.enrollment_status,
+      birth_date: s.birth_date, gender: s.gender, enrollment_status: s.enrollment_status, transfer_in_term: s.transfer_in_term || null,
       subjects: grades[s.id] || [], gpa: weightedGPA(grades[s.id] || []),
       assessments: assessments[s.id] || {}, absent_days: absences[s.id] || 0, comments: comments[s.id] || {},
     })),
@@ -165,7 +165,7 @@ export async function handleReports(request, env, user, parts, method, url) {
     const byRoom = [];
     for (const g of grades) {
       for (const r of rooms.filter((x) => x.grade_level === g)) {
-        const roster = (await roomRoster(env, year.id, g, r.classroom)).filter((s) => s.enrollment_status !== "transferred" && s.enrollment_status !== "withdrawn");
+        const roster = await roomRoster(env, year.id, g, r.classroom);
         const ids = roster.map((s) => s.id);
         const res = await yearResultsForStudents(env, year.id, g, ids);
         const gpas = [];
