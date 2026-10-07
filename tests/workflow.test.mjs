@@ -90,3 +90,39 @@ test("ส่ง → ส่งคืนพร้อมเหตุผล → ส�
   const audit = (await call("admin", "GET", "/api/admin/audit", null, { expect: 200 })).data.entries.map((x) => x.action);
   for (const a of ["course.submit", "course.return", "course.approve", "course.reopen_approved"]) assert.ok(audit.includes(a), a);
 });
+
+test("สัดส่วนรายวิชา 80:20 (วิชาปฏิบัติ): ภาคละ 40 + 10 และเปลี่ยนไม่ได้เมื่อส่งผลแล้ว", async () => {
+  const { computeStudentResult, structureIssues } = await import("../public/js/grading.js");
+  const items = [
+    { id: 1, kind: "indicator", max_score: 40, term_number: 1 }, { id: 2, kind: "final", max_score: 10, term_number: 1 },
+    { id: 3, kind: "indicator", max_score: 40, term_number: 2 }, { id: 4, kind: "final", max_score: 10, term_number: 2 },
+  ];
+  assert.deepEqual(structureIssues(items, 80), []);
+  assert.equal(structureIssues(items, 70).length, 4); // โครงสร้างเดิม 35+15 ใช้กับ 80:20 ไม่ได้
+  const r = computeStudentResult(items, { 1: 32.5, 2: 8, 3: 31, 4: 8.5 }, {}, { collect_ratio: 80, hours_per_year: 80 });
+  assert.equal(r.term_scores[1].total, 40.5);
+  assert.equal(r.total, 80);
+  assert.equal(r.grade, "4");
+  assert.equal(r.exact, true);
+
+  const { call, c } = await setup();
+  const { subjects } = (await call("admin", "GET", "/api/admin/subjects", null, { expect: 200 })).data;
+  const sub = subjects.find((x) => x.code === "ท14101");
+  assert.equal(sub.structured_count, 1);
+  const body = { grade_level: sub.grade_level, code: sub.code, name: sub.name, learning_area: sub.learning_area, subject_type: sub.subject_type, hours_per_year: sub.hours_per_year, sort_order: sub.sort_order };
+  await call("admin", "PUT", `/api/admin/subjects/${sub.id}`, { ...body, collect_ratio: 80 }, { expect: 200 });
+  let d = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
+  assert.equal(d.course.collect_ratio, 80);
+  assert.ok(d.structure_issues.some((x) => x.includes("40")), "ต้องเตือนให้ปรับเป็น 40");
+  // ปรับโครงสร้างภาค 2 เป็น 40 + 10 แล้วส่ง → ล็อก → เปลี่ยนสัดส่วนไม่ได้
+  for (const it of d.items) await call("t1", "PUT", `/api/courses/${c.id}/items/${it.id}`, { term_number: 2, kind: it.kind, title: it.title, max_score: it.kind === "final" ? 10 : 40 }, { expect: 200 });
+  d = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
+  assert.deepEqual(d.structure_issues, []);
+  await call("t1", "POST", `/api/courses/${c.id}/submit`, { force: true }, { expect: 200 });
+  const e = await call("admin", "PUT", `/api/admin/subjects/${sub.id}`, { ...body, collect_ratio: 70 }, { expect: 409 });
+  assert.ok(e.data.error.includes("ส่งคืน"));
+  const after = (await call("admin", "GET", "/api/admin/subjects", null, { expect: 200 })).data.subjects.find((x) => x.id === sub.id);
+  assert.equal(after.locked_count, 1);
+  // เปลี่ยนชื่อวิชาได้ตามปกติ (ไม่แตะสัดส่วน)
+  await call("admin", "PUT", `/api/admin/subjects/${sub.id}`, { ...body, name: "ภาษาไทย (แก้ชื่อ)", collect_ratio: 80 }, { expect: 200 });
+});

@@ -207,7 +207,9 @@ export async function handleAdmin(request, env, user, parts, method, url) {
     if (method === "GET" && !idPart) {
       const year = await resolveYear(env, url.searchParams.get("year"));
       const { results } = await env.DB.prepare(
-        `SELECT s.*, (SELECT COUNT(*) FROM gr_courses c WHERE c.subject_id = s.id) AS course_count
+        `SELECT s.*, (SELECT COUNT(*) FROM gr_courses c WHERE c.subject_id = s.id) AS course_count,
+                (SELECT COUNT(*) FROM gr_courses c WHERE c.subject_id = s.id AND c.locked = 1) AS locked_count,
+                (SELECT COUNT(DISTINCT i.course_id) FROM gr_items i JOIN gr_courses c ON c.id = i.course_id WHERE c.subject_id = s.id) AS structured_count
            FROM gr_subjects s WHERE s.academic_year_id = ? ORDER BY s.grade_level, s.subject_type, s.sort_order, s.code`
       ).bind(year.id).all();
       return json({ year, subjects: results, learning_areas: LEARNING_AREAS });
@@ -249,6 +251,11 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       const existing = await env.DB.prepare("SELECT * FROM gr_subjects WHERE id = ?").bind(id).first();
       if (!existing) fail(404, "ไม่พบรายวิชา");
       const s = cleanSubject(await readJson(request), await getSettings(env, existing.academic_year_id));
+      if (s.ratio !== existing.collect_ratio || s.hours !== existing.hours_per_year) {
+        // ผลของรายวิชาที่ส่ง/อนุมัติแล้วต้องไม่เปลี่ยนเงียบ ๆ — ให้ส่งคืนก่อน
+        const locked = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_courses WHERE subject_id = ? AND locked = 1").bind(id).first();
+        if (locked.n > 0) fail(409, `เปลี่ยนสัดส่วนคะแนน/เวลาเรียนไม่ได้ เพราะมี ${locked.n} ห้องส่งผลแล้ว — ส่งคืนให้ครูก่อน`);
+      }
       if (s.grade !== existing.grade_level) {
         const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_courses WHERE subject_id = ?").bind(id).first();
         if (used.n > 0) fail(409, "เปลี่ยนระดับชั้นไม่ได้ เพราะสร้างรายวิชาของห้องเรียนแล้ว");
@@ -260,7 +267,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         if (String(e.message).includes("UNIQUE")) fail(409, `มีรหัสวิชา ${s.code} ของ ${s.grade} อยู่แล้ว`);
         throw e;
       }
-      await audit(env, user, "subject.update", { id, before: existing, after: s });
+      await audit(env, user, existing.collect_ratio !== s.ratio ? "subject.ratio" : "subject.update", { id, before: existing, after: s });
       return json({ ok: true });
     }
     if (idPart && method === "DELETE") {

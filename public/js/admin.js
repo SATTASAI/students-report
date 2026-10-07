@@ -190,15 +190,24 @@ async function downloadTemplate(kind) {
 }
 
 // ---------- รายวิชา ----------
+// สัดส่วนคะแนนระหว่างภาค:ปลายภาค ตั้งแยกรายวิชา (เช่น วิชาปฏิบัติ 80:20) — แต่ละภาคเต็ม 50
+const RATIOS = [50, 60, 70, 75, 80, 90, 100];
+const perTerm = (r) => `ภาคละ ${String(r / 2).replace(/\.0$/, "")} + ${String(50 - r / 2).replace(/\.0$/, "")}`;
+const ratioOptions = (cur) => [...new Set([...RATIOS, Number(cur)])].sort((a, b) => a - b)
+  .map((r) => `<option value="${r}" ${r === Number(cur) ? "selected" : ""}>${r}:${100 - r}${r === 100 ? " (ไม่มีสอบปลายภาค)" : ""}</option>`).join("");
 async function renderSubjects() {
-  const { subjects, learning_areas } = await api(`/api/admin/subjects?${yq}`);
+  const [{ subjects, learning_areas }, { settings: st }] = await Promise.all([api(`/api/admin/subjects?${yq}`), api(`/api/admin/settings?${yq}`)]);
+  const defaultRatio = st.collect_ratio;
   view.innerHTML = `<div class="panel">
     <div class="panel-head"><h2>รายวิชาปีการศึกษา ${me.year.year_be}</h2><button class="btn primary" id="addSub">เพิ่มรายวิชา</button></div>
+    <p class="muted small" style="margin-top:0">สัดส่วนคะแนนตั้งแยกรายวิชาได้ เช่น วิชาภาคปฏิบัติ 80:20 = แต่ละภาค ระหว่างภาค 40 + ปลายภาค 10 · เปลี่ยนแล้วครูต้องปรับคะแนนเต็มในโครงสร้างให้ตรงสัดส่วนใหม่ก่อนส่งผล</p>
     ${GRADES.map((g) => { const list = subjects.filter((s) => s.grade_level === g); return list.length ? `
       <h3 style="margin-top:18px">${g}</h3>
-      <div class="table-wrap"><table class="list"><thead><tr><th>รหัส</th><th>ชื่อวิชา</th><th>กลุ่มสาระ</th><th>ประเภท</th><th class="num">ชม./ปี</th><th class="num">เก็บ:สอบ</th><th class="num">ห้อง</th><th></th></tr></thead>
+      <div class="table-wrap"><table class="list"><thead><tr><th>รหัส</th><th>ชื่อวิชา</th><th>กลุ่มสาระ</th><th>ประเภท</th><th class="num">ชม./ปี</th><th>ระหว่างภาค : ปลายภาค</th><th class="num">ห้อง</th><th></th></tr></thead>
       <tbody>${list.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td class="small">${esc(s.learning_area)}</td><td>${s.subject_type === "basic" ? "พื้นฐาน" : "เพิ่มเติม"}</td>
-        <td class="num">${s.hours_per_year}</td><td class="num">${s.collect_ratio}:${100 - s.collect_ratio}</td><td class="num">${s.course_count}</td>
+        <td class="num">${s.hours_per_year}</td>
+        <td><select class="ratio-sel" data-ratio="${s.id}" aria-label="สัดส่วนคะแนน ${esc(s.code)}" ${s.locked_count ? 'disabled title="มีห้องที่ส่งผลแล้ว ส่งคืนก่อนจึงเปลี่ยนได้"' : ""}>${ratioOptions(s.collect_ratio)}</select>
+          <span class="small muted">${perTerm(s.collect_ratio)}</span></td><td class="num">${s.course_count}</td>
         <td class="actions"><button class="btn small" data-edit="${s.id}">แก้ไข</button><button class="btn small danger" data-del="${s.id}">ลบ</button></td></tr>`).join("")}</tbody></table></div>` : ""; }).join("") || `<div class="empty"><strong>ยังไม่มีรายวิชา</strong>เริ่มจากเมนู "เริ่มต้นปีการศึกษา" หรือกดเพิ่มรายวิชา</div>`}
   </div>`;
   const form = (s = {}) => `<div class="form-grid">
@@ -210,7 +219,7 @@ async function renderSubjects() {
   <div class="form-grid" style="margin-top:12px">
     <label class="field">กลุ่มสาระ<select name="learning_area">${[...learning_areas, "อื่น ๆ"].map((a) => `<option ${s.learning_area === a ? "selected" : ""}>${a}</option>`).join("")}</select></label>
     <label class="field">เวลาเรียน (ชม./ปี)<input name="hours_per_year" inputmode="numeric" required value="${s.hours_per_year ?? 40}"></label>
-    <label class="field">คะแนนเก็บ (%)<input name="collect_ratio" inputmode="numeric" required value="${s.collect_ratio ?? 70}"></label>
+    <label class="field">ระหว่างภาค : ปลายภาค<select name="collect_ratio">${ratioOptions(s.collect_ratio ?? defaultRatio)}</select></label>
     <label class="field">ลำดับในรายงาน<input name="sort_order" inputmode="numeric" value="${s.sort_order ?? 100}"></label>
   </div>
   ${s.id && s.course_count ? '<p class="note warn" style="margin-top:12px">แก้สัดส่วนหรือเวลาเรียนแล้ว ผลการเรียนของทุกห้องจะคำนวณใหม่ตามค่าใหม่ทันที</p>' : ""}`;
@@ -224,6 +233,16 @@ async function renderSubjects() {
     const r = await dialog({ title: `แก้ไข ${s.code}`, body: form(s) });
     if (!r.ok) return;
     try { await api(`/api/admin/subjects/${s.id}`, { method: "PUT", body: r.data }); toast("บันทึกแล้ว"); render(); } catch (err) { showError(err); }
+  };
+  for (const sel of view.querySelectorAll("[data-ratio]")) sel.onchange = async () => {
+    const s = subjects.find((x) => x.id === Number(sel.dataset.ratio));
+    const r = Number(sel.value);
+    const warn = s.structured_count ? `<br><br><b>${s.structured_count} ห้องตั้งโครงสร้างคะแนนไว้แล้ว</b> ครูต้องปรับคะแนนเต็มให้เป็น${perTerm(r)}ก่อนจึงส่งผลได้ (ระบบไม่ย่อขยายคะแนนให้)` : "";
+    if (!(await confirmBox("เปลี่ยนสัดส่วนคะแนน", `${esc(s.code)} ${esc(s.name)} ${esc(s.grade_level)}: ${s.collect_ratio}:${100 - s.collect_ratio} → <b>${r}:${100 - r}</b> (${perTerm(r)})${warn}`, "เปลี่ยน"))) { sel.value = s.collect_ratio; return; }
+    try {
+      await api(`/api/admin/subjects/${s.id}`, { method: "PUT", body: { grade_level: s.grade_level, code: s.code, name: s.name, learning_area: s.learning_area, subject_type: s.subject_type, hours_per_year: s.hours_per_year, collect_ratio: r, sort_order: s.sort_order } });
+      toast(`ตั้ง ${s.code} เป็น ${r}:${100 - r} แล้ว`); render();
+    } catch (err) { sel.value = s.collect_ratio; showError(err); }
   };
   for (const b of view.querySelectorAll("[data-del]")) b.onclick = async () => {
     const s = subjects.find((x) => x.id === Number(b.dataset.del));
@@ -348,7 +367,7 @@ async function renderSettings() {
   view.innerHTML = `<form class="panel" id="setForm">
     <div class="panel-head"><h2>เกณฑ์การวัดผล ปีการศึกษา ${me.year.year_be}</h2></div>
     <div class="form-grid">
-      <label class="field">คะแนนเก็บเริ่มต้นของวิชาใหม่ (%)<input name="collect_ratio" inputmode="numeric" value="${s.collect_ratio}" required></label>
+      <label class="field">สัดส่วนระหว่างภาคเริ่มต้นของวิชาใหม่ (%)<input name="collect_ratio" inputmode="numeric" value="${s.collect_ratio}" required></label>
       <label class="field">เกณฑ์ผ่านตัวชี้วัด ภาค 1 (%)<input name="indicator_pass_pct" inputmode="numeric" value="${s.indicator_pass_pct}" required></label>
       <label class="field">เกณฑ์ผ่านตัวชี้วัด ภาค 2 (%)<input name="indicator_pass_pct_t2" inputmode="numeric" value="${s.indicator_pass_pct_t2 ?? ""}" placeholder="ว่าง = ใช้ค่าภาค 1"></label>
       <label class="field">เกณฑ์เวลาเรียน (%)<input name="attendance_pass_pct" inputmode="numeric" value="${s.attendance_pass_pct}" required></label>

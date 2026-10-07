@@ -327,3 +327,4 @@ table.sheet { border-collapse: separate; border-spacing: 0; font-size: 14px; }
 @media (max-width: 560px) { .cm-row { grid-template-columns: 1fr; } .bank-panel { position: static; } }
 .sheet td.chk-cell.ro { background: var(--line-soft); }
 .sheet td.chk-cell.ro.fail { background: var(--bad-bg); }
+.ratio-sel { width: auto; min-height: 32px; padding: 3px 8px; font-size: 14px; }
