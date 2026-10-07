@@ -124,7 +124,7 @@ export async function loadCourse(env, courseId) {
   const course = await env.DB.prepare(
     `SELECT c.id, c.classroom, c.locked, c.submitted_at, c.submitted_by, c.subject_id,
             s.academic_year_id, s.grade_level, s.code, s.name, s.learning_area, s.subject_type,
-            s.hours_per_year, s.collect_ratio, y.year_be
+            s.hours_per_year, s.collect_ratio, y.year_be, s.template IS NOT NULL AS has_template, s.template_updated_at
        FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
        JOIN academic_years y ON y.id = s.academic_year_id
       WHERE c.id = ?`
@@ -155,24 +155,26 @@ export async function assertCourseAccess(env, user, courseId, { write = false } 
 // ข้อมูลครบชุดของรายวิชา + ผลการเรียนที่คำนวณแล้ว
 export async function courseBundle(env, course) {
   const settings = await getSettings(env, course.academic_year_id);
-  const [items, roster, scoreRows, resultRows] = await Promise.all([
-    env.DB.prepare("SELECT id, term_number, kind, code, title, max_score, sort_order FROM gr_items WHERE course_id = ? ORDER BY term_number, kind = 'final', sort_order, id")
+  const [items, units, roster, scoreRows, resultRows] = await Promise.all([
+    env.DB.prepare("SELECT id, term_number, kind, code, title, max_score, sort_order, unit_id FROM gr_items WHERE course_id = ? ORDER BY term_number, kind = 'final', sort_order, id")
+      .bind(course.id).all().then((r) => r.results),
+    env.DB.prepare("SELECT id, term_number, unit_no, title, hours, task FROM gr_units WHERE course_id = ? ORDER BY term_number, unit_no, id")
       .bind(course.id).all().then((r) => r.results),
     courseRoster(env, course),
-    env.DB.prepare("SELECT sc.item_id, sc.student_id, sc.score FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id = ?")
+    env.DB.prepare("SELECT sc.item_id, sc.student_id, sc.score, sc.remedial FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id = ?")
       .bind(course.id).all().then((r) => r.results),
     env.DB.prepare("SELECT * FROM gr_results WHERE course_id = ?").bind(course.id).all().then((r) => r.results),
   ]);
-  const scores = {};
+  const scores = {}, remedials = {};
   for (const r of scoreRows) {
-    if (r.score == null) continue;
-    (scores[r.student_id] ||= {})[r.item_id] = r.score;
+    if (r.score != null) (scores[r.student_id] ||= {})[r.item_id] = r.score;
+    if (r.remedial != null) (remedials[r.student_id] ||= {})[r.item_id] = r.remedial;
   }
   const results = Object.fromEntries(resultRows.map((r) => [r.student_id, r]));
   const calcSettings = gradeSettings(course, settings);
   const computed = {};
-  for (const s of roster) computed[s.id] = computeStudentResult(items, scores[s.id] || {}, results[s.id] || {}, calcSettings);
-  return { course, settings, items, roster, scores, results, computed };
+  for (const s of roster) computed[s.id] = computeStudentResult(items, scores[s.id] || {}, results[s.id] || {}, calcSettings, remedials[s.id] || {});
+  return { course, settings, items, units, roster, scores, remedials, results, computed };
 }
 
 export function gradeSettings(course, settings) {
@@ -211,13 +213,17 @@ export async function yearResultsForStudents(env, yearId, grade, studentIds) {
   const ph = courseIds.map(() => "?").join(",");
   const [items, scoreRows, resultRows] = await Promise.all([
     env.DB.prepare(`SELECT id, course_id, term_number, kind, max_score FROM gr_items WHERE course_id IN (${ph})`).bind(...courseIds).all().then((r) => r.results),
-    env.DB.prepare(`SELECT sc.item_id, sc.student_id, sc.score, i.course_id FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id IN (${ph})`).bind(...courseIds).all().then((r) => r.results),
+    env.DB.prepare(`SELECT sc.item_id, sc.student_id, sc.score, sc.remedial, i.course_id FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id IN (${ph})`).bind(...courseIds).all().then((r) => r.results),
     env.DB.prepare(`SELECT * FROM gr_results WHERE course_id IN (${ph})`).bind(...courseIds).all().then((r) => r.results),
   ]);
   const itemsByCourse = {};
   for (const i of items) (itemsByCourse[i.course_id] ||= []).push(i);
   const scoreIdx = {};
-  for (const r of scoreRows) if (r.score != null) ((scoreIdx[`${r.course_id}:${r.student_id}`]) ||= {})[r.item_id] = r.score;
+  const remIdx = {};
+  for (const r of scoreRows) {
+    if (r.score != null) ((scoreIdx[`${r.course_id}:${r.student_id}`]) ||= {})[r.item_id] = r.score;
+    if (r.remedial != null) ((remIdx[`${r.course_id}:${r.student_id}`]) ||= {})[r.item_id] = r.remedial;
+  }
   const resIdx = Object.fromEntries(resultRows.map((r) => [`${r.course_id}:${r.student_id}`, r]));
   const hasData = new Set([...scoreRows.map((r) => `${r.course_id}:${r.student_id}`), ...resultRows.map((r) => `${r.course_id}:${r.student_id}`)]);
 
@@ -239,7 +245,7 @@ export async function yearResultsForStudents(env, yearId, grade, studentIds) {
       const course = options.find((c) => hasData.has(`${c.id}:${sid}`)) || options.find((c) => c.classroom === roomOf[sid]);
       if (!course) continue;
       const key = `${course.id}:${sid}`;
-      const calc = computeStudentResult(itemsByCourse[course.id] || [], scoreIdx[key] || {}, resIdx[key] || {}, gradeSettings(course, settings));
+      const calc = computeStudentResult(itemsByCourse[course.id] || [], scoreIdx[key] || {}, resIdx[key] || {}, gradeSettings(course, settings), remIdx[key] || {});
       out[sid].push({
         course_id: course.id, code: course.code, name: course.name, learning_area: course.learning_area,
         subject_type: course.subject_type, hours_per_year: course.hours_per_year, sort_order: course.sort_order,

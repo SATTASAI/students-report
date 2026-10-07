@@ -238,8 +238,8 @@ table.sheet { border-collapse: separate; border-spacing: 0; font-size: 14px; }
   .who { display: none; }
   .course-row { grid-template-columns: 64px minmax(0, 1fr); }
   .course-row .meter-cell, .course-row .go { grid-column: 2; }
-  .item { grid-template-columns: 1fr 80px auto; }
-  .item .code { grid-column: 1 / -1; }
+  .item { grid-template-columns: 1fr auto; }
+  .item .code, .item > span:nth-child(2) { grid-column: 1 / -1; }
   .page { padding: 18px 12px 48px; }
   .sheet .name { min-width: 120px; max-width: 130px; }
   .topbar { padding: 8px 12px; gap: 8px; }
@@ -255,3 +255,16 @@ table.sheet { border-collapse: separate; border-spacing: 0; font-size: 14px; }
 /* ขั้นตอนเริ่มต้นปี (หน้าตั้งค่า) */
 .step-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
 @media (max-width: 640px) { .step-row { grid-template-columns: 34px 1fr; } .step-row > :last-child:not(:nth-child(2)) { grid-column: 2; } }
+
+/* หน่วยการเรียนรู้ในหน้าโครงสร้าง */
+.unit { border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 12px; background: var(--surface); }
+.unit + .unit { margin-top: 10px; }
+.unit-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.unit-head b { color: var(--ink); }
+.unit.loose { border-style: dashed; }
+.sheet .col-head .unitno { display: block; font-size: 11px; color: var(--muted); font-weight: 500; }
+.sheet td.cell.remed { position: relative; }
+.sheet td.cell.remed::after { content: "แก้"; position: absolute; top: 1px; right: 3px; font-size: 10px; color: var(--ok); font-weight: 700; }
+.rem-row { display: grid; grid-template-columns: 50px minmax(0, 1.3fr) minmax(0, 1.4fr) 90px 110px 90px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+.rem-row input { width: 90px; }
+@media (max-width: 760px) { .rem-row { grid-template-columns: 40px 1fr 1fr; } .rem-row > :nth-child(n+4) { grid-column: auto; } }

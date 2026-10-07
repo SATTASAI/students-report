@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-2";
+export const SCHEMA_VERSION = "gr-3";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -53,6 +53,16 @@ export const SCHEMA_SQL = [
     title TEXT NOT NULL,
     max_score REAL NOT NULL CHECK (max_score > 0 AND max_score <= 1000),
     sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  // หน่วยการเรียนรู้ของรายวิชา (ต่อภาค) — ตัวชี้วัดผูกกับหน่วยผ่าน gr_items.unit_id
+  `CREATE TABLE IF NOT EXISTS gr_units (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_id INTEGER NOT NULL REFERENCES gr_courses(id) ON DELETE CASCADE,
+    term_number INTEGER NOT NULL CHECK (term_number IN (1,2)),
+    unit_no INTEGER NOT NULL CHECK (unit_no BETWEEN 1 AND 99),
+    title TEXT NOT NULL,
+    hours REAL CHECK (hours IS NULL OR (hours >= 0 AND hours <= 400)),
+    task TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS gr_scores (
     item_id INTEGER NOT NULL REFERENCES gr_items(id) ON DELETE CASCADE,
@@ -105,6 +115,7 @@ export const SCHEMA_SQL = [
     user_id INTEGER, action TEXT NOT NULL, detail TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_gr_subjects_year ON gr_subjects(academic_year_id, grade_level)`,
+  `CREATE INDEX IF NOT EXISTS idx_gr_units_course ON gr_units(course_id, term_number, unit_no)`,
   `CREATE INDEX IF NOT EXISTS idx_gr_items_course ON gr_items(course_id, term_number, sort_order)`,
   `CREATE INDEX IF NOT EXISTS idx_gr_scores_student ON gr_scores(student_id)`,
   `CREATE INDEX IF NOT EXISTS idx_gr_results_student ON gr_results(student_id)`,
@@ -120,6 +131,11 @@ export const ADDED_COLUMNS = [
   ["gr_settings", "deputy_director_name", "TEXT"],
   ["gr_settings", "affiliation", "TEXT"],
   ["gr_settings", "pilot_rooms", "TEXT"], // JSON ["ป.4/2"] = เปิดใช้เฉพาะห้องเหล่านี้, ว่าง = ทุกห้อง
+  // gr-3
+  ["gr_items", "unit_id", "INTEGER"], // หน่วยการเรียนรู้ (gr_units.id) ว่างได้
+  ["gr_scores", "remedial", "REAL"], // คะแนนสอบแก้ตัวรายตัวชี้วัด (คะแนนจริง) — นับได้ไม่เกินเกณฑ์ผ่าน
+  ["gr_subjects", "template", "TEXT"], // แม่แบบโครงสร้าง (JSON) ที่วิชาการตั้งให้ทุกห้องของวิชานี้
+  ["gr_subjects", "template_updated_at", "TEXT"],
 ];
 
 async function addMissingColumns(env) {

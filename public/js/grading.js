@@ -53,6 +53,19 @@ export function indicatorResult(item, score, settings) {
 }
 
 const sum2 = (a, b) => Math.round((a + b) * 100) / 100;
+
+// คะแนนที่นับได้สูงสุดจากการสอบแก้ตัวของตัวชี้วัด = เกณฑ์ผ่านของภาคนั้น
+export function remedialCap(item, settings) {
+  const max = Number(item.max_score) || 0;
+  return Math.round(max * indicatorPassPct(settings, item.term_number)) / 100;
+}
+
+// คะแนนที่ใช้คิดผล: ถ้ามีคะแนนแก้ตัว นับ max(คะแนนเดิม, min(แก้ตัว, เกณฑ์ผ่าน))
+export function effectiveScore(item, score, remedial, settings) {
+  if (remedial == null || remedial === "" || item.kind === "final") return score;
+  const capped = Math.min(Number(remedial), remedialCap(item, settings));
+  return score == null || score === "" ? capped : Math.max(Number(score), capped);
+}
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 
 /**
@@ -61,6 +74,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
  * scores: Map/obj item_id -> number|null
  * result: { hours_attended, special, remedial_type, remedial_grade }
  * settings: { collect_ratio, hours_per_year, attendance_pass_pct, indicator_pass_pct, indicator_pass_pct_t2, finalized }
+ * remedials: Map/obj item_id -> คะแนนแก้ตัว (ถ้ามี)
  *
  * กติกา (ตามที่โรงเรียนตกลง):
  * - คิดรายภาค ภาคละ 50 คะแนน = ระหว่างภาค (collect_ratio / 2) + ปลายภาค ((100 - collect_ratio) / 2) เช่น 35 + 15
@@ -71,10 +85,14 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
  *   เมื่อยืนยันผลแล้วคะแนนยังไม่ครบ → ร
  * - รายการที่ไม่ระบุภาค (ข้อมูลรุ่นเก่า/ทดสอบ) คิดรวมทั้งปีเป็นก้อนเดียวเต็ม 100
  */
-export function computeStudentResult(items, scores, result, settings) {
-  const get = (id) => {
-    const v = scores instanceof Map ? scores.get(id) : scores?.[id];
-    return v == null || v === "" ? null : Number(v);
+export function computeStudentResult(items, scores, result, settings, remedials) {
+  const pick = (m, id) => { const v = m instanceof Map ? m.get(id) : m?.[id]; return v == null || v === "" ? null : Number(v); };
+  const remediated = [];
+  const getItem = (item) => {
+    const raw = pick(scores, item.id), rem = pick(remedials, item.id);
+    if (rem == null) return raw;
+    remediated.push(item.id);
+    return effectiveScore(item, raw, rem, settings);
   };
   const ratio = Math.min(100, Math.max(0, Number(settings.collect_ratio ?? 70)));
   const yearly = items.some((i) => Number(i.term_number) !== 1 && Number(i.term_number) !== 2);
@@ -86,7 +104,7 @@ export function computeStudentResult(items, scores, result, settings) {
     const t = yearly ? 0 : Number(item.term_number);
     const b = per[t] ||= { collect: 0, collectMax: 0, final: 0, finalMax: 0, missing: 0 };
     if (item.kind === "final") b.finalMax = sum2(b.finalMax, max); else b.collectMax = sum2(b.collectMax, max);
-    const v = get(item.id);
+    const v = getItem(item);
     if (v == null) { missing++; b.missing++; continue; }
     if (item.kind === "final") b.final = sum2(b.final, v);
     else {
@@ -154,7 +172,7 @@ export function computeStudentResult(items, scores, result, settings) {
     exact, total: hasItems ? total : null, total_max: yearly ? 100 : Object.keys(term_scores).length * 50,
     missing, term_scores, hours, need_hours: needHours, low_attendance: lowAttendance,
     original_grade: original, reason, grade: finalGrade,
-    failed_indicators: failedIndicators,
+    failed_indicators: failedIndicators, remediated,
   };
 }
 

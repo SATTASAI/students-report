@@ -1,5 +1,5 @@
 import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, fmt, ICONS, params, withYear } from "/js/app.js";
-import { computeStudentResult, NUMERIC_GRADES, indicatorWord, indicatorResult, structureIssues } from "/js/grading.js";
+import { computeStudentResult, NUMERIC_GRADES, indicatorWord, indicatorResult, structureIssues, indicatorPassPct, remedialCap } from "/js/grading.js";
 import { parseIndicatorLines } from "/js/indicators.js";
 
 const me = await shell("home");
@@ -31,7 +31,7 @@ function renderHeader() {
   document.title = `${c.code} ${c.name} ${c.grade_level}/${c.classroom} — สมุดคะแนน`;
   document.getElementById("title").textContent = `${c.code} ${c.name}`;
   document.getElementById("meta").textContent =
-    `${c.grade_level}/${c.classroom} · ปีการศึกษา ${c.year_be} · ${c.hours_per_year} ชม./ปี · คะแนนเก็บ ${c.collect_ratio} : ปลายภาค ${100 - c.collect_ratio}` +
+    `${c.grade_level}/${c.classroom} · ปีการศึกษา ${c.year_be} · ${c.hours_per_year} ชม./ปี · ต่อภาค: ระหว่างภาค ${fmt(c.collect_ratio / 2)} + ปลายภาค ${fmt(50 - c.collect_ratio / 2)} = 50` +
     (c.teachers.length ? ` · ครูผู้สอน ${c.teachers.map((t) => t.full_name).join(", ")}` : "");
   document.getElementById("backLink").href = withYear("/", c.academic_year_id);
   const pb = document.getElementById("printBtn");
@@ -64,17 +64,22 @@ function renderTabs() {
 function render() {
   if (tab === "t1" || tab === "t2") renderSheet(tab === "t1" ? 1 : 2);
   else if (tab === "sum") renderSummary();
+  else if (tab === "rem") renderRemedial();
   else renderSetup();
 }
 
 const editable = () => data.course.can_edit && !data.course.locked;
+// ต้องตรงกับ gradeSettings() ฝั่งเซิร์ฟเวอร์ทุกค่า เพื่อให้ตัวเลขบนจอ = ตัวเลขในเอกสาร
 const settingsForCalc = () => ({
   collect_ratio: data.course.collect_ratio, hours_per_year: data.course.hours_per_year,
   attendance_pass_pct: data.settings.attendance_pass_pct, indicator_pass_pct: data.settings.indicator_pass_pct,
+  indicator_pass_pct_t2: data.settings.indicator_pass_pct_t2, finalized: !!data.course.locked,
 });
 const studentScores = (sid) => data.scores[sid] || (data.scores[sid] = {});
+const studentRemedials = (sid) => data.remedials?.[sid] || {};
+const unitOf = (it) => (data.units || []).find((u) => u.id === it.unit_id);
 function recompute(sid) {
-  data.computed[sid] = computeStudentResult(data.items, studentScores(sid), data.results[sid] || {}, settingsForCalc());
+  data.computed[sid] = computeStudentResult(data.items, studentScores(sid), data.results[sid] || {}, settingsForCalc(), studentRemedials(sid));
   return data.computed[sid];
 }
 const statusTag = (s) => s.enrollment_status === "transferred" ? ' <span class="tag warn">ย้ายออก</span>'
@@ -104,7 +109,7 @@ function renderSheet(term) {
           <th class="stick no col-head">เลขที่</th>
           <th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
           ${items.map((it) => `<th class="col-head ${it.kind === "final" ? "final" : ""}" title="${esc(it.title)}">
-            <button data-edit-item="${it.id}" ${can ? "" : "disabled"}><span class="code">${esc(it.kind === "final" ? "ปลายภาค" : it.code || "เก็บ")}</span><span class="t">${esc(it.title)}</span><span class="max">เต็ม ${fmt(it.max_score)}</span></button></th>`).join("")}
+            <button data-edit-item="${it.id}" ${can ? "" : "disabled"}>${unitOf(it) ? `<span class="unitno">หน่วยที่ ${unitOf(it).unit_no}</span>` : ""}<span class="code">${esc(it.kind === "final" ? "ปลายภาค" : it.code || "เก็บ")}</span><span class="t">${esc(it.title)}</span><span class="max">เต็ม ${fmt(it.max_score)}</span></button></th>`).join("")}
           <th class="col-head">รวมภาค ${term}<span class="max">เต็ม ${fmt(termMax)}</span></th>
           <th class="col-head">รวมทั้งปี<span class="max">เต็ม 100</span></th>
           <th class="col-head">ผล</th>
@@ -113,7 +118,7 @@ function renderSheet(term) {
         <tfoot><tr><td class="stick no"></td><td class="stick name" style="text-align:left">ค่าเฉลี่ย</td>${items.map((it) => `<td data-avg="${it.id}"></td>`).join("")}<td></td><td></td><td></td></tr></tfoot>
       </table>
     </div>
-    <div class="legend"><span><b style="color:var(--warn)">ตัวเลขสีส้ม</b> = ต่ำกว่าเกณฑ์ผ่าน${W} ${data.settings.indicator_pass_pct}%</span><span>ช่องว่าง = ยังไม่ได้กรอก (ผลจะเป็น ร จนกว่าจะครบ)</span></div>`;
+    <div class="legend"><span><b style="color:var(--warn)">ตัวเลขสีส้ม</b> = ต่ำกว่าเกณฑ์ผ่าน${W} ${indicatorPassPct(data.settings, term)}% (บันทึกแก้ตัวได้ที่แท็บ "แก้ตัว")</span><span><b style="color:var(--ok)">แก้</b> = มีคะแนนแก้ตัว</span><span>ช่องว่าง = ยังไม่ได้กรอก</span></div>`;
   updateAverages(items);
   bindSheet(items, term);
   for (const b of view.querySelectorAll("[data-edit-item]")) b.onclick = () => editItem(Number(b.dataset.editItem));
@@ -124,20 +129,30 @@ function rowHtml(s, items, term) {
   const sc = studentScores(s.id);
   const calc = data.computed[s.id];
   const inactive = s.enrollment_status !== "enrolled";
-  const termSum = items.reduce((a, i) => a + (sc[i.id] == null ? 0 : Number(sc[i.id])), 0);
+  const rem = studentRemedials(s.id);
   return `<tr data-sid="${s.id}" class="${inactive ? "inactive" : ""}">
     <td class="stick no">${s.number ?? ""}</td>
     <td class="stick name" title="${esc(s.name)}">${esc(s.name)}${statusTag(s)}</td>
     ${items.map((it) => {
       const v = sc[it.id];
-      const low = it.kind === "indicator" && indicatorResult(it, v, data.settings) === "มผ";
-      return `<td class="cell ${it.kind === "final" ? "final" : ""} ${low ? "low" : ""}"><input inputmode="decimal" autocomplete="off" aria-label="${esc(s.name)} ${esc(it.title)}"
+      const hasRem = rem[it.id] != null;
+      const low = it.kind === "indicator" && !hasRem && indicatorResult(it, v, data.settings) === "มผ";
+      return `<td class="cell ${it.kind === "final" ? "final" : ""} ${low ? "low" : ""} ${hasRem ? "remed" : ""}" ${hasRem ? `title="แก้ตัวได้ ${fmt(rem[it.id])} นับ ${fmt(Math.min(rem[it.id], remedialCap(it, data.settings)))}"` : ""}><input inputmode="decimal" autocomplete="off" aria-label="${esc(s.name)} ${esc(it.title)}"
         data-item="${it.id}" data-max="${it.max_score}" value="${v == null ? "" : fmt(v)}" ${editable() ? "" : "readonly"}></td>`;
     }).join("")}
-    <td class="calc" data-termsum>${fmt(termSum)}</td>
-    <td class="calc" data-total>${calc.total == null ? "–" : fmt(calc.total)}</td>
+    <td class="calc" data-termsum>${termSumText(calc, items, sc)}</td>
+    <td class="calc" data-total>${yearTotalText(calc)}</td>
     <td class="calc grade-col" data-grade>${sheetGrade(calc)}</td>
   </tr>`;
+}
+
+// รวมภาค: ว่างถ้ายังไม่กรอกเลย; รวมทั้งปี: แสดงเมื่อมีโครงสร้างครบ 2 ภาค (ภาคเดียวยังไม่ใช่คะแนนทั้งปี)
+function termSumText(calc, items, sc) {
+  if (!items.some((i) => sc[i.id] != null)) return "";
+  return fmt(calc.term_scores?.[items[0].term_number]?.total ?? 0);
+}
+function yearTotalText(calc) {
+  return calc.total == null || calc.total_max !== 100 ? "–" : fmt(calc.total);
 }
 
 // ระหว่างกรอก ถ้าคะแนนยังไม่ครบ แสดงว่า "ยังไม่ครบ" แทน ร สีแดง เพื่อไม่ให้ดูเหมือนตัดสินแล้ว
@@ -207,8 +222,9 @@ function bindSheet(items, term) {
 function parseScore(raw) {
   const v = String(raw).trim().replace(",", ".");
   if (v === "") return { ok: true, value: null };
-  if (!/^\d+(\.\d+)?$/.test(v)) return { ok: false };
-  return { ok: true, value: Math.round(Number(v) * 100) / 100 };
+  // ทศนิยมได้ไม่เกิน 2 ตำแหน่ง (ไม่ปัดให้เอง เพื่อให้ครูเห็นตรงกับที่กรอก)
+  if (!/^\d+(\.\d{1,2})?$/.test(v)) return { ok: false };
+  return { ok: true, value: Number(v) };
 }
 
 function markCell(input, ok) {
@@ -221,7 +237,7 @@ function acceptCell(input, items, term) {
   const p = parseScore(input.value);
   if (!p.ok || (p.value != null && p.value > max)) {
     markCell(input, false);
-    input.title = !p.ok ? "กรอกได้เฉพาะตัวเลข" : `เกินคะแนนเต็ม ${fmt(max)}`;
+    input.title = !p.ok ? "กรอกได้เฉพาะตัวเลข ทศนิยมไม่เกิน 2 ตำแหน่ง" : `เกินคะแนนเต็ม ${fmt(max)}`;
     return;
   }
   markCell(input, true);
@@ -229,11 +245,11 @@ function acceptCell(input, items, term) {
   const sc = studentScores(sid);
   if (p.value == null) delete sc[itemId]; else sc[itemId] = p.value;
   const item = data.items.find((i) => i.id === itemId);
-  input.parentElement.classList.toggle("low", item.kind === "indicator" && indicatorResult(item, p.value, data.settings) === "มผ");
+  input.parentElement.classList.toggle("low", item.kind === "indicator" && studentRemedials(sid)[itemId] == null && indicatorResult(item, p.value, data.settings) === "มผ");
   pending.set(`${itemId}:${sid}`, p.value);
   const calc = recompute(sid);
-  tr.querySelector("[data-termsum]").textContent = fmt(items.reduce((a, i) => a + (sc[i.id] == null ? 0 : Number(sc[i.id])), 0));
-  tr.querySelector("[data-total]").textContent = calc.total == null ? "–" : fmt(calc.total);
+  tr.querySelector("[data-termsum]").textContent = termSumText(calc, items, sc);
+  tr.querySelector("[data-total]").textContent = yearTotalText(calc);
   tr.querySelector("[data-grade]").innerHTML = sheetGrade(calc);
   updateAverages(items);
   scheduleSave();
@@ -297,14 +313,14 @@ function renderSummary() {
     </div>
     <div class="table-wrap">
       <table class="list">
-        <thead><tr><th class="num">เลขที่</th><th>ชื่อ–สกุล</th><th class="num">เก็บ (${c.collect_ratio})</th><th class="num">ปลายภาค (${100 - c.collect_ratio})</th>
+        <thead><tr><th class="num">เลขที่</th><th>ชื่อ–สกุล</th><th class="num">ระหว่างภาค (${c.collect_ratio})</th><th class="num">ปลายภาค (${100 - c.collect_ratio})</th>
           <th class="num">รวม</th><th>เวลาเรียน (ชม.)</th><th>ผลพิเศษ</th><th>ผลเดิม</th><th>แก้ไข/ซ่อม</th><th>ผลการเรียน</th><th>หมายเหตุ</th></tr></thead>
         <tbody>${data.students.map((s) => {
           const k = data.computed[s.id], r = data.results[s.id] || {};
           const failed = k.failed_indicators.length;
           return `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "muted" : ""}">
             <td class="num">${s.number ?? ""}</td><td>${esc(s.name)}${statusTag(s)}</td>
-            <td class="num">${fmt(k.collect_scaled)}</td><td class="num">${fmt(k.final_scaled)}</td><td class="num"><b>${k.total == null ? "–" : fmt(k.total)}</b></td>
+            <td class="num">${fmt(k.collect_scaled)}</td><td class="num">${fmt(k.final_scaled)}</td><td class="num"><b>${yearTotalText(k)}</b></td>
             <td><input style="width:86px" inputmode="decimal" data-hours value="${r.hours_attended ?? ""}" placeholder="${c.hours_per_year}" ${can ? "" : "disabled"} aria-label="เวลาเรียน ${esc(s.name)}"></td>
             <td><select data-special style="width:80px" ${can ? "" : "disabled"} aria-label="ผลพิเศษ ${esc(s.name)}"><option value="">–</option><option ${r.special === "ร" ? "selected" : ""}>ร</option><option ${r.special === "มส" ? "selected" : ""}>มส</option></select></td>
             <td>${gradeBadge(k.original_grade)}</td>
@@ -356,6 +372,53 @@ async function remedialDialog(sid) {
   await saveResult({ student_id: sid, remedial_type: d.remedial_grade ? d.remedial_type : null, remedial_grade: d.remedial_grade || null, remedial_date: d.remedial_date, remedial_note: d.remedial_note });
 }
 
+
+// ---------------- แก้ตัวรายตัวชี้วัด ----------------
+// แสดงเฉพาะคู่ นักเรียน × ตัวชี้วัด ที่คะแนนเดิมไม่ถึงเกณฑ์ หรือมีคะแนนแก้ตัวแล้ว
+function renderRemedial() {
+  const can = editable();
+  const rows = [];
+  for (const term of [1, 2]) for (const it of data.items.filter((i) => i.term_number === term && i.kind === "indicator")) {
+    for (const s of data.students) {
+      const raw = studentScores(s.id)[it.id];
+      const rem = studentRemedials(s.id)[it.id];
+      if (rem != null || (raw != null && indicatorResult(it, raw, data.settings) === "มผ")) rows.push({ term, it, s, raw, rem });
+    }
+  }
+  view.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2>สอบแก้ตัวราย${W}</h2><span class="muted small">${rows.length} รายการ</span></div>
+    <p class="muted small" style="margin-top:0">กรอกคะแนนที่นักเรียนทำได้จริงจากการแก้ตัว ระบบนับให้ไม่เกินเกณฑ์ผ่าน (ภาค 1: ${indicatorPassPct(data.settings, 1)}%, ภาค 2: ${indicatorPassPct(data.settings, 2)}% ของคะแนนเต็ม)
+      และใช้คะแนนที่สูงกว่าระหว่างคะแนนเดิมกับคะแนนที่นับได้ · เว้นว่างเพื่อลบคะแนนแก้ตัว</p>
+    ${rows.length ? `<div class="rem-row small muted" style="font-weight:600"><span>ภาค</span><span>นักเรียน</span><span>${W}</span><span>คะแนนเดิม</span><span>คะแนนแก้ตัว</span><span>นับได้</span></div>
+      ${rows.map((r) => {
+        const cap = remedialCap(r.it, data.settings);
+        const counted = r.rem == null ? "–" : fmt(Math.max(r.raw ?? 0, Math.min(r.rem, cap)));
+        return `<div class="rem-row" data-item="${r.it.id}" data-sid="${r.s.id}">
+          <span>${r.term}</span><span>${r.s.number ?? ""} ${esc(r.s.name)}</span>
+          <span class="small">${esc(r.it.code || "")} ${esc(r.it.title)} <span class="muted">(เต็ม ${fmt(r.it.max_score)} · ผ่าน ${fmt(cap)})</span></span>
+          <span class="num" style="color:var(--warn)">${r.raw == null ? "–" : fmt(r.raw)}</span>
+          <span><input inputmode="decimal" value="${r.rem == null ? "" : fmt(r.rem)}" ${can ? "" : "disabled"} aria-label="คะแนนแก้ตัว ${esc(r.s.name)}"></span>
+          <span class="num" data-counted>${counted}</span></div>`;
+      }).join("")}`
+      : `<div class="empty"><strong>ไม่มี${W}ที่ต้องแก้ตัว</strong>นักเรียนทุกคนได้คะแนนถึงเกณฑ์ผ่านแล้ว (หรือยังไม่ได้กรอกคะแนน)</div>`}
+  </div>`;
+  if (!can) return;
+  for (const row of view.querySelectorAll(".rem-row[data-item]")) {
+    const input = row.querySelector("input");
+    input.onchange = async () => {
+      const p = parseScore(input.value);
+      const it = data.items.find((i) => i.id === Number(row.dataset.item));
+      if (!p.ok || (p.value != null && p.value > it.max_score)) { markCell(input, false); toast(!p.ok ? "กรอกตัวเลข ทศนิยมไม่เกิน 2 ตำแหน่ง" : `เกินคะแนนเต็ม ${fmt(it.max_score)}`, "bad"); return; }
+      await flush();
+      try {
+        data = await api(`/api/courses/${courseId}/scores`, { method: "PUT", body: { changes: [{ item_id: it.id, student_id: Number(row.dataset.sid), remedial: p.value }] } });
+        toast(p.value == null ? "ลบคะแนนแก้ตัวแล้ว" : "บันทึกคะแนนแก้ตัวแล้ว");
+        renderRemedial();
+      } catch (err) { showError(err.data?.errors?.[0]?.error || err); }
+    };
+  }
+}
+
 // ---------------- โครงสร้างคะแนน ----------------
 function renderSetup() {
   const c = data.course;
@@ -370,14 +433,35 @@ function renderSetup() {
     const ok = !issues.some((x) => x.startsWith(`ภาค ${t}`));
     return `<span class="tag ${ok ? "ok" : "warn"}">${W} ${fmt(ci)}/${fmt(cT)} · ปลายภาค ${fmt(fi)}/${fmt(fT)}</span>`;
   };
-  const list = (term) => {
-    const items = data.items.filter((i) => i.term_number === term);
-    return items.length ? items.map((it) => `<div class="item ${it.kind}">
+  const itemRow = (it) => `<div class="item ${it.kind}">
         <span class="code">${esc(it.kind === "final" ? "สอบปลายภาค" : it.code || "คะแนนเก็บ")}</span>
         <span>${esc(it.title)}</span><span class="num">เต็ม ${fmt(it.max_score)}</span>
         <span class="actions">${can ? `<button class="btn small" data-edit="${it.id}">แก้ไข</button><button class="btn small danger" data-del="${it.id}">ลบ</button>` : ""}</span>
-      </div>`).join("") : `<p class="muted small">ยังไม่มีช่องคะแนน</p>`;
+      </div>`;
+  const list = (term) => {
+    const items = data.items.filter((i) => i.term_number === term);
+    const units = (data.units || []).filter((u) => u.term_number === term);
+    if (!items.length && !units.length) return `<p class="muted small">ยังไม่มีหน่วยหรือช่องคะแนน</p>`;
+    const inUnit = (u) => items.filter((i) => i.unit_id === u.id);
+    const sumMax = (list) => Math.round(list.reduce((a, i) => a + i.max_score, 0) * 100) / 100;
+    const loose = items.filter((i) => i.kind !== "final" && !units.some((u) => u.id === i.unit_id));
+    const finals = items.filter((i) => i.kind === "final");
+    return units.map((u) => `<div class="unit">
+        <div class="unit-head"><span><b>หน่วยที่ ${u.unit_no} ${esc(u.title)}</b>
+          <span class="muted small">${u.hours != null ? ` · ${fmt(u.hours, 1)} ชม.` : ""}${u.task ? ` · ${esc(u.task)}` : ""} · ${fmt(sumMax(inUnit(u)))} คะแนน</span></span>
+          ${can ? `<span class="actions"><button class="btn small" data-add="${term}" data-kind="indicator" data-unit="${u.id}">${ICONS.plus} ${W}</button>
+            <button class="btn small" data-uedit="${u.id}">แก้หน่วย</button><button class="btn small danger" data-udel="${u.id}">ลบหน่วย</button></span>` : ""}</div>
+        <div class="item-list">${inUnit(u).map(itemRow).join("") || `<p class="muted small">ยังไม่มี${W}ในหน่วยนี้</p>`}</div></div>`).join("")
+      + (loose.length ? `<div class="unit loose"><div class="unit-head"><span class="muted small">${W}ที่ยังไม่ได้จัดเข้าหน่วย</span></div><div class="item-list">${loose.map(itemRow).join("")}</div></div>` : "")
+      + (finals.length ? `<div class="item-list" style="margin-top:10px">${finals.map(itemRow).join("")}</div>` : "");
   };
+  const termEmpty = (t) => !data.items.some((i) => i.term_number === t);
+  const tplPanel = (c.has_template || data.is_admin) ? `<div class="panel"><div class="panel-head"><h2>แม่แบบโครงสร้างของวิชา ${esc(c.code)} ${esc(c.grade_level)}</h2></div>
+      ${c.has_template ? `<p class="muted small" style="margin-top:0">ฝ่ายวิชาการตั้งแม่แบบไว้แล้ว${c.template_updated_at ? ` (ปรับล่าสุด ${esc(c.template_updated_at.slice(0, 10))})` : ""} ใช้กับภาคที่ยังไม่มีช่องคะแนนได้ แล้วปรับคะแนนเต็มต่อได้อิสระ</p>
+        ${can ? `<div class="actions">${[1, 2].map((t) => `<button class="btn ${termEmpty(t) ? "primary" : ""}" data-tpl="${t}" ${termEmpty(t) ? "" : "disabled title=\"ภาคนี้มีช่องคะแนนแล้ว\""}>ใช้แม่แบบ ภาค ${t}</button>`).join("")}</div>` : ""}`
+        : `<p class="muted small" style="margin-top:0">ยังไม่มีแม่แบบ</p>`}
+      ${data.is_admin ? `<div class="actions" style="margin-top:10px"><button class="btn" id="tplSave" ${data.items.length ? "" : "disabled"}>บันทึกโครงสร้างนี้เป็นแม่แบบของวิชา</button>${c.has_template ? '<button class="btn danger" id="tplDel">ลบแม่แบบ</button>' : ""}</div>
+        <p class="muted small">เฉพาะฝ่ายวิชาการ/ทีมวัดผล — ครูทุกห้องของวิชานี้จะกดใช้แม่แบบได้ ห้องที่ใช้ไปแล้วไม่เปลี่ยนตาม</p>` : ""}</div>` : "";
   view.innerHTML = `
     <div class="panel">
       <div class="panel-head"><h2>สัดส่วนคะแนนต่อภาคเรียน</h2></div>
@@ -388,15 +472,24 @@ function renderSetup() {
     </div>
     ${[1, 2].map((t) => `<div class="panel">
       <div class="panel-head"><h2>ภาคเรียนที่ ${t} ${termLine(t)}</h2>${can ? `<div class="actions">
+        <button class="btn small" data-uadd="${t}">${ICONS.plus} หน่วยการเรียนรู้</button>
         <button class="btn small" data-add="${t}" data-kind="indicator">${ICONS.plus} ${W}</button>
         <button class="btn small" data-add="${t}" data-kind="final">${ICONS.plus} สอบปลายภาค</button>
         <button class="btn small" data-paste="${t}">วางจากหลักสูตร</button>
         <button class="btn small" data-bank="${t}">เลือกจากคลัง${W}</button></div>` : ""}</div>
-      <div class="item-list">${list(t)}</div></div>`).join("")}
+      ${list(t)}</div>`).join("")}
+    ${tplPanel}
     ${can ? `<div class="panel"><div class="panel-head"><h2>ใช้โครงสร้างจากห้องอื่น</h2></div>
       <p class="muted small">คัดลอก${W}และคะแนนเต็มจากวิชาเดียวกันของห้องอื่นหรือปีก่อน (คัดลอกเฉพาะโครงสร้าง ไม่คัดลอกคะแนนนักเรียน)</p>
       <div id="siblings" class="muted small">กำลังค้นหา…</div></div>` : ""}`;
-  for (const b of view.querySelectorAll("[data-add]")) b.onclick = () => addItem(Number(b.dataset.add), b.dataset.kind);
+  for (const b of view.querySelectorAll("[data-add]")) b.onclick = () => addItem(Number(b.dataset.add), b.dataset.kind, b.dataset.unit ? Number(b.dataset.unit) : null);
+  for (const b of view.querySelectorAll("[data-uadd]")) b.onclick = () => unitDialog(Number(b.dataset.uadd));
+  for (const b of view.querySelectorAll("[data-uedit]")) b.onclick = () => unitDialog(null, Number(b.dataset.uedit));
+  for (const b of view.querySelectorAll("[data-udel]")) b.onclick = () => deleteUnit(Number(b.dataset.udel));
+  for (const b of view.querySelectorAll("[data-tpl]")) b.onclick = () => applyTemplate(Number(b.dataset.tpl));
+  const ts = document.getElementById("tplSave"), td = document.getElementById("tplDel");
+  if (ts) ts.onclick = saveTemplate;
+  if (td) td.onclick = deleteTemplate;
   for (const b of view.querySelectorAll("[data-edit]")) b.onclick = () => editItem(Number(b.dataset.edit));
   for (const b of view.querySelectorAll("[data-del]")) b.onclick = () => deleteItem(Number(b.dataset.del));
   for (const b of view.querySelectorAll("[data-paste]")) b.onclick = () => pasteItems(Number(b.dataset.paste));
@@ -410,15 +503,63 @@ function itemForm(it = {}) {
     <label class="field">ประเภท<select name="kind"><option value="indicator" ${it.kind !== "final" ? "selected" : ""}>คะแนนเก็บ (${W})</option><option value="final" ${it.kind === "final" ? "selected" : ""}>สอบปลายภาค</option></select></label>
     <label class="field">คะแนนเต็ม<input name="max_score" inputmode="decimal" required value="${it.max_score ?? ""}"></label>
   </div>
+  ${(() => { const us = (data.units || []); return us.length ? `<label class="field" style="margin-top:12px">หน่วยการเรียนรู้<select name="unit_id"><option value="">— ไม่จัดเข้าหน่วย —</option>
+    ${us.map((u) => `<option value="${u.id}" ${it.unit_id === u.id ? "selected" : ""}>ภาค ${u.term_number} · หน่วยที่ ${u.unit_no} ${esc(u.title)}</option>`).join("")}</select></label>` : ""; })()}
   <label class="field" style="margin-top:12px">รหัส${W} (ถ้ามี)<input name="code" maxlength="60" placeholder="เช่น ท 1.1 ป.1/1" value="${esc(it.code || "")}"></label>
   <label class="field" style="margin-top:12px">ชื่อ${W} / การสอบ<textarea name="title" required maxlength="500" style="min-height:80px">${esc(it.title || "")}</textarea></label>`;
 }
 
-async function addItem(term, kind) {
-  const res = await dialog({ title: kind === "final" ? "เพิ่มการสอบปลายภาค" : `เพิ่ม${W}`, body: itemForm({ term_number: term, kind, title: kind === "final" ? `สอบปลายภาคเรียนที่ ${term}` : "" }), okText: "เพิ่ม" });
+async function addItem(term, kind, unitId = null) {
+  const res = await dialog({ title: kind === "final" ? "เพิ่มการสอบปลายภาค" : `เพิ่ม${W}`, body: itemForm({ term_number: term, kind, unit_id: unitId, title: kind === "final" ? `สอบปลายภาคเรียนที่ ${term}` : "" }), okText: "เพิ่ม" });
   if (!res.ok) return;
   try { data = await api(`/api/courses/${courseId}/items`, { method: "POST", body: res.data }); toast("เพิ่มแล้ว"); render(); }
   catch (err) { showError(err); }
+}
+
+
+async function unitDialog(term, unitId = null) {
+  const u = unitId ? data.units.find((x) => x.id === unitId) : { term_number: term, unit_no: Math.max(0, ...(data.units || []).filter((x) => x.term_number === term).map((x) => x.unit_no)) + 1 };
+  const res = await dialog({
+    title: unitId ? `แก้ไขหน่วยที่ ${u.unit_no}` : `เพิ่มหน่วยการเรียนรู้ — ภาคเรียนที่ ${term}`, okText: unitId ? "บันทึก" : "เพิ่ม",
+    body: `<div class="form-grid">
+      <label class="field">ภาคเรียน<select name="term_number"><option value="1" ${u.term_number === 1 ? "selected" : ""}>1</option><option value="2" ${u.term_number === 2 ? "selected" : ""}>2</option></select></label>
+      <label class="field">หน่วยที่<input name="unit_no" inputmode="numeric" required value="${u.unit_no ?? ""}"></label>
+      <label class="field">จำนวนชั่วโมง<input name="hours" inputmode="decimal" value="${u.hours ?? ""}"></label></div>
+      <label class="field" style="margin-top:12px">ชื่อหน่วยการเรียนรู้<input name="title" required maxlength="300" value="${esc(u.title || "")}"></label>
+      <label class="field" style="margin-top:12px">ภาระงาน / ชิ้นงาน / การประเมิน<input name="task" maxlength="200" placeholder="เช่น ใบงาน, แบบฝึกหัด" value="${esc(u.task || "")}"></label>`,
+  });
+  if (!res.ok) return;
+  try {
+    data = await api(unitId ? `/api/courses/${courseId}/units/${unitId}` : `/api/courses/${courseId}/units`, { method: unitId ? "PUT" : "POST", body: res.data });
+    toast("บันทึกหน่วยแล้ว"); render();
+  } catch (err) { showError(err); }
+}
+
+async function deleteUnit(unitId) {
+  const u = data.units.find((x) => x.id === unitId);
+  if (!(await confirmBox("ลบหน่วยการเรียนรู้", `ลบหน่วยที่ ${u.unit_no} ${esc(u.title)} — ${W}และคะแนนในหน่วยนี้ยังอยู่ครบ แค่ไม่สังกัดหน่วย`, "ลบหน่วย", true))) return;
+  try { data = await api(`/api/courses/${courseId}/units/${unitId}`, { method: "DELETE" }); toast("ลบหน่วยแล้ว"); render(); } catch (err) { showError(err); }
+}
+
+async function applyTemplate(term) {
+  let tpl;
+  try { tpl = (await api(`/api/courses/${courseId}/template`)).template; } catch (err) { showError(err); return; }
+  const units = tpl?.units.filter((u) => u.term_number === term) || [], items = tpl?.items.filter((i) => i.term_number === term) || [];
+  if (!items.length) { toast(`แม่แบบไม่มีโครงสร้างภาคเรียนที่ ${term}`, "bad"); return; }
+  const ok = await confirmBox(`ใช้แม่แบบ ภาคเรียนที่ ${term}`, `เพิ่ม ${units.length} หน่วย ${items.length} ช่องคะแนน (รวม ${fmt(items.reduce((a, i) => a + i.max_score, 0))} คะแนน) — ปรับคะแนนเต็มภายหลังได้`, "ใช้แม่แบบ");
+  if (!ok) return;
+  try { data = await api(`/api/courses/${courseId}/apply-template`, { method: "POST", body: { terms: [term] } }); toast("ใช้แม่แบบแล้ว"); render(); } catch (err) { showError(err); }
+}
+
+async function saveTemplate() {
+  const ok = await confirmBox("บันทึกเป็นแม่แบบ", `ใช้โครงสร้างของห้องนี้ (${data.units.length} หน่วย ${data.items.length} ช่องคะแนน) เป็นแม่แบบของ ${esc(data.course.code)} ${esc(data.course.grade_level)}${data.course.has_template ? " แทนแม่แบบเดิม" : ""}`, "บันทึก");
+  if (!ok) return;
+  try { data = await api(`/api/courses/${courseId}/template`, { method: "PUT", body: {} }); toast("บันทึกแม่แบบแล้ว"); render(); } catch (err) { showError(err); }
+}
+
+async function deleteTemplate() {
+  if (!(await confirmBox("ลบแม่แบบ", "ห้องที่ใช้แม่แบบไปแล้วไม่ได้รับผลกระทบ", "ลบแม่แบบ", true))) return;
+  try { data = await api(`/api/courses/${courseId}/template`, { method: "DELETE" }); toast("ลบแม่แบบแล้ว"); render(); } catch (err) { showError(err); }
 }
 
 async function editItem(id) {
