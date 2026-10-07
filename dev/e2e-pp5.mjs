@@ -52,6 +52,7 @@ for (const c of courses) {
   if (lowSt) await api(`/api/courses/${c.id}/scores`, "PUT", { changes: [{ item_id: low.id, student_id: lowSt.id, remedial: low.max_score }] });
   await api(`/api/courses/${c.id}/submit`, "POST", { force: true });
 }
+await api("/api/admin/courses/review", "POST", { course_ids: [courses[0].id] });
 await api("/api/admin/courses/approve", "POST", { course_ids: [courses[0].id] });
 
 await page.goto(`${BASE}/print/pp5.html?course=${courses[0].id}`);
@@ -62,6 +63,7 @@ await page.goto(`${BASE}/print/pp5.html?grade=${encodeURIComponent("ป.4")}&roo
 await page.waitForFunction(() => document.querySelectorAll(".sheet").length > 8);
 const sheets = await page.evaluate(() => document.querySelectorAll(".sheet").length);
 const drafts = await page.evaluate(() => document.querySelectorAll(".draft-mark").length);
+if (drafts !== sheets / 2) errors.push(`วิชาที่อนุมัติแล้วต้องไม่มีลายน้ำฉบับร่าง: ร่าง ${drafts} จาก ${sheets} หน้า`);
 await page.pdf({ path: `${OUT}/pp5-room.pdf`, preferCSSPageSize: true, printBackground: true });
 await browser.close();
 if (errors.length) { console.error(errors.join("\n")); process.exit(1); }

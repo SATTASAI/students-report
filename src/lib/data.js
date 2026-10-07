@@ -1,5 +1,5 @@
 import { fail } from "./http.js";
-import { computeStudentResult } from "../../public/js/grading.js";
+import { computeStudentResult, resultWithAttendance } from "../../public/js/grading.js";
 
 export const DEFAULT_SETTINGS = {
   collect_ratio: 70, indicator_pass_pct: 50, attendance_pass_pct: 80,
@@ -87,11 +87,12 @@ const TRANSFER_IN_SQL = `(SELECT MIN(t.term_number) FROM gr_transfers t WHERE t.
 export async function roomRoster(env, yearId, grade, room) {
   const { results } = await env.DB.prepare(
     `${ROSTER_CTE}
-     SELECT ${STUDENT_COLUMNS}, r.status AS enrollment_status, ${TRANSFER_IN_SQL} AS transfer_in_term
+     SELECT ${STUDENT_COLUMNS}, r.status AS enrollment_status, ${TRANSFER_IN_SQL} AS transfer_in_term,
+            (SELECT n.number FROM gr_roster_numbers n WHERE n.academic_year_id = ? AND n.student_id = s.id) AS manual_number
        FROM ranked r JOIN students s ON s.id = r.student_id
        LEFT JOIN student_details d ON d.student_id = s.id
       WHERE r.rn = 1 AND r.grade_level = ? AND r.classroom = ? AND r.status NOT IN ${LEFT_SQL}`
-  ).bind(yearId, yearId, grade, room).all();
+  ).bind(yearId, yearId, yearId, grade, room).all();
   return sortRoster(results, (await getSettings(env, yearId)).roster_order);
 }
 
@@ -122,8 +123,16 @@ function sortRoster(rows, order = "gender") {
   rows.sort((a, b) => active(b) - active(a) || late(a) - late(b) ||
     (order === "gender" ? genderRank(a.gender) - genderRank(b.gender) : 0) ||
     String(a.student_code).localeCompare(String(b.student_code), "th", { numeric: true }));
+  // เลขที่ที่ฝ่ายวัดผลกำหนดเอง (manual_number) ตรึงไว้ คนอื่นได้เลขที่ว่างถัดไปตามลำดับปกติ
+  const fixed = new Set(rows.filter((r) => active(r) && r.manual_number).map((r) => r.manual_number));
   let n = 0;
-  for (const r of rows) r.number = active(r) ? ++n : null;
+  for (const r of rows) {
+    if (!active(r)) { r.number = null; continue; }
+    if (r.manual_number) { r.number = r.manual_number; continue; }
+    do n++; while (fixed.has(n));
+    r.number = n;
+  }
+  if (fixed.size) rows.sort((a, b) => active(b) - active(a) || (a.number ?? 999) - (b.number ?? 999));
   return rows;
 }
 
@@ -149,7 +158,8 @@ export function studentName(s) {
 export async function loadCourse(env, courseId) {
   const course = await env.DB.prepare(
     `SELECT c.id, c.classroom, c.locked, c.submitted_at, c.submitted_by, c.subject_id,
-            c.approved_at, c.approved_by, c.return_note, c.returned_at,
+            c.approved_at, c.approved_by, c.return_note, c.returned_at, c.reviewed_at, c.reviewed_by,
+            (SELECT full_name FROM users WHERE id = c.reviewed_by) AS reviewed_by_name,
             (SELECT full_name FROM users WHERE id = c.submitted_by) AS submitted_by_name,
             (SELECT full_name FROM users WHERE id = c.approved_by) AS approved_by_name,
             (SELECT full_name FROM users WHERE id = c.returned_by) AS returned_by_name,
@@ -172,11 +182,12 @@ export async function loadCourse(env, courseId) {
   return course;
 }
 
-// สถานะของ ห้อง × วิชา: draft (กำลังกรอก) → submitted (ส่งแล้ว, ล็อก) → approved (อนุมัติแล้ว)
+// สถานะของ ห้อง × วิชา: draft (กำลังกรอก) → submitted (ครูส่งแล้ว รอฝ่ายวัดผลตรวจ) → reviewed (ตรวจแล้ว รอผู้บริหาร) → approved
 export function courseStatus(c) {
   if (!c.locked) return "draft";
-  return c.approved_at ? "approved" : "submitted";
+  return c.approved_at ? "approved" : c.reviewed_at ? "reviewed" : "submitted";
 }
+export const STATUS_TH = { draft: "กำลังกรอก", submitted: "ส่งแล้ว รอฝ่ายวัดผลตรวจ", reviewed: "ตรวจแล้ว รอผู้บริหารอนุมัติ", approved: "อนุมัติแล้ว" };
 
 export function canViewCourse(user, course) {
   return user.is_admin || course.teachers.some((t) => t.id === user.id);
@@ -186,7 +197,9 @@ export async function assertCourseAccess(env, user, courseId, { write = false } 
   const course = await loadCourse(env, courseId);
   if (!canViewCourse(user, course)) fail(403, "คุณไม่ได้รับมอบหมายให้สอนรายวิชานี้");
   if (write) {
-    if (course.locked) fail(409, course.approved_at ? "รายวิชานี้อนุมัติผลแล้ว ต้องให้ฝ่ายวิชาการส่งคืนพร้อมเหตุผลก่อนแก้ไข" : "รายวิชานี้ส่งแล้ว ต้องให้ฝ่ายวิชาการส่งคืนก่อนแก้ไข");
+    // ฝ่ายวัดผล (ผู้ดูแลข้อมูลหลังบ้าน) แก้รายวิชาที่ส่งแล้วได้ทันที — ระบบบันทึกประวัติให้ครูเห็น (logCourseEdit)
+    if (course.locked && !user.can_import) fail(409, course.approved_at ? "รายวิชานี้อนุมัติผลแล้ว ต้องให้ฝ่ายวัดผลส่งคืนพร้อมเหตุผลก่อนแก้ไข" : "รายวิชานี้ส่งแล้ว ต้องให้ฝ่ายวัดผลส่งคืนก่อนแก้ไข");
+    if (course.locked) user._adminEdit = { course_id: course.id, approved: !!course.approved_at };
     const settings = await getSettings(env, course.academic_year_id);
     if (!settings.entry_open && !user.is_admin) fail(409, "ปิดระบบการกรอกคะแนนของปีการศึกษานี้แล้ว");
   }
@@ -214,12 +227,17 @@ export async function courseBundle(env, course) {
   const results = Object.fromEntries(resultRows.map((r) => [r.student_id, r]));
   const calcSettings = gradeSettings(course, settings);
   const allCarry = await carryoverFor(env, course.academic_year_id, roster.map((s) => s.id));
+  const rates = await attendanceRates(env, course.academic_year_id, roster.map((s) => s.id));
   const carry = {};
   for (const s of roster) if (allCarry[s.id]?.[course.code]) carry[s.id] = allCarry[s.id][course.code];
   const computed = {};
-  for (const s of roster) computed[s.id] = computeStudentResult(items, scores[s.id] || {}, results[s.id] || {}, calcSettings, remedials[s.id] || {}, carry[s.id]);
+  for (const s of roster) computed[s.id] = computeStudentResult(items, scores[s.id] || {}, resultWithAttendance(results[s.id], rates[s.id], course.hours_per_year), calcSettings, remedials[s.id] || {}, carry[s.id]);
   const attendance = await attendanceSummary(env, course.academic_year_id, roster.map((s) => s.id));
-  return { course, settings, items, units, roster, scores, remedials, results, computed, carry, attendance };
+  for (const [sid, r] of Object.entries(rates)) (attendance[sid] ||= {}).rate = r;
+  const { results: edits } = await env.DB.prepare(
+    "SELECT e.id, e.what, e.detail, e.created_at, u.full_name AS by_name FROM gr_course_edits e LEFT JOIN users u ON u.id = e.user_id WHERE e.course_id = ? ORDER BY e.id DESC LIMIT 50"
+  ).bind(course.id).all();
+  return { course, settings, items, units, roster, scores, remedials, results, computed, carry, attendance, edits };
 }
 
 export function gradeSettings(course, settings) {
@@ -283,6 +301,7 @@ export async function yearResultsForStudents(env, yearId, grade, studentIds) {
   }
 
   const carry = await carryoverFor(env, yearId, studentIds);
+  const rates = await attendanceRates(env, yearId, studentIds);
   const bySubject = {};
   for (const c of courses) (bySubject[c.code] ||= []).push(c);
   for (const sid of studentIds) {
@@ -291,7 +310,7 @@ export async function yearResultsForStudents(env, yearId, grade, studentIds) {
       const course = options.find((c) => hasData.has(`${c.id}:${sid}`)) || options.find((c) => c.classroom === roomOf[sid]);
       if (!course) continue;
       const key = `${course.id}:${sid}`;
-      const calc = computeStudentResult(itemsByCourse[course.id] || [], scoreIdx[key] || {}, resIdx[key] || {}, gradeSettings(course, settings), remIdx[key] || {}, carry[sid]?.[code]);
+      const calc = computeStudentResult(itemsByCourse[course.id] || [], scoreIdx[key] || {}, resultWithAttendance(resIdx[key], rates[sid], course.hours_per_year), gradeSettings(course, settings), remIdx[key] || {}, carry[sid]?.[code]);
       out[sid].push({
         course_id: course.id, code: course.code, name: course.name, learning_area: course.learning_area,
         subject_type: course.subject_type, hours_per_year: course.hours_per_year, sort_order: course.sort_order,
@@ -321,6 +340,51 @@ export const ABSENT_CODES = ["ข", "ล", "ป"];
 export async function absenceCounts(env, yearId, studentIds) {
   const sum = await attendanceSummary(env, yearId, studentIds);
   return Object.fromEntries(Object.entries(sum).map(([sid, c]) => [sid, ABSENT_CODES.reduce((a, k) => a + (c[k] || 0), 0)]));
+}
+
+// วันเรียนของปี: จันทร์–ศุกร์ในช่วงภาคเรียน (academic_terms) ที่ไม่ใช่วันหยุด (gr_holidays)
+export async function schoolCalendar(env, yearId) {
+  const [{ results: terms }, { results: holidays }] = await Promise.all([
+    env.DB.prepare("SELECT term_number, start_date, end_date FROM academic_terms WHERE academic_year_id = ? ORDER BY term_number").bind(yearId).all(),
+    env.DB.prepare("SELECT holiday_date, name FROM gr_holidays WHERE academic_year_id = ? ORDER BY holiday_date").bind(yearId).all(),
+  ]);
+  const off = new Map(holidays.map((h) => [h.holiday_date, h.name]));
+  const days = [];
+  for (const t of terms) {
+    for (let d = new Date(`${t.start_date}T00:00:00Z`); d.toISOString().slice(0, 10) <= t.end_date; d.setUTCDate(d.getUTCDate() + 1)) {
+      const iso = d.toISOString().slice(0, 10), wd = d.getUTCDay();
+      if (wd !== 0 && wd !== 6 && !off.has(iso)) days.push(iso);
+    }
+  }
+  return { terms, holidays, off, days, isSchoolDay: (iso) => days.includes(iso) };
+}
+export const thaiToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+
+// ร้อยละการมาเรียน (นับถึงวันนี้): วันเรียน − วันขาด/ลา (ข ล ป; มาสายถือว่ามา) — นักเรียนย้ายเข้านับตั้งแต่วันที่ย้ายเข้า
+// { student_id: { days, absent, pct } } — ยังไม่เปิดภาค (days = 0) ไม่คิด
+export async function attendanceRates(env, yearId, studentIds, today = thaiToday()) {
+  const out = {};
+  if (!studentIds.length) return out;
+  const cal = await schoolCalendar(env, yearId);
+  const elapsed = cal.days.filter((d) => d <= today);
+  const absent = {}, since = {};
+  for (let i = 0; i < studentIds.length; i += 90) {
+    const chunk = studentIds.slice(i, i + 90), ph = chunk.map(() => "?").join(",");
+    const [{ results: rows }, { results: moves }] = await Promise.all([
+      env.DB.prepare(`SELECT student_id, att_date FROM gr_attendance WHERE academic_year_id = ? AND code IN ('ข','ล','ป') AND att_date <= ? AND student_id IN (${ph})`).bind(yearId, today, ...chunk).all(),
+      env.DB.prepare(`SELECT student_id, MAX(move_date) AS d FROM gr_transfers WHERE academic_year_id = ? AND direction = 'in' AND undone_at IS NULL AND move_date IS NOT NULL AND student_id IN (${ph}) GROUP BY student_id`).bind(yearId, ...chunk).all(),
+    ]);
+    for (const r of rows) (absent[r.student_id] ||= []).push(r.att_date);
+    for (const m of moves) since[m.student_id] = m.d;
+  }
+  for (const sid of studentIds) {
+    const from = since[sid] || "";
+    const days = elapsed.filter((d) => d >= from);
+    const set = new Set(days);
+    const a = (absent[sid] || []).filter((d) => set.has(d)).length;
+    out[sid] = { days: days.length, absent: a, pct: days.length ? Math.floor(((days.length - a) / days.length) * 10000) / 100 : null };
+  }
+  return out;
 }
 
 // { student_id: { ข: n, ล: n, ป: n, มส: n } }

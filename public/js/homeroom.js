@@ -391,6 +391,7 @@ async function renderAttendance() {
       </span>
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
+    ${att.holidays?.length ? `<p class="muted small" style="margin:0 0 8px">วันหยุดเดือนนี้ (ไม่แสดงในตาราง): ${att.holidays.map((h) => `${new Date(`${h.holiday_date}T00:00:00`).getDate()} ${esc(h.name)}`).join(" · ")}</p>` : ""}
     ${att.days.length ? `<div class="sheet-wrap"><table class="sheet att-sheet" id="sheet">
       <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
         ${att.days.map((d) => { const dt = new Date(`${d}T00:00:00`); return `<th class="col-head att-day ${d === att.today ? "today" : ""}"><span class="wd">${WD[dt.getDay()]}</span><b>${dt.getDate()}</b></th>`; }).join("")}
@@ -400,7 +401,7 @@ async function renderAttendance() {
         ${att.days.map((d) => { const v = codeOf(s.id, d); return `<td class="cell att ${v ? `c-${v}` : ""} ${d === att.today ? "today" : ""}"><input data-date="${d}" value="${esc(v)}" maxlength="2" autocomplete="off" aria-label="${esc(s.name)} ${d}"></td>`; }).join("")}
         ${Object.keys(ATT).map((k) => `<td class="calc att-sum" data-n="${k}">${c[k] || ""}</td>`).join("")}</tr>`; }).join("")}</tbody>
     </table></div>
-    <p class="muted small" style="margin-top:10px">พิมพ์ ข ล ป หรือ มส (พิมพ์ ส ก็ได้ = มาสาย) แล้วกด Enter ลงไปคนถัดไป · ลูกศรเลื่อนช่อง · ลบตัวอักษร = มาเรียน · วันหยุดราชการไม่ต้องใส่อะไร
+    <p class="muted small" style="margin-top:10px">พิมพ์ ข ล ป หรือ มส (พิมพ์ ส ก็ได้ = มาสาย) แล้วกด Enter ลงไปคนถัดไป · ลูกศรเลื่อนช่อง · ลบตัวอักษร = มาเรียน · วันหยุดที่ฝ่ายวัดผลตั้งไว้จะไม่แสดงในตาราง
       · หนังสือแจ้งผู้ปกครองกรณีขาดเรียน (บค.) พิมพ์ได้ที่ <a href="/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}">คลังเอกสาร</a></p>`
     : `<div class="panel empty"><strong>เดือนนี้ไม่มีวันเรียน</strong>อยู่นอกช่วงภาคเรียน</div>`}`;
   const go = async (m) => { await flush(); attMonth = m; sessionStorage.setItem("sr-hr-month", m); renderAttendance().catch(showError); };

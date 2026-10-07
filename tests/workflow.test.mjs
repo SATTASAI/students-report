@@ -75,20 +75,41 @@ test("ส่ง → ส่งคืนพร้อมเหตุผล → ส�
   await call("t1", "POST", `/api/courses/${c.id}/submit`, { force: true }, { expect: 200 });
   // ครูประเภท teacher อนุมัติไม่ได้ (แม้ได้สิทธิ์ทีมวัดผล)
   await call("t1", "POST", "/api/admin/courses/approve", { course_ids: [c.id] }, { expect: 403 });
+  // ต้องผ่านฝ่ายวัดผลตรวจก่อน ผู้บริหารจึงอนุมัติได้
+  r = await call("admin", "POST", "/api/admin/courses/approve", { course_ids: [c.id] }, { expect: 200 });
+  assert.equal(r.data.approved, 0);
+  await call("t1", "POST", "/api/admin/courses/review", { course_ids: [c.id] }, { expect: 403 });
+  r = await call("admin", "POST", "/api/admin/courses/review", { course_ids: [c.id] }, { expect: 200 });
+  assert.equal(r.data.reviewed, 1);
+  assert.equal((await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data.course.status, "reviewed");
   r = await call("admin", "POST", "/api/admin/courses/approve", { course_ids: [c.id] }, { expect: 200 });
   assert.equal(r.data.approved, 1);
   dd = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
   assert.equal(dd.course.status, "approved");
   const { courses } = (await call("admin", "GET", "/api/admin/courses", null, { expect: 200 })).data;
   assert.equal(courses.find((x) => x.id === c.id).status, "approved");
-  // แก้ย้อนหลัง: ต้องส่งคืนพร้อมเหตุผล แล้วสถานะอนุมัติถูกล้าง
+  // แก้ย้อนหลัง: ครูต้องให้ส่งคืนก่อน
   const e = await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: fin.id, student_id: s[0].id, score: 13 }] }, { expect: 409 });
   assert.ok(e.data.error.includes("อนุมัติ"));
+  // ฝ่ายวัดผลแก้ได้ทันที → บันทึกประวัติ และกลับไปรอผู้บริหารอนุมัติใหม่
+  dd = (await call("admin", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
+  assert.equal(dd.course.can_edit, true);
+  assert.equal(dd.course.admin_edit, true);
+  await call("admin", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: fin.id, student_id: s[0].id, score: 13 }] }, { expect: 200 });
+  dd = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
+  assert.equal(dd.course.status, "reviewed");
+  assert.equal(dd.course.can_edit, false);
+  assert.equal(dd.scores[s[0].id][fin.id], 13);
+  assert.equal(dd.edits[0].what, "แก้คะแนน");
+  assert.equal(dd.edits[0].detail, "1 รายการ");
+  // แก้ไม่สำเร็จ (ผิดรูปแบบ) ไม่บันทึกประวัติ
+  await call("admin", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: fin.id, student_id: s[0].id, score: 99 }] }, { expect: 400 });
+  assert.equal((await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data.edits.length, 1);
   await call("admin", "POST", `/api/admin/courses/${c.id}/return`, { note: "ผู้ปกครองขอตรวจสอบคะแนน" }, { expect: 200 });
   dd = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
   assert.equal(dd.course.approved_at, null);
   const audit = (await call("admin", "GET", "/api/admin/audit", null, { expect: 200 })).data.entries.map((x) => x.action);
-  for (const a of ["course.submit", "course.return", "course.approve", "course.reopen_approved"]) assert.ok(audit.includes(a), a);
+  for (const a of ["course.submit", "course.return", "course.review", "course.approve", "course.admin_edit"]) assert.ok(audit.includes(a), a);
 });
 
 test("สัดส่วนรายวิชา 80:20 (วิชาปฏิบัติ): ภาคละ 40 + 10 และเปลี่ยนไม่ได้เมื่อส่งผลแล้ว", async () => {

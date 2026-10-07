@@ -21,9 +21,9 @@ const GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
 // ส่วนของหน้า เลือกจากเมนูซ้ายผ่าน #hash
 const SECTIONS = {
   start: "เริ่มต้นปีการศึกษา", subjects: "รายวิชา", import: "นำเข้าจาก Excel", courses: "ครูผู้สอน / ส่งคืน", homerooms: "ครูประจำชั้น",
-  moves: "นักเรียนย้ายเข้า/ย้ายออก", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน",
+  students: "รายชื่อนักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียนย้ายเข้า/ย้ายออก", review: "ตรวจผลการเรียน", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน",
 };
-const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super));
+const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves", "students", "calendar"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super));
 let tab = hashTab(allowed, me.role === "exec" && allowed.includes("approve") ? "approve" : "start");
 document.getElementById("tabs")?.classList.add("by-menu");
 if (location.hash === "#activity") location.replace("/activities.html"); // ลิงก์เก่า
@@ -39,7 +39,7 @@ function renderTabs() {
 async function render() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   try {
-    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, bank: renderBank, settings: renderSettings, people: renderPeople, approve: renderApprove, audit: renderAudit })[tab]();
+    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), bank: renderBank, settings: renderSettings, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit })[tab]();
   } catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong>${esc(err.message)}</div>`; }
 }
 
@@ -252,10 +252,12 @@ async function renderSubjects() {
   };
 }
 
-const statusTag = (c) => c.status === "approved" ? '<span class="tag ok">อนุมัติแล้ว</span>'
-  : c.status === "submitted" ? '<span class="tag">ส่งแล้ว รออนุมัติ</span>'
+const statusTag = (c) => (c.status === "approved" ? '<span class="tag ok">อนุมัติแล้ว</span>'
+  : c.status === "reviewed" ? '<span class="tag">ตรวจแล้ว รอผู้บริหาร</span>'
+  : c.status === "submitted" ? '<span class="tag">ส่งแล้ว รอตรวจ</span>'
   : c.return_note ? `<span class="tag warn" title="${esc(c.return_note)}">ส่งคืนให้แก้</span>`
-  : c.item_count ? '<span class="tag">กำลังกรอก</span>' : '<span class="tag warn">ยังไม่ตั้งโครงสร้าง</span>';
+  : c.item_count ? '<span class="tag">กำลังกรอก</span>' : '<span class="tag warn">ยังไม่ตั้งโครงสร้าง</span>')
+  + (c.edit_count ? ` <span class="tag warn" title="ฝ่ายวัดผลแก้ไขหลังส่ง ${c.edit_count} ครั้ง">แก้ ${c.edit_count}</span>` : "");
 
 // ---------- ครูผู้สอน ----------
 let selRoom = sessionStorage.getItem("sr-admin-room") || "";
@@ -275,12 +277,12 @@ async function renderCourses() {
       <td style="min-width:120px"><span class="small muted">${c.progress}%</span><div class="meter ${c.progress >= 100 ? "done" : ""}"><i style="width:${c.progress}%"></i></div></td>
       <td>${statusTag(c)}</td>
       <td class="actions"><button class="btn small" data-teach="${c.id}">ครูผู้สอน</button>${c.locked ? `<button class="btn small" data-unlock="${c.id}">ส่งคืน</button>` : ""}</td></tr>`).join("")}</tbody></table></div>
-    ${me.user.is_super && inRoom.some((c) => c.status === "submitted") ? `<div class="actions" style="margin-top:12px"><button class="btn primary" id="approveRoom">อนุมัติทุกวิชาที่ส่งแล้วของห้อง ${selRoom} (${inRoom.filter((c) => c.status === "submitted").length})</button></div>` : ""}</div>`;
-  const ar = document.getElementById("approveRoom");
+    ${inRoom.some((c) => c.status === "submitted") ? `<div class="actions" style="margin-top:12px"><button class="btn primary" id="reviewRoom">ตรวจแล้วทุกวิชาที่ส่งของห้อง ${selRoom} (${inRoom.filter((c) => c.status === "submitted").length}) → ส่งผู้บริหาร</button></div>` : ""}</div>`;
+  const ar = document.getElementById("reviewRoom");
   if (ar) ar.onclick = async () => {
     const ids = inRoom.filter((c) => c.status === "submitted").map((c) => c.id);
-    if (!(await confirmBox("อนุมัติผลการเรียน", `อนุมัติ ${ids.length} รายวิชาที่ส่งแล้วของห้อง ${selRoom}`, "อนุมัติ"))) return;
-    try { const r = await api("/api/admin/courses/approve", { method: "POST", body: { course_ids: ids } }); toast(`อนุมัติ ${r.approved} รายวิชา`); render(); } catch (err) { showError(err); }
+    if (!(await confirmBox("ตรวจผลการเรียนแล้ว", `ยืนยันว่าตรวจ ${ids.length} รายวิชาที่ส่งแล้วของห้อง ${selRoom} และส่งต่อให้ผู้บริหารอนุมัติ`, "ตรวจแล้ว"))) return;
+    try { const r = await api("/api/admin/courses/review", { method: "POST", body: { course_ids: ids } }); toast(`ส่งต่อผู้บริหาร ${r.reviewed} รายวิชา`); render(); } catch (err) { showError(err); }
   };
   for (const b of view.querySelectorAll("[data-room]")) b.onclick = () => { selRoom = b.dataset.room; sessionStorage.setItem("sr-admin-room", selRoom); render(); };
   const teacherChecks = (chosen) => `<input type="search" placeholder="ค้นหาชื่อครู" data-filter style="margin-bottom:10px">
@@ -335,6 +337,89 @@ async function renderHomerooms() {
     if (!r.ok) return;
     try { await api("/api/admin/homerooms", { method: "PUT", body: { year: Y, grade_level: r0.grade_level, classroom: r0.classroom, user_ids: list.filter((t) => r.data[`t${t.id}`]).map((t) => t.id) } }); toast("บันทึกแล้ว"); render(); } catch (err) { showError(err); }
   };
+}
+
+// ---------- ปฏิทินวันหยุด: ใช้ซ่อนวันหยุดในตารางมาเรียนและคิดร้อยละการมาเรียน / มส ----------
+async function renderCalendar() {
+  const c = await api(`/api/calendar?${yq}`);
+  const th = (d) => new Date(`${d}T00:00:00`).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  // รวมวันติดกันชื่อเดียวกันเป็นช่วงเดียว
+  const groups = [];
+  for (const h of c.holidays) {
+    const g = groups.at(-1);
+    if (g && g.name === h.name && (Date.parse(h.holiday_date) - Date.parse(g.to)) <= 3 * 864e5) { g.to = h.holiday_date; g.dates.push(h.holiday_date); }
+    else groups.push({ name: h.name, from: h.holiday_date, to: h.holiday_date, dates: [h.holiday_date] });
+  }
+  view.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2>ภาคเรียน</h2><span class="muted small">วันเรียนจริงทั้งปี ${c.school_days} วัน (จันทร์–ศุกร์ ไม่รวมวันหยุด)</span></div>
+    <div class="table-wrap"><table class="list"><thead><tr><th>ภาคเรียน</th><th>เปิด</th><th>ปิด</th></tr></thead>
+    <tbody>${c.terms.map((t) => `<tr><td>ภาคเรียนที่ ${t.term_number}</td><td>${th(t.start_date)}</td><td>${th(t.end_date)}</td></tr>`).join("") || '<tr><td colspan="3" class="empty">ยังไม่มีภาคเรียน</td></tr>'}</tbody></table></div>
+    <p class="muted small">วันเปิด–ปิดภาคเรียนแก้ได้ที่ระบบบริหารโรงเรียน (ปีการศึกษา/ภาคเรียน) เพื่อให้ทุกระบบใช้วันเดียวกัน</p></div>
+    <div class="panel"><div class="panel-head"><h2>วันหยุด</h2></div>
+      <form id="holForm" class="form-grid" style="align-items:end">
+        <label class="field">ตั้งแต่วันที่<input type="date" name="from" required></label>
+        <label class="field">ถึงวันที่ (ถ้าหยุดวันเดียวเว้นว่าง)<input type="date" name="to"></label>
+        <label class="field">ชื่อวันหยุด<input name="name" required maxlength="120" placeholder="เช่น วันปิยมหาราช"></label>
+        <button class="btn primary">เพิ่มวันหยุด</button>
+      </form>
+      <p class="muted small">นับเฉพาะวันจันทร์–ศุกร์ · ถ้าครูเคยบันทึกขาด/ลาไว้ในวันนั้น ระบบจะล้างให้ เพราะไม่ใช่วันเรียน</p>
+      <div class="table-wrap"><table class="list"><thead><tr><th>วันที่</th><th>ชื่อ</th><th class="num">วัน</th><th></th></tr></thead>
+      <tbody>${groups.map((g, i) => `<tr><td>${th(g.from)}${g.to !== g.from ? ` – ${th(g.to)}` : ""}</td><td>${esc(g.name)}</td><td class="num">${g.dates.length}</td>
+        <td><button class="btn small" data-delg="${i}">ลบ</button></td></tr>`).join("") || '<tr><td colspan="4" class="empty">ยังไม่มีวันหยุด</td></tr>'}</tbody></table></div></div>`;
+  document.getElementById("holForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    try { const r = await api(`/api/calendar?${yq}`, { method: "POST", body: { from: f.from, to: f.to || f.from, name: f.name } }); toast(`เพิ่มวันหยุด ${r.added} วัน`); render(); } catch (err) { showError(err); }
+  };
+  for (const b of view.querySelectorAll("[data-delg]")) b.onclick = async () => {
+    const g = groups[Number(b.dataset.delg)];
+    if (!(await confirmBox("ลบวันหยุด", `ลบ "${esc(g.name)}" ${g.dates.length} วัน`, "ลบ", true))) return;
+    try { for (const d of g.dates) await api(`/api/calendar/${d}?${yq}`, { method: "DELETE" }); toast("ลบแล้ว"); render(); } catch (err) { showError(err); }
+  };
+}
+
+// ---------- รายชื่อนักเรียน: แก้ชื่อ เพศ ห้อง เลขที่ (เขียนลงทะเบียนเดียวกับระบบบริหารโรงเรียน) ----------
+let rosterRoom = sessionStorage.getItem("sr-admin-roster") || "";
+async function renderStudents() {
+  const base = await api(`/api/roster?${yq}`);
+  if (!base.rooms.length) { view.innerHTML = `<div class="panel empty"><strong>ยังไม่มีห้องเรียน</strong>เพิ่มนักเรียนที่ระบบบริหารโรงเรียนก่อน</div>`; return; }
+  const key = (r) => `${r.grade_level}/${r.classroom}`;
+  if (!base.rooms.some((r) => key(r) === rosterRoom)) rosterRoom = key(base.rooms.find((r) => r.grade_level.startsWith("ป.")) || base.rooms[0]);
+  const [g, rm] = rosterRoom.split("/");
+  const d = await api(`/api/roster?${yq}&grade=${encodeURIComponent(g)}&room=${encodeURIComponent(rm)}`);
+  const roomOpts = (cur) => d.rooms.map((r) => `<option value="${esc(key(r))}" ${key(r) === cur ? "selected" : ""}>${esc(key(r))}</option>`).join("");
+  view.innerHTML = `<div class="panel">
+    <div class="panel-head"><div class="actions">${d.rooms.map((r) => `<button class="btn small ${key(r) === rosterRoom ? "primary" : ""}" data-rr="${esc(key(r))}">${esc(key(r))}</button>`).join("")}</div></div>
+    <p class="muted small">แก้แล้วบันทึกทันที และแก้ในระบบบริหารโรงเรียนด้วย (ข้อมูลชุดเดียวกัน) · เลขที่ว่าง = เรียงอัตโนมัติ (${"ชายก่อนหญิง แล้วตามเลขประจำตัว"} — เปลี่ยนวิธีเรียงได้ที่ "เกณฑ์และผู้ลงนาม") ใส่เลขที่เองเพื่อตรึงไว้
+      · ย้ายห้องภายในโรงเรียน: เลือกห้องใหม่ · นักเรียนย้ายออก/ย้ายเข้าใช้เมนู "นักเรียนย้ายเข้า/ย้ายออก"</p>
+    <div class="table-wrap"><table class="list roster-edit"><thead><tr><th class="num">เลขที่</th><th>เลขประจำตัว</th><th>คำนำหน้า</th><th>ชื่อ</th><th>นามสกุล</th><th>เพศ</th><th>ห้อง</th></tr></thead>
+    <tbody>${d.students.map((s) => `<tr data-sid="${s.id}">
+      <td class="num"><input data-f="number" inputmode="numeric" value="${s.manual_number ?? ""}" placeholder="${s.number ?? ""}" aria-label="เลขที่ ${esc(s.name)}" style="width:56px;text-align:center"></td>
+      <td>${esc(s.student_code)}${s.transfer_in_term ? ' <span class="tag">ย้ายเข้า</span>' : ""}</td>
+      <td><input data-f="name_prefix" list="prefixList" value="${esc(s.name_prefix)}" style="width:96px" aria-label="คำนำหน้า"></td>
+      <td><input data-f="first_name" value="${esc(s.first_name)}" aria-label="ชื่อ"></td>
+      <td><input data-f="last_name" value="${esc(s.last_name)}" aria-label="นามสกุล"></td>
+      <td><select data-f="gender" style="width:70px" aria-label="เพศ"><option value="">–</option><option ${s.gender === "ช" ? "selected" : ""} value="ช">ช</option><option ${s.gender === "ญ" ? "selected" : ""} value="ญ">ญ</option></select></td>
+      <td><select data-f="room" style="width:96px" aria-label="ห้อง">${roomOpts(rosterRoom)}</select></td></tr>`).join("")}</tbody></table></div>
+    <datalist id="prefixList">${d.prefixes.map((p) => `<option value="${esc(p)}">`).join("")}</datalist></div>`;
+  for (const b of view.querySelectorAll("[data-rr]")) b.onclick = () => { rosterRoom = b.dataset.rr; sessionStorage.setItem("sr-admin-roster", rosterRoom); render(); };
+  view.querySelector("tbody").addEventListener("change", async (e) => {
+    const el = e.target, tr = el.closest("tr"), f = el.dataset.f;
+    if (!f) return;
+    let body;
+    if (f === "room") {
+      const [grade_level, classroom] = el.value.split("/");
+      if (!(await confirmBox("ย้ายห้อง", `ย้ายนักเรียนไปห้อง ${esc(el.value)} — คะแนนที่กรอกไว้ในห้องเดิมยังอยู่ (แสดงเป็น "ย้ายห้อง")`, "ย้ายห้อง"))) { el.value = rosterRoom; return; }
+      body = { grade_level, classroom };
+    } else body = { [f]: el.value.trim() };
+    try {
+      el.disabled = true;
+      const r = await api(`/api/roster/${tr.dataset.sid}?${yq}`, { method: "PUT", body });
+      toast(r.moved ? "ย้ายห้องแล้ว" : "บันทึกแล้ว");
+      if (f === "number" || r.moved) render();
+    } catch (err) { showError(err); if (f === "number") render(); }
+    finally { el.disabled = false; }
+  });
 }
 
 // ---------- นักเรียนย้ายเข้า / ย้ายออก / ออกกลางคัน (soft delete) ----------
@@ -516,35 +601,44 @@ async function renderPeople() {
 }
 
 // ---------- อนุมัติผลการเรียน (ผู้บริหาร) ----------
-async function renderApprove() {
+// mode "review" = ฝ่ายวัดผลตรวจรายวิชาที่ครูส่ง · "approve" = ผู้บริหารอนุมัติรายวิชาที่ตรวจแล้ว
+async function renderApprove(mode = "approve") {
   const { courses } = await api(`/api/admin/courses?${yq}`);
-  const waiting = courses.filter((c) => c.status === "submitted");
-  const done = courses.filter((c) => c.status === "approved");
+  const R = mode === "review";
+  const waiting = courses.filter((c) => c.status === (R ? "submitted" : "reviewed"));
+  const done = courses.filter((c) => (R ? ["reviewed", "approved"] : ["approved"]).includes(c.status));
+  const later = R ? 0 : courses.filter((c) => c.status === "submitted").length;
+  const verb = R ? "ตรวจแล้ว ส่งผู้บริหาร" : "อนุมัติ";
   const rooms = [...new Set(waiting.map((c) => `${c.grade_level}/${c.classroom}`))];
   view.innerHTML = `<div class="panel">
-    <div class="panel-head"><h2>รอการอนุมัติ <span class="tag">${waiting.length} รายวิชา</span></h2>
-      ${waiting.length ? '<div class="actions"><label class="check"><input type="checkbox" id="allChk"> เลือกทั้งหมด</label><button class="btn primary" id="approveSel" disabled>อนุมัติที่เลือก</button></div>' : ""}</div>
+    <div class="panel-head"><h2>${R ? "รอฝ่ายวัดผลตรวจ" : "รอการอนุมัติ"} <span class="tag">${waiting.length} รายวิชา</span></h2>
+      ${waiting.length ? `<div class="actions"><label class="check"><input type="checkbox" id="allChk"> เลือกทั้งหมด</label><button class="btn primary" id="approveSel" disabled>${verb}ที่เลือก</button></div>` : ""}</div>
+    <p class="muted small">${R ? "เปิด ปพ.5 หรือหน้ารายวิชาเพื่อตรวจ แก้ได้เลยโดยไม่ต้องส่งคืน (ระบบบันทึกประวัติให้ครูเห็น) หรือส่งคืนพร้อมเหตุผลให้ครูแก้เอง"
+      : `อนุมัติได้เฉพาะรายวิชาที่ฝ่ายวัดผลตรวจแล้ว${later ? ` · ยังรอฝ่ายวัดผลตรวจอีก ${later} รายวิชา` : ""}`}</p>
     ${waiting.length ? rooms.map((r) => `<h3 style="margin-top:14px">${esc(r)}</h3>
-      <div class="table-wrap"><table class="list"><thead><tr><th style="width:36px"></th><th>รหัส</th><th>วิชา</th><th>ครูผู้สอน</th><th>ส่งเมื่อ</th><th></th></tr></thead>
+      <div class="table-wrap"><table class="list"><thead><tr><th style="width:36px"></th><th>รหัส</th><th>วิชา</th><th>ครูผู้สอน</th><th>${R ? "ส่งเมื่อ" : "ตรวจเมื่อ"}</th><th></th></tr></thead>
       <tbody>${waiting.filter((c) => `${c.grade_level}/${c.classroom}` === r).map((c) => `<tr>
         <td><input type="checkbox" class="pick" value="${c.id}" aria-label="เลือก ${esc(c.code)}" style="width:18px;height:18px;min-height:0"></td>
-        <td>${esc(c.code)}</td><td><a href="/course.html?id=${c.id}&year=${Y}">${esc(c.name)}</a></td>
-        <td class="small">${c.teachers.map((t) => esc(t.full_name)).join(", ")}</td><td class="small muted">${esc(String(c.submitted_at || "").slice(0, 16))}</td>
+        <td>${esc(c.code)}</td><td><a href="/course.html?id=${c.id}&year=${Y}">${esc(c.name)}</a>${c.edit_count ? ` <span class="tag warn" title="ฝ่ายวัดผลแก้ไขหลังส่ง">แก้ ${c.edit_count}</span>` : ""}</td>
+        <td class="small">${c.teachers.map((t) => esc(t.full_name)).join(", ")}</td><td class="small muted">${esc(String((R ? c.submitted_at : c.reviewed_at) || "").slice(0, 16))}</td>
         <td class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/pp5.html?course=${c.id}">ตรวจ ปพ.5</a></td></tr>`).join("")}</tbody></table></div>`).join("")
-      : `<div class="empty"><strong>ไม่มีรายวิชารออนุมัติ</strong>เมื่อครูส่งผลแล้ว รายวิชาจะขึ้นที่นี่</div>`}
+      : `<div class="empty"><strong>${R ? "ไม่มีรายวิชารอตรวจ" : "ไม่มีรายวิชารออนุมัติ"}</strong>${R ? "เมื่อครูส่งผลแล้ว รายวิชาจะขึ้นที่นี่" : "เมื่อฝ่ายวัดผลตรวจแล้ว รายวิชาจะขึ้นที่นี่"}</div>`}
   </div>
-  <div class="panel"><div class="panel-head"><h2>อนุมัติแล้ว <span class="tag ok">${done.length}</span></h2></div>
-    <p class="muted small">ถ้าต้องแก้ผลหลังอนุมัติ ให้ฝ่ายวิชาการส่งคืนพร้อมเหตุผลจากหน้ารายวิชา แล้วอนุมัติใหม่</p></div>`;
+  <div class="panel"><div class="panel-head"><h2>${R ? "ตรวจแล้ว" : "อนุมัติแล้ว"} <span class="tag ok">${done.length}</span></h2></div>
+    <p class="muted small">${R ? "รายวิชาที่ตรวจแล้วรอผู้บริหารอนุมัติ ถ้าฝ่ายวัดผลแก้คะแนนหลังอนุมัติ รายวิชาจะกลับมารอผู้บริหารอนุมัติใหม่" : "ถ้าฝ่ายวัดผลแก้ผลหลังอนุมัติ รายวิชาจะกลับมาขึ้นในรายการรออนุมัติอีกครั้ง"}</p></div>`;
   const picks = () => [...view.querySelectorAll(".pick")];
-  const sync = () => { const n = picks().filter((p) => p.checked).length; const b = document.getElementById("approveSel"); if (b) { b.disabled = !n; b.textContent = n ? `อนุมัติที่เลือก (${n})` : "อนุมัติที่เลือก"; } };
+  const sync = () => { const n = picks().filter((p) => p.checked).length; const b = document.getElementById("approveSel"); if (b) { b.disabled = !n; b.textContent = n ? `${verb}ที่เลือก (${n})` : `${verb}ที่เลือก`; } };
   for (const p of picks()) p.onchange = sync;
   const all = document.getElementById("allChk");
   if (all) all.onchange = () => { for (const p of picks()) p.checked = all.checked; sync(); };
   const btn = document.getElementById("approveSel");
   if (btn) btn.onclick = async () => {
     const ids = picks().filter((p) => p.checked).map((p) => Number(p.value));
-    if (!(await confirmBox("อนุมัติผลการเรียน", `อนุมัติ ${ids.length} รายวิชา`, "อนุมัติ"))) return;
-    try { const r = await api("/api/admin/courses/approve", { method: "POST", body: { course_ids: ids } }); toast(`อนุมัติ ${r.approved} รายวิชา`); render(); } catch (err) { showError(err); }
+    if (!(await confirmBox(R ? "ตรวจผลการเรียนแล้ว" : "อนุมัติผลการเรียน", `${verb} ${ids.length} รายวิชา`, R ? "ตรวจแล้ว" : "อนุมัติ"))) return;
+    try {
+      const r = await api(`/api/admin/courses/${R ? "review" : "approve"}`, { method: "POST", body: { course_ids: ids } });
+      toast(R ? `ส่งต่อผู้บริหาร ${r.reviewed} รายวิชา` : `อนุมัติ ${r.approved} รายวิชา`); render();
+    } catch (err) { showError(err); }
   };
 }
 

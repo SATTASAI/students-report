@@ -14,7 +14,7 @@ catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดไ
 
 const enc = encodeURIComponent;
 const roomQ = (r) => `year=${Y}&grade=${enc(r.grade_level)}&room=${enc(r.classroom)}`;
-const STATUS = { approved: '<span class="tag ok">อนุมัติแล้ว</span>', submitted: '<span class="tag">รออนุมัติ</span>', draft: '<span class="tag warn">ร่าง</span>' };
+const STATUS = { approved: '<span class="tag ok">อนุมัติแล้ว</span>', reviewed: '<span class="tag">รอผู้บริหาร</span>', submitted: '<span class="tag">รอตรวจ</span>', draft: '<span class="tag warn">ร่าง</span>' };
 const link = (href, label, cls = "") => `<a class="btn small ${cls}" target="_blank" rel="noopener" href="${href}">${ICONS.print} ${label}</a>`;
 const want = params().get("room"); // ?room=ป.4/2 เลื่อนไปห้องนั้น
 

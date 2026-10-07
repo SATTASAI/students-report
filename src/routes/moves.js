@@ -16,7 +16,7 @@ export const MOVE_LABEL = { new: "ย้ายเข้า (นักเรี�
 const maskId = (v) => { const s = String(v || "").replace(/\D/g, ""); return s.length === 13 ? `${s[0]}-xxxx-xxxxx-${s.slice(10, 12)}-${s[12]}` : (s ? "xxxx" + s.slice(-3) : ""); };
 const dateOrNull = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : null);
 
-async function rosterTerm(env, yearId) {
+export async function rosterTerm(env, yearId) {
   // ภาคล่าสุดของปีที่มีรายชื่อนักเรียนแล้ว (ใช้เป็นภาคที่แก้สถานะ)
   return env.DB.prepare(
     `SELECT t.id, t.term_number FROM academic_terms t
@@ -25,7 +25,7 @@ async function rosterTerm(env, yearId) {
   ).bind(yearId).first();
 }
 
-async function latestInYear(env, yearId, studentId) {
+export async function latestInYear(env, yearId, studentId) {
   return env.DB.prepare(
     `SELECT se.grade_level, se.classroom, se.status, se.academic_term_id, t.term_number FROM student_enrollments se
        JOIN academic_terms t ON t.id = se.academic_term_id
@@ -34,7 +34,7 @@ async function latestInYear(env, yearId, studentId) {
 }
 
 // ตั้งสถานะ/ห้องของนักเรียนในภาคที่มีรายชื่อ (upsert) + ระเบียนหลัก
-function enrollStatements(env, yearId, term, studentId, grade, room, status) {
+export function enrollStatements(env, yearId, term, studentId, grade, room, status) {
   return [
     env.DB.prepare(
       `INSERT INTO student_enrollments (student_id, academic_year_id, academic_term_id, grade_level, classroom, status)

@@ -1,6 +1,6 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll } from "../lib/http.js";
 import { assertCourseAccess, courseBundle, loadCourse, canViewCourse, studentName } from "../lib/data.js";
-import { computeStudentResult, validateRemedial, structureIssues, indicatorWord, indicatorResult, submissionChecks } from "../../public/js/grading.js";
+import { computeStudentResult, resultWithAttendance, validateRemedial, structureIssues, indicatorWord, indicatorResult, submissionChecks } from "../../public/js/grading.js";
 import { gradeSettings, getSettings, assessmentsFor } from "../lib/data.js";
 import { ADMIN_ROLES } from "../lib/http.js";
 
@@ -8,7 +8,8 @@ const MAX_ITEMS_PER_COURSE = 80;
 
 function serializeBundle(b, user) {
   return {
-    course: { ...b.course, can_edit: !b.course.locked && (b.settings.entry_open || user.is_admin) },
+    course: { ...b.course, can_edit: (!b.course.locked && (b.settings.entry_open || user.is_admin)) || (b.course.locked && !!user.can_import), admin_edit: !!(b.course.locked && user.can_import) },
+    edits: b.edits || [],
     can_approve: ADMIN_ROLES.includes(user.role),
     structure_issues: structureIssues(b.items, b.course.collect_ratio, indicatorWord(b.course.grade_level)),
     assessments: b.assessments || {},
@@ -95,7 +96,29 @@ async function readStructure(env, courseId, terms = [1, 2]) {
   };
 }
 
+// ฝ่ายวัดผลแก้รายวิชาที่ส่งแล้ว: บันทึกประวัติ (ครูเห็นในหน้ารายวิชา) และถ้าอนุมัติแล้วให้กลับไปรอผู้บริหารอนุมัติใหม่
+const EDIT_WHAT = {
+  scores: "แก้คะแนน", results: "แก้ผลพิเศษ/ผลแก้ตัว", items: "แก้โครงสร้างคะแนน", "items-order": "จัดลำดับช่องคะแนน",
+  "copy-items": "คัดลอกโครงสร้างคะแนน", units: "แก้หน่วยการเรียนรู้", "apply-template": "ใช้แม่แบบโครงสร้าง",
+};
 export async function handleCourses(request, env, user, parts, method, url) {
+  const copy = method !== "GET" ? request.clone() : null;
+  const res = await handleCoursesInner(request, env, user, parts, method, url);
+  const edit = user?._adminEdit;
+  if (edit && method !== "GET" && res.status < 300) {
+    const what = EDIT_WHAT[parts[3]] || "แก้ไขข้อมูลรายวิชา";
+    let detail = null;
+    try { const b = await copy.json(); detail = Array.isArray(b?.changes) ? `${b.changes.length} รายการ` : null; } catch {}
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO gr_course_edits (course_id, user_id, what, detail) VALUES (?,?,?,?)").bind(edit.course_id, user.id, what, detail),
+      ...(edit.approved ? [env.DB.prepare("UPDATE gr_courses SET approved_at = NULL, approved_by = NULL WHERE id = ?").bind(edit.course_id)] : []),
+    ]);
+    await audit(env, user, "course.admin_edit", { course: edit.course_id, what, detail, reapprove: edit.approved });
+  }
+  return res;
+}
+
+async function handleCoursesInner(request, env, user, parts, method, url) {
   requireUser(user);
   const id = intParam(parts[2]);
   const sub = parts[3];
@@ -378,7 +401,7 @@ export async function handleCourses(request, env, user, parts, method, url) {
         const type = c.remedial_type || null, grade = c.remedial_grade === "" || c.remedial_grade == null ? null : String(c.remedial_grade);
         if (type || grade) {
           // ตรวจกับผลเดิม (ก่อนแก้) ที่คำนวณจากคะแนนจริง
-          const original = computeStudentResult(bundle.items, bundle.scores[sid] || {}, { ...next, remedial_grade: null }, { ...settings, finalized: true }, bundle.remedials[sid] || {}, bundle.carry?.[sid]).original_grade;
+          const original = computeStudentResult(bundle.items, bundle.scores[sid] || {}, resultWithAttendance({ ...next, remedial_grade: null }, bundle.attendance?.[sid]?.rate, bundle.course.hours_per_year), { ...settings, finalized: true }, bundle.remedials[sid] || {}, bundle.carry?.[sid]).original_grade;
           const err = validateRemedial(original, type, grade);
           if (err) fail(400, `${studentName(bundle.roster.find((s) => s.id === sid))}: ${err}`);
           next.remedial_type = type; next.remedial_grade = grade;
@@ -416,7 +439,7 @@ export async function handleCourses(request, env, user, parts, method, url) {
     if (warn && !b.force) {
       return json({ error: "ตรวจพบรายการที่ควรดูก่อนส่ง", needs_confirm: true, checks, pending: pending.map((x) => x.name) }, 409);
     }
-    await env.DB.prepare("UPDATE gr_courses SET locked = 1, submitted_at = datetime('now'), submitted_by = ?, approved_at = NULL, approved_by = NULL WHERE id = ?").bind(user.id, course.id).run();
+    await env.DB.prepare("UPDATE gr_courses SET locked = 1, submitted_at = datetime('now'), submitted_by = ?, approved_at = NULL, approved_by = NULL, reviewed_at = NULL, reviewed_by = NULL WHERE id = ?").bind(user.id, course.id).run();
     await audit(env, user, "course.submit", { course: course.id, blanks: pending.length, decimals: checks.decimals.length, borderline: checks.borderline.length, ms: checks.ms.length });
     return json(serializeBundle(await courseBundle(env, await loadCourse(env, course.id)), user));
   }

@@ -126,7 +126,8 @@ function book(d) {
       <div><b>การพิจารณา/สั่งการ</b>${decision(`ผู้อำนวยการโรงเรียน${esc((s.school_name || "บ้านป่าเด็ง").replace(/^โรงเรียน/, ""))}`, s.director_name)}</div>
     </div>
     ${c.status === "approved" ? `<div class="sys-note">อนุมัติในระบบ${c.approved_by_name ? ` โดย ${esc(c.approved_by_name)}` : ""} เมื่อ ${esc(td(String(c.approved_at).slice(0, 10)))}</div>`
-      : c.status === "submitted" ? `<div class="sys-note">ส่งผลในระบบแล้ว รอผู้บริหารอนุมัติ</div>` : ""}
+      : c.status === "reviewed" ? `<div class="sys-note">ฝ่ายวัดผลตรวจแล้ว${c.reviewed_by_name ? ` (${esc(c.reviewed_by_name)})` : ""} รอผู้บริหารอนุมัติ</div>`
+      : c.status === "submitted" ? `<div class="sys-note">ส่งผลในระบบแล้ว รอฝ่ายวัดผลตรวจ</div>` : ""}
   </section>`;
 
   // ---------- 6. ผลการประเมินตัวชี้วัด (รายภาค, หน้าละไม่เกิน 6 ตัว) ----------

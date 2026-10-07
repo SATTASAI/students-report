@@ -186,6 +186,13 @@ export function computeStudentResult(items, scores, result, settings, remedials,
   };
 }
 
+// เวลาเรียนรายวิชาจากการมาเรียนของครูประจำชั้น (ครูผู้สอนไม่กรอกชั่วโมง): ชั่วโมงเต็ม × ร้อยละการมาเรียน
+// ใช้เฉพาะเมื่อไม่มี hours_attended ที่บันทึกไว้เดิม · rate = { pct } จาก attendanceRates (null = ยังไม่เปิดภาค)
+export function resultWithAttendance(result, rate, hoursPerYear) {
+  if (!rate || rate.pct == null || (result && result.hours_attended != null && result.hours_attended !== "")) return result || {};
+  return { ...(result || {}), hours_attended: Math.floor(Number(hoursPerYear || 0) * rate.pct) / 100 };
+}
+
 // ตรวจโครงสร้างคะแนนก่อนยืนยันผล: คะแนนเต็มของแต่ละภาคต้องตรงสัดส่วน (เช่น 35 + 15 = 50)
 // เพื่อไม่ให้ระบบต้องย่อขยายคะแนน (ซึ่งทำให้เกิดทศนิยมเอง)
 export function structureIssues(items, collectRatio, word = "ตัวชี้วัด") {

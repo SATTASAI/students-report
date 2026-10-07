@@ -1,5 +1,5 @@
 import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, fmt, ICONS, params, withYear } from "/js/app.js";
-import { computeStudentResult, NUMERIC_GRADES, indicatorWord, indicatorResult, structureIssues, indicatorPassPct, remedialCap } from "/js/grading.js";
+import { computeStudentResult, resultWithAttendance, NUMERIC_GRADES, indicatorWord, indicatorResult, structureIssues, indicatorPassPct, remedialCap } from "/js/grading.js";
 import { parseIndicatorLines } from "/js/indicators.js";
 
 const me = await shell("home");
@@ -44,18 +44,21 @@ function renderHeader() {
   const note = document.getElementById("lockNote");
   const when = (t) => t ? ` เมื่อ ${String(t).slice(0, 16).replace("T", " ")}` : "";
   note.className = "note";
-  if (c.status === "approved") {
-    sb.innerHTML = data.is_admin ? `${ICONS.lock} ส่งคืนเพื่อแก้ผลย้อนหลัง` : `${ICONS.lock} อนุมัติผลแล้ว`;
-    sb.disabled = !data.is_admin; sb.onclick = returnCourse;
-    note.hidden = false; note.classList.add("ok");
-    note.textContent = `อนุมัติผลแล้ว${c.approved_by_name ? ` โดย ${c.approved_by_name}` : ""}${when(c.approved_at)} — แก้ไขได้เมื่อฝ่ายวิชาการส่งคืนพร้อมเหตุผล`;
-  } else if (c.status === "submitted") {
-    sb.innerHTML = data.can_approve ? `${ICONS.lock} อนุมัติผล` : data.is_admin ? `${ICONS.lock} ส่งคืนให้ครูแก้` : `${ICONS.lock} ส่งแล้ว รออนุมัติ`;
-    sb.disabled = !data.is_admin && !data.can_approve;
-    sb.onclick = data.can_approve ? approveCourse : returnCourse;
+  if (c.locked) {
+    // ครูส่ง → ฝ่ายวัดผลตรวจ → ผู้บริหารอนุมัติ
+    const by = (name, t) => `${name ? ` โดย ${esc(name)}` : ""}${esc(when(t))}`;
+    const line = c.status === "approved" ? `อนุมัติผลแล้ว${by(c.approved_by_name, c.approved_at)}`
+      : c.status === "reviewed" ? `ฝ่ายวัดผลตรวจแล้ว${by(c.reviewed_by_name, c.reviewed_at)} รอผู้บริหารอนุมัติ`
+      : `ส่งผลแล้ว${by(c.submitted_by_name, c.submitted_at)} รอฝ่ายวัดผลตรวจ`;
+    if (c.status === "submitted" && data.is_admin) { sb.innerHTML = `${ICONS.check || ICONS.lock} ตรวจแล้ว ส่งผู้บริหาร`; sb.disabled = false; sb.onclick = reviewCourse; }
+    else if (c.status === "reviewed" && data.can_approve) { sb.innerHTML = `${ICONS.lock} อนุมัติผล`; sb.disabled = false; sb.onclick = approveCourse; }
+    else { sb.innerHTML = `${ICONS.lock} ${c.status === "approved" ? "อนุมัติผลแล้ว" : c.status === "reviewed" ? "รอผู้บริหารอนุมัติ" : "ส่งแล้ว รอตรวจ"}`; sb.disabled = true; }
     note.hidden = false;
-    note.innerHTML = `ส่งผลแล้ว${c.submitted_by_name ? ` โดย ${esc(c.submitted_by_name)}` : ""}${esc(when(c.submitted_at))} รอผู้บริหารอนุมัติ — ครูแก้ไขไม่ได้จนกว่าฝ่ายวิชาการจะส่งคืน
-      ${data.can_approve ? ' <button class="btn small" id="returnLink">ส่งคืนให้ครูแก้</button>' : ""}`;
+    if (c.status === "approved") note.classList.add("ok");
+    note.innerHTML = `${line}${c.admin_edit
+      ? `<br><b>คุณแก้ไขได้ในฐานะฝ่ายวัดผล</b> — ทุกการแก้ไขจะถูกบันทึกให้ครูผู้สอนเห็น${c.status === "approved" ? " และต้องให้ผู้บริหารอนุมัติใหม่" : ""}`
+      : " — ครูแก้ไขไม่ได้จนกว่าฝ่ายวัดผลจะส่งคืน"}
+      ${data.is_admin ? ' <button class="btn small" id="returnLink">ส่งคืนให้ครูแก้</button>' : ""}`;
     const rl = document.getElementById("returnLink");
     if (rl) rl.onclick = returnCourse;
   } else {
@@ -73,6 +76,14 @@ function renderHeader() {
   }
 }
 
+function renderEdits() {
+  let box = document.getElementById("editLog");
+  if (!data.edits?.length) { box?.remove(); return; }
+  if (!box) { box = document.createElement("details"); box.id = "editLog"; box.className = "note"; document.getElementById("lockNote").after(box); }
+  box.innerHTML = `<summary>ฝ่ายวัดผลแก้ไขรายวิชานี้ ${data.edits.length} ครั้ง (ล่าสุด ${esc(String(data.edits[0].created_at).slice(0, 16))})</summary>
+    <ul class="small" style="margin:8px 0 0;padding-left:20px">${data.edits.map((e) => `<li>${esc(String(e.created_at).slice(0, 16))} · ${esc(e.by_name || "")} · ${esc(e.what)}${e.detail ? ` (${esc(e.detail)})` : ""}</li>`).join("")}</ul>`;
+}
+
 function renderTabs() {
   for (const b of document.querySelectorAll("#tabs button")) {
     b.setAttribute("aria-selected", String(b.dataset.tab === tab));
@@ -87,7 +98,7 @@ function render() {
   else renderSetup();
 }
 
-const editable = () => data.course.can_edit && !data.course.locked;
+const editable = () => !!data.course.can_edit; // ฝ่ายวัดผลแก้รายวิชาที่ส่งแล้วได้ (server ส่ง can_edit มาให้)
 // ต้องตรงกับ gradeSettings() ฝั่งเซิร์ฟเวอร์ทุกค่า เพื่อให้ตัวเลขบนจอ = ตัวเลขในเอกสาร
 const settingsForCalc = () => ({
   collect_ratio: data.course.collect_ratio, hours_per_year: data.course.hours_per_year,
@@ -98,7 +109,7 @@ const studentScores = (sid) => data.scores[sid] || (data.scores[sid] = {});
 const studentRemedials = (sid) => data.remedials?.[sid] || {};
 const unitOf = (it) => (data.units || []).find((u) => u.id === it.unit_id);
 function recompute(sid) {
-  data.computed[sid] = computeStudentResult(data.items, studentScores(sid), data.results[sid] || {}, settingsForCalc(), studentRemedials(sid), data.carry?.[sid]);
+  data.computed[sid] = computeStudentResult(data.items, studentScores(sid), resultWithAttendance(data.results[sid], data.attendance?.[sid]?.rate, data.course.hours_per_year), settingsForCalc(), studentRemedials(sid), data.carry?.[sid]);
   return data.computed[sid];
 }
 const statusTag = (s) => s.transfer_in_term ? ` <span class="tag" title="ย้ายเข้าระหว่างปี">ย้ายเข้าภาค ${s.transfer_in_term}</span>`
@@ -325,10 +336,13 @@ function showSaveState(err) {
 
 // การมาเรียนจากบันทึกของครูประจำชั้น: แสดงจำนวนวันขาด/ลา ชี้แล้วเห็นรายละเอียด
 function attText(sid) {
-  const a = data.attendance?.[sid] || {};
+  const a = data.attendance?.[sid] || {}, rate = a.rate;
   const off = (a["ข"] || 0) + (a["ล"] || 0) + (a["ป"] || 0);
   const detail = [["ข", "ขาด"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]].filter(([k]) => a[k]).map(([k, l]) => `${l} ${a[k]}`).join(" · ");
-  return detail ? `<span data-tip="${esc(detail)} (วัน)" tabindex="0">${off || 0}</span>` : "–";
+  if (!rate || rate.pct == null) return detail ? `<span data-tip="${esc(detail)} (วัน)" tabindex="0">${off}</span>` : "–";
+  const low = rate.pct < Number(data.settings.attendance_pass_pct);
+  const tip = `มาเรียน ${rate.days - rate.absent}/${rate.days} วัน (${rate.pct}%) นับถึงวันนี้${detail ? ` · ${detail}` : ""}`;
+  return `<span data-tip="${esc(tip)}" tabindex="0" ${low ? 'style="color:var(--bad);font-weight:700"' : ""}>${fmt(rate.pct)}%</span>`;
 }
 
 // ---------------- สรุปผล / ร มส / แก้ตัว ----------------
@@ -341,13 +355,13 @@ function renderSummary() {
   view.innerHTML = `
     <div class="panel" style="margin-bottom:14px">
       <div class="actions">${[...NUMERIC_GRADES, "ร", "มส"].map((g) => `<span>${gradeBadge(g)} <span class="num">${counts[g] || 0}</span></span>`).join("")}</div>
-      <p class="muted small" style="margin:10px 0 0">การมาเรียนดึงจากบันทึกของครูประจำชั้น (ครูผู้สอนไม่ต้องเช็กชื่อ) · ถ้านักเรียนเวลาเรียนไม่ถึง ${data.settings.attendance_pass_pct}% ให้เลือกผลพิเศษ มส
+      <p class="muted small" style="margin:10px 0 0">การมาเรียนคิดจากบันทึกของครูประจำชั้นและปฏิทินวันหยุด (ครูผู้สอนไม่ต้องเช็กชื่อ) — มาเรียนต่ำกว่า ${data.settings.attendance_pass_pct}% ระบบให้ผล มส อัตโนมัติ
         · คะแนนรวมไม่ปัดเศษ เช่น 79.99 ได้เกรด 3.5</p>
     </div>
     <div class="table-wrap">
       <table class="list">
         <thead><tr><th class="num">เลขที่</th><th>ชื่อ–สกุล</th><th class="num">ระหว่างภาค (${c.collect_ratio})</th><th class="num">ปลายภาค (${100 - c.collect_ratio})</th>
-          <th class="num">รวม</th><th class="num">ขาด/ลา (วัน)</th><th>ผลพิเศษ</th><th>ผลเดิม</th><th>แก้ไข/ซ่อม</th><th>ผลการเรียน</th><th>หมายเหตุ</th></tr></thead>
+          <th class="num">รวม</th><th class="num">มาเรียน</th><th>ผลพิเศษ</th><th>ผลเดิม</th><th>แก้ไข/ซ่อม</th><th>ผลการเรียน</th><th>หมายเหตุ</th></tr></thead>
         <tbody>${data.students.map((s) => {
           const k = data.computed[s.id], r = data.results[s.id] || {};
           const failed = k.failed_indicators.length;
@@ -729,6 +743,15 @@ async function returnCourse() {
   } catch (err) { showError(err); }
 }
 
+async function reviewCourse() {
+  if (!(await confirmBox("ตรวจผลการเรียนแล้ว", `ยืนยันว่าตรวจ ${esc(data.course.code)} ${esc(data.course.name)} ${esc(data.course.grade_level)}/${esc(data.course.classroom)} แล้ว และส่งต่อให้ผู้บริหารอนุมัติ`, "ตรวจแล้ว"))) return;
+  try {
+    await api("/api/admin/courses/review", { method: "POST", body: { course_ids: [Number(courseId)] } });
+    data = await api(`/api/courses/${courseId}`);
+    toast("ส่งต่อให้ผู้บริหารแล้ว"); renderHeader(); render();
+  } catch (err) { showError(err); }
+}
+
 async function approveCourse() {
   if (!(await confirmBox("อนุมัติผลการเรียน", `อนุมัติผล ${esc(data.course.code)} ${esc(data.course.name)} ${esc(data.course.grade_level)}/${esc(data.course.classroom)}`, "อนุมัติ"))) return;
   try {
@@ -740,5 +763,6 @@ async function approveCourse() {
 
 // เริ่มแสดงผลหลังประกาศฟังก์ชัน/ค่าคงที่ทั้งหมดแล้ว
 renderHeader();
+renderEdits();
 renderTabs();
 render();

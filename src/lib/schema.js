@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-7";
+export const SCHEMA_VERSION = "gr-8";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -170,6 +170,29 @@ export const SCHEMA_SQL = [
   // ย้ายข้อมูลวันขาดเรียนแบบเดิม (gr_absences) มาเป็นรหัสใหม่ — ทำซ้ำได้ไม่ซ้ำข้อมูล
   `INSERT OR IGNORE INTO gr_attendance (academic_year_id, student_id, att_date, code, recorded_by)
      SELECT academic_year_id, student_id, absence_date, CASE reason WHEN 'sick' THEN 'ป' WHEN 'personal' THEN 'ล' ELSE 'ข' END, recorded_by FROM gr_absences`,
+  // gr-8: วันหยุดของโรงเรียน (ฝ่ายวัดผลตั้ง) — ใช้ซ่อนวันในตารางมาเรียนและนับวันเรียนจริงเพื่อคิด มส
+  `CREATE TABLE IF NOT EXISTS gr_holidays (
+    academic_year_id INTEGER NOT NULL,
+    holiday_date TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (academic_year_id, holiday_date))`,
+  // gr-8: เลขที่ที่ฝ่ายวัดผลกำหนดเอง (ว่าง = เรียงอัตโนมัติ)
+  `CREATE TABLE IF NOT EXISTS gr_roster_numbers (
+    academic_year_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    number INTEGER NOT NULL CHECK (number BETWEEN 1 AND 99),
+    updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (academic_year_id, student_id))`,
+  // gr-8: ประวัติการแก้ไขรายวิชาที่ส่งผลแล้วโดยฝ่ายวัดผล (ครูผู้สอนเห็นในหน้ารายวิชา)
+  `CREATE TABLE IF NOT EXISTS gr_course_edits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    what TEXT NOT NULL,
+    detail TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  `CREATE INDEX IF NOT EXISTS idx_gr_course_edits ON gr_course_edits(course_id, id)`,
   `CREATE TABLE IF NOT EXISTS gr_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER, action TEXT NOT NULL, detail TEXT,
@@ -203,7 +226,10 @@ export const ADDED_COLUMNS = [
   ["gr_courses", "return_note", "TEXT"],
   ["gr_courses", "returned_at", "TEXT"],
   ["gr_courses", "returned_by", "INTEGER"],
-  ["gr_settings", "school_address", "TEXT"], // บรรทัดที่อยู่บนปก ปพ.5 เช่น อำเภอแก่งกระจาน จังหวัดเพชรบุรี
+  ["gr_settings", "school_address", "TEXT"],
+  // gr-8: ครู → ฝ่ายวัดผลตรวจ → ผู้บริหารอนุมัติ
+  ["gr_courses", "reviewed_at", "TEXT"],
+  ["gr_courses", "reviewed_by", "INTEGER"], // บรรทัดที่อยู่บนปก ปพ.5 เช่น อำเภอแก่งกระจาน จังหวัดเพชรบุรี
 ];
 
 async function addMissingColumns(env) {

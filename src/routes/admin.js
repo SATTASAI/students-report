@@ -351,7 +351,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       const before = await env.DB.prepare("SELECT locked, approved_at FROM gr_courses WHERE id = ?").bind(id).first();
       if (!before) fail(404, "ไม่พบรายวิชา");
       if (!before.locked) fail(409, "รายวิชานี้ยังไม่ได้ส่ง");
-      await env.DB.prepare(`UPDATE gr_courses SET locked = 0, submitted_at = NULL, submitted_by = NULL, approved_at = NULL, approved_by = NULL,
+      await env.DB.prepare(`UPDATE gr_courses SET locked = 0, submitted_at = NULL, submitted_by = NULL, approved_at = NULL, approved_by = NULL, reviewed_at = NULL, reviewed_by = NULL,
         return_note = ?, returned_at = datetime('now'), returned_by = ? WHERE id = ?`).bind(note, user.id, id).run();
       await audit(env, user, before.approved_at ? "course.reopen_approved" : "course.return", { id, note });
       return json({ ok: true });
@@ -363,14 +363,24 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       await audit(env, user, "course.lock", { id });
       return json({ ok: true });
     }
-    // ผู้บริหารอนุมัติผล (เลือกได้หลายรายวิชา) — อนุมัติได้เฉพาะที่ส่งแล้ว
+    // ฝ่ายวัดผลตรวจแล้ว (เลือกได้หลายรายวิชา) → ส่งต่อให้ผู้บริหารอนุมัติ
+    if (idPart === "review" && !action && method === "POST") {
+      const b = await readJson(request);
+      const ids = [...new Set((Array.isArray(b.course_ids) ? b.course_ids : []).map((v) => intParam(v)))];
+      if (!ids.length) fail(400, "กรุณาเลือกรายวิชา");
+      const ph = ids.map(() => "?").join(",");
+      const r = await env.DB.prepare(`UPDATE gr_courses SET reviewed_at = datetime('now'), reviewed_by = ? WHERE id IN (${ph}) AND locked = 1 AND reviewed_at IS NULL`).bind(user.id, ...ids).run();
+      await audit(env, user, "course.review", { ids, reviewed: r.meta?.changes ?? 0 });
+      return json({ ok: true, reviewed: r.meta?.changes ?? 0, skipped: ids.length - (r.meta?.changes ?? 0) });
+    }
+    // ผู้บริหารอนุมัติผล (เลือกได้หลายรายวิชา) — อนุมัติได้เฉพาะที่ฝ่ายวัดผลตรวจแล้ว
     if (idPart === "approve" && !action && method === "POST") {
       if (!user.is_super) fail(403, "อนุมัติผลได้เฉพาะผู้บริหาร");
       const b = await readJson(request);
       const ids = [...new Set((Array.isArray(b.course_ids) ? b.course_ids : []).map((v) => intParam(v)))];
       if (!ids.length) fail(400, "กรุณาเลือกรายวิชา");
       const ph = ids.map(() => "?").join(",");
-      const r = await env.DB.prepare(`UPDATE gr_courses SET approved_at = datetime('now'), approved_by = ? WHERE id IN (${ph}) AND locked = 1 AND approved_at IS NULL`).bind(user.id, ...ids).run();
+      const r = await env.DB.prepare(`UPDATE gr_courses SET approved_at = datetime('now'), approved_by = ? WHERE id IN (${ph}) AND locked = 1 AND reviewed_at IS NOT NULL AND approved_at IS NULL`).bind(user.id, ...ids).run();
       await audit(env, user, "course.approve", { ids, approved: r.meta?.changes ?? 0 });
       return json({ ok: true, approved: r.meta?.changes ?? 0, skipped: ids.length - (r.meta?.changes ?? 0) });
     }
@@ -524,7 +534,7 @@ async function assertTeacher(env, id) {
 export async function courseOverview(env, yearId, { teacherId = null } = {}) {
   const teacherFilter = teacherId ? " AND c.id IN (SELECT course_id FROM gr_course_teachers WHERE user_id = ?)" : "";
   const { results: courses } = await env.DB.prepare(
-    `SELECT c.id, c.classroom, c.locked, c.submitted_at, c.approved_at, c.return_note, c.returned_at, s.id AS subject_id, s.grade_level, s.code, s.name, s.learning_area,
+    `SELECT c.id, c.classroom, c.locked, c.submitted_at, c.approved_at, c.reviewed_at, c.return_note, c.returned_at, s.id AS subject_id, s.grade_level, s.code, s.name, s.learning_area,
             s.subject_type, s.hours_per_year, s.sort_order,
             (SELECT COUNT(*) FROM gr_items i WHERE i.course_id = c.id) AS item_count,
             (SELECT COUNT(*) FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id = c.id AND sc.score IS NOT NULL) AS filled
@@ -536,13 +546,16 @@ export async function courseOverview(env, yearId, { teacherId = null } = {}) {
        JOIN gr_courses c ON c.id = ct.course_id JOIN gr_subjects s ON s.id = c.subject_id WHERE s.academic_year_id = ?`
   ).bind(yearId).all();
   const rooms = await listRooms(env, yearId);
+  const { results: edits } = await env.DB.prepare("SELECT course_id, COUNT(*) AS n FROM gr_course_edits GROUP BY course_id").all();
+  const editCounts = Object.fromEntries(edits.map((e) => [e.course_id, e.n]));
   const size = Object.fromEntries(rooms.map((r) => [`${r.grade_level}|${r.classroom}`, r.students]));
   for (const c of courses) {
     c.teachers = teachers.filter((t) => t.course_id === c.id).map((t) => ({ id: t.id, full_name: t.full_name }));
     c.students = size[`${c.grade_level}|${c.classroom}`] || 0;
     const expected = c.item_count * c.students;
     c.progress = expected ? Math.min(100, Math.round((c.filled / expected) * 100)) : 0;
-    c.status = !c.locked ? "draft" : c.approved_at ? "approved" : "submitted";
+    c.status = !c.locked ? "draft" : c.approved_at ? "approved" : c.reviewed_at ? "reviewed" : "submitted";
+    c.edit_count = editCounts[c.id] || 0;
   }
   return courses.sort((a, b) => compareRoom(a, b) || (a.subject_type === "additional") - (b.subject_type === "additional") || a.sort_order - b.sort_order || a.code.localeCompare(b.code));
 }

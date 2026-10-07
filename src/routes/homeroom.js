@@ -1,5 +1,5 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll } from "../lib/http.js";
-import { resolveYear, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor } from "../lib/data.js";
+import { resolveYear, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday } from "../lib/data.js";
 import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
 
 export const ATT_CODES = [["ข", "ขาดเรียน"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]];
@@ -136,18 +136,21 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     const { year, grade, room } = await roomContext(env, user, url);
     const roster = await roomRoster(env, year.id, grade, room);
     const ids = new Set(roster.map((s) => s.id));
-    const { results: terms } = await env.DB.prepare("SELECT term_number, start_date, end_date FROM academic_terms WHERE academic_year_id = ? ORDER BY term_number").bind(year.id).all();
+    const cal = await schoolCalendar(env, year.id);
+    const terms = cal.terms;
     const inTerm = (d) => terms.some((t) => d >= t.start_date && d <= t.end_date);
     if (method === "GET") {
       const first = terms[0]?.start_date, last = terms.at(-1)?.end_date;
-      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); // เวลาไทย
+      const today = thaiToday();
       let month = /^\d{4}-\d{2}$/.test(url.searchParams.get("month") || "") ? url.searchParams.get("month")
         : (first && today < first ? first : last && today > last ? last : today).slice(0, 7);
+      // วันเรียน = จันทร์–ศุกร์ในภาคเรียน ไม่รวมวันหยุดที่ฝ่ายวัดผลตั้ง (ถ้ายังไม่มีภาคเรียนในระบบ แสดงจันทร์–ศุกร์ทั้งเดือน)
       const days = [];
       for (let d = new Date(`${month}-01T00:00:00Z`); d.toISOString().slice(0, 7) === month; d.setUTCDate(d.getUTCDate() + 1)) {
         const iso = d.toISOString().slice(0, 10), wd = d.getUTCDay();
-        if (wd !== 0 && wd !== 6 && (!terms.length || inTerm(iso))) days.push(iso);
+        if (wd !== 0 && wd !== 6 && (!terms.length || inTerm(iso)) && !cal.off.has(iso)) days.push(iso);
       }
+      const holidays = cal.holidays.filter((h) => h.holiday_date.startsWith(month));
       const records = {};
       if (ids.size) {
         const { results } = await env.DB.prepare(
@@ -161,7 +164,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
         const [y, mm] = m.split("-").map(Number);
         m = mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, "0")}`;
       }
-      return json({ year, grade, room, month, months, days, today, records, codes: ATT_CODES, terms });
+      return json({ year, grade, room, month, months, days, today, records, codes: ATT_CODES, terms, holidays });
     }
     if (method === "PUT") {
       const b = await readJson(request);
@@ -172,6 +175,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
         if (!ids.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
         if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) fail(400, `วันที่ ${d} ไม่ถูกต้อง`);
         if (terms.length && !inTerm(d)) fail(400, `${d} อยู่นอกช่วงภาคเรียน`);
+        if (code && cal.off.has(d)) fail(400, `${d} เป็นวันหยุด (${cal.off.get(d)})`);
         if (code && !ATT_CODES.some(([k]) => k === code)) fail(400, "ใส่ได้เฉพาะ ข ล ป มส (มาเรียนปกติเว้นว่าง)");
         stmts.push(code
           ? env.DB.prepare(`INSERT INTO gr_attendance (academic_year_id, student_id, att_date, code, recorded_by, updated_at) VALUES (?,?,?,?,?,datetime('now'))
