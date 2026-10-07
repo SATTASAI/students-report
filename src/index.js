@@ -32,7 +32,6 @@ async function routeApi(request, env, url) {
 
   if (parts[1] === "auth" && parts[2] === "login" && method === "POST") return login(request, env);
   if (parts[1] === "auth" && parts[2] === "logout" && method === "POST") return logout();
-  if (parts[1] === "health") return json({ ok: true });
 
   const user = await currentUser(request, env);
   switch (parts[1]) {
@@ -51,6 +50,10 @@ export default {
     if (!url.pathname.startsWith("/api/")) {
       const res = await env.ASSETS.fetch(request);
       return withHeaders(res);
+    }
+    // ตรวจความพร้อมของการติดตั้ง (ไม่เปิดเผยค่าลับ)
+    if (url.pathname === "/api/health") {
+      return json({ ok: !!env.JWT_SECRET && !!env.DB, jwt_secret_set: !!env.JWT_SECRET, database_bound: !!env.DB });
     }
     try {
       if (!env.JWT_SECRET) return json({ error: "ยังไม่ได้ตั้งค่า JWT_SECRET ของ Worker" }, 500);
