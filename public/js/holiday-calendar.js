@@ -25,14 +25,15 @@ export async function renderHolidayCalendar(view, yq, render) {
   const c = await api(`/api/calendar?${yq}`);
   const canEdit = !!c.can_edit;
   const hol = new Map(c.holidays.map((h) => [h.holiday_date, h.name]));
+  const govSet = new Set(c.holidays.filter((h) => h.gov).map((h) => h.holiday_date)); // วันหยุดราชการที่ระบบใส่ให้
   // รวมวันหยุดชื่อเดียวกันที่ต่อกันจริง (ข้ามเสาร์–อาทิตย์ได้) เป็นช่วงเดียว
   const groups = [];
   for (const h of c.holidays) {
     const g = groups.at(-1);
     let next = g && addDays(g.to, 1);
     while (next && [0, 6].includes(wdOf(next))) next = addDays(next, 1);
-    if (g && g.name === h.name && next === h.holiday_date) { g.to = h.holiday_date; g.dates.push(h.holiday_date); }
-    else groups.push({ name: h.name, from: h.holiday_date, to: h.holiday_date, dates: [h.holiday_date] });
+    if (g && g.name === h.name && !!h.gov === g.gov && next === h.holiday_date) { g.to = h.holiday_date; g.dates.push(h.holiday_date); }
+    else groups.push({ name: h.name, from: h.holiday_date, to: h.holiday_date, dates: [h.holiday_date], gov: !!h.gov });
   }
   const groupOf = (iso) => groups.find((g) => g.dates.includes(iso));
   const terms = c.terms;
@@ -65,10 +66,10 @@ export async function renderHolidayCalendar(view, yq, render) {
       ${months.length ? `<div class="cal-months" id="calMonths"></div>` : ""}
       <div class="cal-grid" id="calGrid" role="grid"></div>
       <div class="cal-legend">
-        <span><i class="lg hol"></i>วันหยุด</span>${canEdit ? '<span><i class="lg sel"></i>กำลังเลือก</span>' : ""}<span><i class="lg off"></i>ปิดภาคเรียน</span><span><i class="lg wkd"></i>เสาร์–อาทิตย์</span>
+        <span><i class="lg gov"></i>วันหยุดราชการ</span><span><i class="lg hol"></i>วันหยุดของโรงเรียน</span>${canEdit ? '<span><i class="lg sel"></i>กำลังเลือก</span>' : ""}<span><i class="lg off"></i>ปิดภาคเรียน</span><span><i class="lg wkd"></i>เสาร์–อาทิตย์</span>
       </div>
-      ${canEdit ? "" : `<p class="muted small cal-hint">ดูอย่างเดียว · วันหยุดกำหนดโดยฝ่ายวัดผล วันที่เป็นวันหยุดจะไม่แสดงในตารางบันทึกการมาเรียนและแบบบันทึกประจำวัน</p>`}
-      <p class="muted small cal-hint"${canEdit ? "" : " hidden"}>แตะวันแรก แล้วแตะวันสุดท้ายเพื่อเลือกช่วงวันหยุด (ใช้เมาส์ลากได้) · แตะวันหยุดเพื่อแก้ชื่อหรือลบ · นับเฉพาะวันจันทร์–ศุกร์ · ถ้าครูเคยบันทึกขาด/ลาไว้ในวันนั้น ระบบจะล้างให้</p>
+      ${canEdit ? "" : `<p class="muted small cal-hint">ดูอย่างเดียว · วันหยุดราชการระบบใส่ให้ทุกปี ส่วนวันหยุดอื่นกำหนดโดยฝ่ายวัดผล วันที่เป็นวันหยุดจะไม่แสดงในตารางบันทึกการมาเรียนและแบบบันทึกประจำวัน</p>`}
+      <p class="muted small cal-hint"${canEdit ? "" : " hidden"}>วันหยุดราชการ (สีแดง) ระบบใส่ให้เองทุกปีการศึกษา รวมวันหยุดชดเชย — ฝ่ายวัดผลเพิ่มเฉพาะวันหยุดอื่น เช่น วันพืชมงคล วันหยุดพิเศษตามประกาศ ครม. กิจกรรมโรงเรียน · แตะวันแรก แล้วแตะวันสุดท้ายเพื่อเลือกช่วงวันหยุด (ใช้เมาส์ลากได้) · แตะวันหยุดเพื่อแก้ชื่อหรือลบ · นับเฉพาะวันจันทร์–ศุกร์ · ถ้าครูเคยบันทึกขาด/ลาไว้ในวันนั้น ระบบจะล้างให้</p>
     </div>
     <div class="cal-bar" id="calBar" hidden${canEdit ? "" : ' data-readonly'}>
       <div class="cal-bar-in">
@@ -79,8 +80,9 @@ export async function renderHolidayCalendar(view, yq, render) {
         <button class="btn ghost" id="calCancel">ยกเลิก</button>
       </div>
     </div>
-    <div class="panel"><div class="panel-head"><h2>วันหยุดทั้งปี</h2><span class="muted small">${groups.length} รายการ · แตะเพื่อไปที่เดือนนั้น</span></div>
-      <div class="cal-list">${groups.map((g, i) => `<button class="cal-item" data-go="${i}"><span class="cal-item-date">${thRange(g.from, g.to)}</span><span class="cal-item-name">${esc(g.name)}</span><span class="cal-item-n">${g.dates.length} วัน</span></button>`).join("") || (canEdit ? '<p class="empty">ยังไม่มีวันหยุด — แตะวันที่ในปฏิทินด้านบนเพื่อเริ่ม</p>' : '<p class="empty">ฝ่ายวัดผลยังไม่ได้ตั้งวันหยุด</p>')}</div>
+    <div class="panel"><div class="panel-head"><h2>วันหยุดทั้งปี</h2><span class="muted small">${groups.length} รายการ · แตะเพื่อไปที่เดือนนั้น</span>
+      ${canEdit ? `<button class="btn small" id="calGov" data-tip="ใส่วันหยุดราชการที่ยังไม่มีในปฏิทินกลับเข้าไป (รวมวันที่เคยลบ) ไม่ทับวันที่ตั้งชื่อไว้แล้ว">เติมวันหยุดราชการ</button>` : ""}</div>
+      <div class="cal-list">${groups.map((g, i) => `<button class="cal-item${g.gov ? " gov" : ""}" data-go="${i}"><span class="cal-item-date">${thRange(g.from, g.to)}</span><span class="cal-item-name">${esc(g.name)}${g.gov ? ' <em class="gov-tag">ราชการ</em>' : ""}</span><span class="cal-item-n">${g.dates.length} วัน</span></button>`).join("") || (canEdit ? '<p class="empty">ยังไม่มีวันหยุด — แตะวันที่ในปฏิทินด้านบนเพื่อเริ่ม</p>' : '<p class="empty">ฝ่ายวัดผลยังไม่ได้ตั้งวันหยุด</p>')}</div>
     </div>
     <p class="muted small">วันเปิด–ปิดภาคเรียนแก้ได้ที่ระบบบริหารโรงเรียน (ปีการศึกษา/ภาคเรียน) เพื่อให้ทุกระบบใช้วันเดียวกัน</p>`;
 
@@ -103,7 +105,7 @@ export async function renderHolidayCalendar(view, yq, render) {
     for (let i = 0; i < cells; i++) {
       const iso = addDays(first, i - lead), [, cm, cd] = iso.split("-").map(Number), wd = wdOf(iso);
       const other = cm !== m, name = hol.get(iso), term = termOf(iso);
-      const cls = ["cal-day", !canEdit && "ro", other && "other", (wd === 0 || wd === 6) && "we", name && "hol", !term && "off", iso === today && "today", inSel(iso) && "sel"].filter(Boolean).join(" ");
+      const cls = ["cal-day", !canEdit && "ro", other && "other", (wd === 0 || wd === 6) && "we", name && "hol", govSet.has(iso) && "gov", !term && "off", iso === today && "today", inSel(iso) && "sel"].filter(Boolean).join(" ");
       const marks = terms.flatMap((t) => [iso === t.start_date && `<em class="mark open">เปิดภาค ${t.term_number}</em>`, iso === t.end_date && `<em class="mark close">ปิดภาค ${t.term_number}</em>`]).filter(Boolean).join("");
       const label = `${TH_WD[wd]} ${cd} ${TH_MONTHS[cm - 1]}${name ? ` วันหยุด ${name}` : ""}`;
       html += `<${canEdit ? 'button type="button"' : "div"} class="${cls}" data-d="${iso}" aria-label="${esc(label)}"${inSel(iso) ? ' aria-selected="true"' : ""}>
@@ -186,6 +188,9 @@ export async function renderHolidayCalendar(view, yq, render) {
     if (iso.slice(0, 7) !== calMonth) { calMonth = iso.slice(0, 7); redraw(); }
     if (matchMedia("(pointer: fine)").matches) nameIn.focus();
   });
+  document.getElementById("calGov").onclick = async () => {
+    try { const r = await api(`/api/calendar/government?${yq}`, { method: "POST", body: {} }); toast(r.added ? `เติมวันหยุดราชการ ${r.added} วัน` : "วันหยุดราชการครบแล้ว"); render(); } catch (err) { showError(err); }
+  };
   document.getElementById("calCancel").onclick = () => { calSel = null; redraw(); };
   const save = async () => {
     const name = nameIn.value.trim();

@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-9";
+export const SCHEMA_VERSION = "gr-10";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -204,6 +204,13 @@ export const SCHEMA_SQL = [
     recorded_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (student_id, log_type, log_date))`,
   `CREATE INDEX IF NOT EXISTS idx_gr_daily_logs ON gr_daily_logs(academic_year_id, log_type, log_date)`,
+  // gr-10: วันหยุดราชการที่ระบบใส่ให้อัตโนมัติต่อปีการศึกษา (จำไว้ว่าเคยใส่แล้ว — ฝ่ายวัดผลลบวันไหนออก ระบบจะไม่ใส่กลับเอง)
+  `CREATE TABLE IF NOT EXISTS gr_holiday_seeds (
+    academic_year_id INTEGER NOT NULL,
+    holiday_date TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (academic_year_id, holiday_date))`,
   `CREATE TABLE IF NOT EXISTS gr_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER, action TEXT NOT NULL, detail TEXT,

@@ -383,7 +383,7 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-มส inpu
 .cal-months { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: thin; }
 .cal-mchip { position: relative; flex: none; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer; display: inline-flex; gap: 3px; align-items: baseline; }
 .cal-mchip small { color: var(--muted); font-size: 11px; }
-.cal-mchip b { font-size: 11px; background: var(--bad-bg); color: var(--bad); border-radius: 999px; padding: 0 6px; margin-left: 3px; }
+.cal-mchip b { font-size: 11px; background: var(--wash); color: var(--ink); border-radius: 999px; padding: 0 6px; margin-left: 3px; }
 .cal-mchip:hover { background: var(--wash); }
 .cal-mchip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
 .cal-mchip.on small { color: #c9d0f2; }
@@ -400,9 +400,11 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-มส inpu
 .cal-day.off:not(.we) { background: repeating-linear-gradient(135deg, #fafbfe 0 6px, #f1f3f9 6px 7px); }
 .cal-day.off .num { color: var(--muted); }
 .cal-day.other { opacity: .38; }
-.cal-day.hol, .cal-day.hol.off { background: var(--bad-bg); }
+.cal-day.hol, .cal-day.hol.off { background: var(--warn-bg); }
+.cal-day.hol .num, .cal-day.hol .hname { color: var(--warn); }
+.cal-day.hol.gov, .cal-day.hol.gov.off { background: var(--bad-bg); }
+.cal-day.hol.gov .num, .cal-day.hol.gov .hname { color: var(--bad); }
 .cal-day.hol:not(.ro):hover { background: #f9dedc; }
-.cal-day.hol .num { color: var(--bad); }
 .cal-day .hname { font-size: 12px; line-height: 1.3; color: var(--bad); font-weight: 500; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
 .cal-day.today .num { background: var(--ink); color: #fff; border-radius: 999px; min-width: 28px; height: 28px; display: inline-grid; place-items: center; padding: 0 5px; opacity: 1; }
 .cal-day.sel, .cal-day.sel.off { background: #dfe4fb; box-shadow: inset 0 0 0 2px var(--ink-2); }
@@ -413,7 +415,8 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-มส inpu
 .cal-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
 .cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .cal-legend .lg { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--line); display: inline-block; }
-.lg.hol { background: var(--bad-bg); border-color: #efc4c1 !important; }
+.lg.hol { background: var(--warn-bg); border-color: #efd2b0 !important; }
+.lg.gov { background: var(--bad-bg); border-color: #efc4c1 !important; }
 .lg.sel { background: #dfe4fb; border-color: var(--ink-2) !important; }
 .lg.off { background: repeating-linear-gradient(135deg, #fafbfe 0 3px, #dfe3ee 3px 4px); }
 .lg.wkd { background: #f6f7fb; }
@@ -424,7 +427,9 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-มส inpu
 .cal-bar-info strong { color: var(--ink); }
 .cal-bar input { flex: 2 1 240px; min-width: 0; }
 .cal-list { display: grid; gap: 6px; }
-.cal-item { display: grid; grid-template-columns: minmax(150px, 230px) 1fr auto; gap: 12px; align-items: center; text-align: left; font: inherit; color: var(--text); background: #fff; border: 1px solid var(--line-soft); border-left: 4px solid var(--bad); border-radius: var(--r-sm); padding: 8px 12px; cursor: pointer; }
+.cal-item.gov { border-left-color: var(--bad); }
+.gov-tag { font-style: normal; font-size: 11px; color: var(--bad); background: var(--bad-bg); border-radius: 6px; padding: 0 6px; margin-left: 6px; font-weight: 500; }
+.cal-item { display: grid; grid-template-columns: minmax(150px, 230px) 1fr auto; gap: 12px; align-items: center; text-align: left; font: inherit; color: var(--text); background: #fff; border: 1px solid var(--line-soft); border-left: 4px solid var(--warn); border-radius: var(--r-sm); padding: 8px 12px; cursor: pointer; }
 .cal-item:hover { background: var(--wash); }
 .cal-item-date { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .cal-item-name { font-weight: 500; }
@@ -441,7 +446,7 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-มส inpu
   .cal-item-date { grid-column: 1; } .cal-item-name { grid-column: 1; grid-row: 2; } .cal-item-n { grid-row: 1 / span 2; grid-column: 2; }
   .cal-bar { bottom: 8px; }
 }
-@media (max-width: 400px) { .cal-day .hname { display: none; } .cal-day.hol::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--bad); margin-top: auto; } }
+@media (max-width: 400px) { .cal-day .hname { display: none; } .cal-day.hol::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); margin-top: auto; } .cal-day.hol.gov::after { background: var(--bad); } }
 .cal-day.ro { cursor: default; }
 
 /* ---------- แบบบันทึกประจำวัน (ครูประจำชั้น) ---------- */

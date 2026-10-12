@@ -40,7 +40,7 @@ test("ปฏิทินวันหยุด: ตารางมาเรีย
   const add = (await call("admin", "POST", "/api/calendar", { from: "2026-10-30", to: "2026-11-03", name: "หยุดชดเชย" }, { expect: 200 })).data;
   assert.equal(add.added, 3); // ศ. 30 ต.ค. (นอกภาค แต่บันทึกไว้), จ. 2, อ. 3 (เสาร์อาทิตย์ไม่นับ)
   const cal = (await call("admin", "GET", "/api/calendar", null, { expect: 200 })).data;
-  assert.equal(cal.holidays.length, 3);
+  assert.equal(cal.holidays.filter((h) => !h.gov).length, 3); // วันหยุดราชการระบบใส่ให้เอง (gov) ไม่นับ
   const g = (await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2026-11`, null, { expect: 200 })).data;
   assert.ok(!g.days.includes("2026-11-02") && !g.days.includes("2026-11-03"));
   assert.equal(g.days[0], "2026-11-04");
@@ -57,7 +57,8 @@ test("มส อัตโนมัติ: มาเรียนต่ำกว�
   const [a, b] = kids;
   // ขาด 40 วันทำการแรกของภาค 1 (พ.ค.–มิ.ย. 2569) → ต่ำกว่า 80% แน่นอนเมื่อดูถึงวันนี้
   const days = [];
-  for (let d = new Date("2026-05-01T00:00:00Z"); days.length < 40; d.setUTCDate(d.getUTCDate() + 1)) if (![0, 6].includes(d.getUTCDay())) days.push(d.toISOString().slice(0, 10));
+  const off = new Set((await call("admin", "GET", "/api/calendar", null, { expect: 200 })).data.holidays.map((h) => h.holiday_date)); // วันหยุดราชการที่ระบบใส่ให้
+  for (let d = new Date("2026-05-01T00:00:00Z"); days.length < 40; d.setUTCDate(d.getUTCDate() + 1)) if (![0, 6].includes(d.getUTCDay()) && !off.has(d.toISOString().slice(0, 10))) days.push(d.toISOString().slice(0, 10));
   await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, { changes: days.map((date, i) => ({ student_id: a.id, date, code: i % 2 ? "ล" : "ข" })) }, { expect: 200 });
   await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, { changes: days.map((date) => ({ student_id: b.id, date, code: "มส" })) }, { expect: 200 }); // มาสายทั้งหมด = มาเรียน
   const cd = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;

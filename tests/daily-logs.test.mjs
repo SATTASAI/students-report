@@ -32,7 +32,7 @@ test("ปฏิทินวันหยุด: ครูประจำชั้
   await call("admin", "POST", "/api/calendar", { from: "2026-11-02", name: "หยุดชดเชย" }, { expect: 200 });
   const c = (await call("t1", "GET", "/api/calendar", null, { expect: 200 })).data;
   assert.equal(c.can_edit, false);
-  assert.equal(c.holidays.length, 1);
+  assert.equal(c.holidays.filter((h) => !h.gov).length, 1);
   assert.equal((await call("admin", "GET", "/api/calendar", null, { expect: 200 })).data.can_edit, true);
   await call("t1", "POST", "/api/calendar", { from: "2026-11-04", name: "x" }, { expect: 403 });
   await call("t1", "DELETE", "/api/calendar/2026-11-02", null, { expect: 403 });
@@ -93,4 +93,31 @@ test("weeksOf: แบ่งวันเรียนเป็นสัปดา�
   const w = weeksOf(["2026-10-29", "2026-10-30", "2026-11-02", "2026-11-03"]);
   assert.deepEqual(w.map((x) => [x.from, x.to]), [["2026-10-29", "2026-10-30"], ["2026-11-02", "2026-11-03"], [null, null], [null, null]]);
   assert.equal(weeksOf(Array.from({ length: 23 }, (_, i) => new Date(Date.UTC(2026, 11, 1 + i)).toISOString().slice(0, 10)).filter((d) => ![0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay()))).length, 4);
+});
+
+test("วันหยุดราชการ: ระบบใส่ให้อัตโนมัติทุกปีการศึกษา ลบแล้วไม่กลับมาเอง และปุ่มเติมกลับได้", async () => {
+  const { call } = await setup();
+  const c = (await call("admin", "GET", "/api/calendar", null, { expect: 200 })).data;
+  const gov = Object.fromEntries(c.holidays.filter((h) => h.gov).map((h) => [h.holiday_date, h.name]));
+  assert.equal(gov["2026-05-31"], "วันวิสาขบูชา");
+  assert.equal(gov["2026-06-01"], "วันหยุดชดเชยวันวิสาขบูชา");
+  assert.equal(gov["2026-07-29"], "วันอาสาฬหบูชา");
+  assert.equal(gov["2026-07-30"], "วันเข้าพรรษา");
+  assert.equal(gov["2026-10-23"], "วันปิยมหาราช");
+  assert.equal(gov["2026-12-07"], "วันหยุดชดเชยวันพ่อแห่งชาติ");
+  assert.equal(gov["2027-02-21"], "วันมาฆบูชา");
+  // วันหยุดราชการไม่แสดงในตารางมาเรียน
+  const att = (await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2026-10`, null, { expect: 200 })).data;
+  assert.ok(!att.days.includes("2026-10-13") && !att.days.includes("2026-10-23"));
+  // ฝ่ายวัดผลลบ → ไม่กลับมาเอง; ปุ่มเติมวันหยุดราชการ → กลับมา
+  await call("admin", "DELETE", "/api/calendar/2026-10-23", null, { expect: 200 });
+  assert.ok(!(await call("admin", "GET", "/api/calendar", null, { expect: 200 })).data.holidays.some((h) => h.holiday_date === "2026-10-23"));
+  await call("t1", "POST", "/api/calendar/government", {}, { expect: 403 });
+  assert.equal((await call("admin", "POST", "/api/calendar/government", {}, { expect: 200 })).data.added, 1);
+  // ฝ่ายวัดผลเปลี่ยนชื่อวันหยุดราชการ → ไม่ถูกทับ และไม่นับเป็นของราชการแล้ว
+  await call("admin", "POST", "/api/calendar", { from: "2026-12-07", name: "หยุดชดเชย + กีฬาสี" }, { expect: 200 });
+  await call("admin", "POST", "/api/calendar/government", {}, { expect: 200 });
+  const h = (await call("admin", "GET", "/api/calendar", null, { expect: 200 })).data.holidays.find((x) => x.holiday_date === "2026-12-07");
+  assert.equal(h.name, "หยุดชดเชย + กีฬาสี");
+  assert.equal(h.gov, 0);
 });

@@ -1,3 +1,4 @@
+import { governmentHolidaysBetween } from "./thai-holidays.js";
 import { fail } from "./http.js";
 import { computeStudentResult, resultWithAttendance } from "../../public/js/grading.js";
 
@@ -347,9 +348,12 @@ export async function absenceCounts(env, yearId, studentIds) {
 
 // วันเรียนของปี: จันทร์–ศุกร์ในช่วงภาคเรียน (academic_terms) ที่ไม่ใช่วันหยุด (gr_holidays)
 export async function schoolCalendar(env, yearId) {
+  await ensureGovernmentHolidays(env, yearId);
   const [{ results: terms }, { results: holidays }] = await Promise.all([
     env.DB.prepare("SELECT term_number, start_date, end_date FROM academic_terms WHERE academic_year_id = ? ORDER BY term_number").bind(yearId).all(),
-    env.DB.prepare("SELECT holiday_date, name FROM gr_holidays WHERE academic_year_id = ? ORDER BY holiday_date").bind(yearId).all(),
+    env.DB.prepare(`SELECT h.holiday_date, h.name, CASE WHEN s.name = h.name THEN 1 ELSE 0 END AS gov FROM gr_holidays h
+      LEFT JOIN gr_holiday_seeds s ON s.academic_year_id = h.academic_year_id AND s.holiday_date = h.holiday_date
+      WHERE h.academic_year_id = ? ORDER BY h.holiday_date`).bind(yearId).all(),
   ]);
   const off = new Map(holidays.map((h) => [h.holiday_date, h.name]));
   const days = [];
@@ -361,6 +365,36 @@ export async function schoolCalendar(env, yearId) {
   }
   return { terms, holidays, off, days, isSchoolDay: (iso) => days.includes(iso) };
 }
+// ช่วงวันของปีการศึกษา: วันเริ่ม–สิ้นสุดปี รวมกับช่วงภาคเรียน
+export async function yearWindow(env, yearId) {
+  const [y, t] = await Promise.all([
+    env.DB.prepare("SELECT start_date, end_date FROM academic_years WHERE id = ?").bind(yearId).first(),
+    env.DB.prepare("SELECT MIN(start_date) AS a, MAX(end_date) AS b FROM academic_terms WHERE academic_year_id = ?").bind(yearId).first(),
+  ]);
+  const from = [y?.start_date, t?.a].filter(Boolean).sort()[0], to = [y?.end_date, t?.b].filter(Boolean).sort().at(-1);
+  return from && to && /^\d{4}-\d{2}-\d{2}/.test(from) && /^\d{4}-\d{2}-\d{2}/.test(to) ? { from: from.slice(0, 10), to: to.slice(0, 10) } : null;
+}
+
+// ใส่วันหยุดราชการของปีการศึกษาให้อัตโนมัติ (ครั้งแรกที่มีการใช้ปฏิทินของปีนั้น) — ทุกปี ไม่ต้องรอฝ่ายวัดผลกรอก
+// ไม่ทับวันหยุดที่ฝ่ายวัดผลตั้งไว้แล้ว และถ้าฝ่ายวัดผลลบวันหยุดราชการวันไหนออก จะไม่ใส่กลับเอง (จำไว้ใน gr_holiday_seeds)
+// force = true: เติมวันหยุดราชการที่ยังไม่มีในปฏิทินกลับเข้าไปทั้งหมด (ปุ่ม "เติมวันหยุดราชการ")
+export async function ensureGovernmentHolidays(env, yearId, { force = false } = {}) {
+  if (!force) {
+    const done = await env.DB.prepare("SELECT 1 AS ok FROM gr_holiday_seeds WHERE academic_year_id = ? LIMIT 1").bind(yearId).first();
+    if (done) return 0;
+  }
+  const w = await yearWindow(env, yearId);
+  if (!w) return 0;
+  const list = governmentHolidaysBetween(w.from, w.to);
+  if (!list.length) return 0;
+  const before = (await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_holidays WHERE academic_year_id = ?").bind(yearId).first()).n;
+  await env.DB.batch(list.flatMap((h) => [
+    env.DB.prepare("INSERT OR IGNORE INTO gr_holidays (academic_year_id, holiday_date, name) VALUES (?,?,?)").bind(yearId, h.date, h.name),
+    env.DB.prepare("INSERT OR IGNORE INTO gr_holiday_seeds (academic_year_id, holiday_date, name) VALUES (?,?,?)").bind(yearId, h.date, h.name),
+  ]));
+  return (await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_holidays WHERE academic_year_id = ?").bind(yearId).first()).n - before;
+}
+
 export const thaiToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 
 // ร้อยละการมาเรียน (นับถึงวันนี้): วันเรียน − วันขาด/ลา (ข ล ป; มาสายถือว่ามา) — นักเรียนย้ายเข้านับตั้งแต่วันที่ย้ายเข้า

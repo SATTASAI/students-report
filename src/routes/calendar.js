@@ -1,7 +1,7 @@
 // ปฏิทินวันหยุดของโรงเรียน (ฝ่ายวัดผลตั้ง) — ใช้ซ่อนวันหยุดในตารางมาเรียน และนับวันเรียนจริงเพื่อคิดร้อยละการมาเรียน / มส
 // ช่วงภาคเรียน (วันเปิด–ปิด) มาจาก academic_terms ของระบบบริหารโรงเรียน
 import { json, readJson, fail, requireAdmin, requireUser, text, audit, batchAll } from "../lib/http.js";
-import { resolveYear, schoolCalendar } from "../lib/data.js";
+import { resolveYear, schoolCalendar, ensureGovernmentHolidays } from "../lib/data.js";
 
 const validDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "") && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
 
@@ -19,6 +19,12 @@ export async function handleCalendar(request, env, user, parts, method, url) {
   }
   requireAdmin(user);
   if (!user.can_import) fail(403, "ตั้งปฏิทินได้เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล");
+  // เติมวันหยุดราชการที่ยังไม่มี (รวมวันที่เคยลบออก) — ไม่ทับชื่อวันหยุดที่ตั้งไว้แล้ว
+  if (method === "POST" && parts[2] === "government") {
+    const added = await ensureGovernmentHolidays(env, year.id, { force: true });
+    await audit(env, user, "calendar.government", { year: year.id, added });
+    return json({ ok: true, added });
+  }
   if (method === "POST") {
     const b = await readJson(request);
     const name = text(b.name, 120);
@@ -28,7 +34,7 @@ export async function handleCalendar(request, env, user, parts, method, url) {
     const dates = [];
     for (let d = new Date(`${from}T00:00:00Z`); d.toISOString().slice(0, 10) <= to && dates.length <= 120; d.setUTCDate(d.getUTCDate() + 1)) {
       const wd = d.getUTCDay();
-      if (wd !== 0 && wd !== 6) dates.push(d.toISOString().slice(0, 10));
+      if ((wd !== 0 && wd !== 6) || from === to) dates.push(d.toISOString().slice(0, 10)); // วันเดียว (เช่น แก้ชื่อวันหยุดราชการที่ตรงเสาร์–อาทิตย์) ใส่ได้
     }
     if (!dates.length) fail(400, "ช่วงวันที่ไม่มีวันจันทร์–ศุกร์");
     if (dates.length > 120) fail(400, "เพิ่มได้ครั้งละไม่เกิน 120 วัน");
