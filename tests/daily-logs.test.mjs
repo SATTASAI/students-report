@@ -121,3 +121,17 @@ test("วันหยุดราชการ: ระบบใส่ให้อ
   assert.equal(h.name, "หยุดชดเชย + กีฬาสี");
   assert.equal(h.gov, 0);
 });
+
+test("หน้าบันทึกประจำวัน: รายชื่อห้องตามสิทธิ์ และข้อมูลสำหรับพิมพ์ (ชื่อโรงเรียน ครูประจำชั้น รายชื่อนักเรียน)", async () => {
+  const { call } = await setup();
+  const t1 = (await call("t1", "GET", "/api/homeroom/logs", null, { expect: 200 })).data;
+  assert.deepEqual(t1.rooms, [{ grade_level: "ป.4", classroom: "1" }]);
+  assert.equal((await call("t2", "GET", "/api/homeroom/logs", null, { expect: 200 })).data.rooms.length, 0);
+  const all = (await call("admin", "GET", "/api/homeroom/logs", null, { expect: 200 })).data.rooms;
+  assert.ok(all.length > 1 && all.some((r) => r.grade_level.startsWith("อ.")));
+  const m = (await call("t1", "GET", `/api/homeroom/logs?${Q}&type=lunch&month=2026-11`, null, { expect: 200 })).data;
+  assert.ok(m.students.length > 0 && m.students[0].name);
+  assert.deepEqual(m.teachers, ["ครูสมใจ ใจดี"]);
+  assert.ok(m.school.name);
+  assert.ok(m.terms.length >= 1);
+});

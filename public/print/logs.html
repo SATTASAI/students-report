@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แบบบันทึกประจำวัน</title>
+<link rel="stylesheet" href="/print/print.css">
+<style>
+  .logbook { font-size: 14pt; line-height: 1.05; }
+  .logbook h1 { font-size: 19pt; text-align: center; }
+  .logbook .sub { text-align: center; margin-top: 1mm; }
+  .logbook table.t { margin-top: 2mm; table-layout: fixed; }
+  .logbook table.t th, .logbook table.t td { padding: 0 1px; height: 6mm; text-align: center; }
+  .logbook table.t td.n { text-align: left; padding-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .logbook table.t th.wd { font-weight: 400; font-size: 11.5pt; line-height: .95; }
+  .logbook table.t td.abs { background: #ececec; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 12pt; }
+  .logbook table.t td.out { background: #f4f4f4; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .logbook table.t tfoot td { font-size: 11.5pt; }
+  .logbook table.t .wk { border-left: 2px solid #000; }
+  .logbook .legend { font-size: 13pt; margin-top: 2mm; }
+  .logbook .signs { grid-template-columns: 1fr 1fr; margin-top: 6mm; gap: 4mm 14mm; break-inside: avoid; }
+  .logbook .sign .line { height: 7mm; }
+  .logbook tr { break-inside: avoid; }
+</style>
+</head>
+<body>
+<div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
+<script type="module">
+import { esc, params, get, toolbar, status, td } from "/print/print.js";
+import { LOG_TITLE, LOG_DONE, headerLine, dailyModel, healthModel, weekRange, weekdayOf, dayNum } from "/js/logbook-data.js";
+const p = params();
+const base = new URLSearchParams({ grade: p.get("grade") || "", room: p.get("room") || "" });
+if (p.get("year")) base.set("year", p.get("year"));
+const types = (p.get("types") || "milk").split(",").filter(Boolean);
+const months = (p.get("months") || "").split(",").filter(Boolean);
+let pages;
+try {
+  if (!months.length) { const one = await get(`/api/homeroom/logs?${base}&type=${types[0]}`); months.push(one.month); }
+  pages = await Promise.all(types.flatMap((t) => months.map((m) => get(`/api/homeroom/logs?${base}&type=${t}&month=${m}`))));
+} catch (e) { status(e.message); throw e; }
+toolbar(`${types.length > 1 ? "แบบบันทึกประจำวัน" : LOG_TITLE[types[0]]} ชั้น ${p.get("grade")}/${p.get("room")} · ${pages.length} หน้า`);
+
+const signs = (d) => `<div class="signs">
+  <div class="sign"><div class="line"></div>(${esc(d.teachers.join(", ") || ".................................................")})<br>ครูประจำชั้น</div>
+  <div class="sign"><div class="line"></div>(${esc(d.school.director || ".................................................")})<br>ผู้อำนวยการ${esc(d.school.name || "")}</div></div>`;
+const name = (r) => `${esc(r.name)}${r.active ? "" : " (ย้ายออก)"}`;
+
+function dailyPage(d) {
+  const m = dailyModel(d), n = d.days.length;
+  if (!n) return `<h1>${LOG_TITLE[d.type]}</h1><div class="sub">${esc(d.school.name)} · ${td(headerLine(d))}</div><p class="center" style="margin-top:20mm">เดือนนี้ไม่มีวันเรียน</p>`;
+  const dayW = Math.max(5.2, Math.min(9, (273 - 10 - 52 - 22) / n));
+  return `<h1>${LOG_TITLE[d.type]}</h1><div class="sub">${esc(d.school.name)} · ${td(headerLine(d))}</div>
+    <table class="t"><colgroup><col style="width:10mm"><col style="width:52mm">${d.days.map(() => `<col style="width:${dayW}mm">`).join("")}<col style="width:11mm"><col style="width:11mm"></colgroup>
+    <thead><tr><th rowspan="2">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th>${d.days.map((x) => `<th class="wd">${weekdayOf(x)}</th>`).join("")}<th rowspan="2">รวม<br>(วัน)</th><th rowspan="2">มา<br>(วัน)</th></tr>
+      <tr>${d.days.map((x) => `<th>${td(dayNum(x))}</th>`).join("")}</tr></thead>
+    <tbody>${m.rows.map((r) => `<tr><td>${td(r.number)}</td><td class="n">${name(r)}</td>${r.cells.map((c) => c === null ? `<td class="out"></td>` : c && c !== "✓" ? `<td class="abs">${c}</td>` : `<td>${c}</td>`).join("")}
+      <td>${r.active ? td(r.done) : ""}</td><td>${r.active ? td(r.present) : ""}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td></td><td class="n">รวม (ติ๊ก/มาเรียน)</td>${m.foot.map((f) => `<td>${td(f.done)}<br>${td(f.present)}</td>`).join("")}<td></td><td></td></tr></tfoot></table>
+    <div class="legend">✓ = ${LOG_DONE[d.type]} · ข = ขาดเรียน · ล = ลากิจ · ป = ลาป่วย (จากบันทึกการมาเรียน) · วันหยุดไม่แสดงในตาราง${d.holidays.length ? ` (เดือนนี้: ${d.holidays.map((h) => `${td(dayNum(h.holiday_date))} ${esc(h.name)}`).join(", ")})` : ""}</div>
+    ${signs(d)}`;
+}
+
+function healthPage(d) {
+  const m = healthModel(d), k = m.items.length;
+  return `<h1>${LOG_TITLE.health}</h1><div class="sub">${esc(d.school.name)} · ${td(headerLine(d))}</div>
+    <table class="t"><colgroup><col style="width:10mm"><col style="width:56mm">${Array(d.weeks.length * k).fill('<col style="width:11.5mm">').join("")}<col style="width:14mm"></colgroup>
+    <thead><tr><th rowspan="2">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th>${d.weeks.map((w) => `<th class="wk" colspan="${k}">สัปดาห์ที่ ${td(w.week)}${w.from ? `<br><span style="font-weight:400;font-size:12pt">${td(weekRange(w))}</span>` : ""}</th>`).join("")}<th rowspan="2">ไม่สะอาด<br>(ครั้ง)</th></tr>
+      <tr>${d.weeks.map(() => m.items.map(([, l], i) => `<th class="${i === 0 ? "wk" : ""}">${l}</th>`).join("")).join("")}</tr></thead>
+    <tbody>${m.rows.map((r) => `<tr><td>${td(r.number)}</td><td class="n">${name(r)}</td>${r.cells.map((w) => w.map((c, i) => `<td class="${i === 0 ? "wk " : ""}${c === null ? "out" : ""}">${c ?? ""}</td>`).join("")).join("")}<td>${r.active && r.bad ? td(r.bad) : ""}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td></td><td class="n">จำนวนคนที่ไม่สะอาด</td>${m.foot.map((w) => w.map((n, i) => `<td class="${i === 0 ? "wk" : ""}">${n ? td(n) : ""}</td>`).join("")).join("")}<td></td></tr></tfoot></table>
+    <div class="legend">✓ = สะอาด · ✗ = ไม่สะอาด · ตรวจเล็บ ฟัน ผม และมือ สัปดาห์ละครั้ง เดือนละ ${td(4)} สัปดาห์</div>
+    ${signs(d)}`;
+}
+
+document.getElementById("doc").innerHTML = pages.map((d) => `<div class="sheet land logbook">${d.type === "health" ? healthPage(d) : dailyPage(d)}</div>`).join("");
+</script>
+</body>
+</html>

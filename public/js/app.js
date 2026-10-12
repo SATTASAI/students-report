@@ -109,7 +109,7 @@ function roleMenu(role, me) {
   if (role === "teacher") return [
     { href: "/", icon: "book", label: "รายวิชาที่สอน" },
     ...me.homerooms.map((h) => ({ href: `/homeroom.html?grade=${encodeURIComponent(h.grade_level)}&room=${encodeURIComponent(h.classroom)}`, icon: "room", label: `ประจำชั้น ${h.grade_level}/${h.classroom}` })),
-    ...(me.homerooms.length ? [{ href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" }, { href: "/calendar.html", icon: "clock", label: "ปฏิทินวันหยุด" }] : []),
+    ...(me.homerooms.length ? [{ href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" }, { href: "/logs.html", icon: "list", label: "บันทึกประจำวัน" }, { href: "/calendar.html", icon: "clock", label: "ปฏิทินวันหยุด" }] : []),
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   if (role === "measure") return [
@@ -123,6 +123,7 @@ function roleMenu(role, me) {
     { href: "/admin.html#students", icon: "people", label: "นักเรียน" },
     { href: "/admin.html#calendar", icon: "clock", label: "ปฏิทินวันหยุด" },
     { href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" },
+    { href: "/logs.html", icon: "list", label: "บันทึกประจำวัน" },
     { href: "/admin.html#bank", icon: "bank", label: "คลังตัวชี้วัด" },
     { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม" },
     { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
