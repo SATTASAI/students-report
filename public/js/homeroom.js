@@ -14,6 +14,7 @@ const pending = new Map();      // การประเมิน "sid|key" → 
 const pendingC = new Map();     // ความคิดเห็น "term|sid|field" → body
 const pendingB = new Map();     // น้ำหนักส่วนสูง "sid|round" → {weight,height}
 const pendingA = new Map();     // การมาเรียน "sid|date" → "" | ข | ล | ป | มส
+const pendingL = new Map();     // แบบบันทึกประจำวัน "sid|type|date" → "" | 1 | ok | no
 let saving = false, timer;
 
 try { data = await api(`/api/homeroom?${q}`); }
@@ -34,8 +35,8 @@ pp6.href = `/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}`;
 
 const hasMovers = data.students.some((s) => s.transfer_in_term > 1);
 const KINDER = /^อ\./.test(grade); // อนุบาล: ใช้เฉพาะบันทึกการมาเรียนและน้ำหนักส่วนสูง (การประเมินพัฒนาการ 4 ด้านจะตามมา)
-const TABS = KINDER ? [["attend", "บันทึกการมาเรียน"], ["body", "น้ำหนัก ส่วนสูง"]] : [...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"],
-  ...(hasMovers ? [["carry", "คะแนนยกมา (ย้ายเข้า)"]] : []), ["grades", "ผลการเรียนรวม"], ["attend", "บันทึกการมาเรียน"]];
+const TABS = KINDER ? [["attend", "บันทึกการมาเรียน"], ["logs", "บันทึกประจำวัน"], ["body", "น้ำหนัก ส่วนสูง"]] : [...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"],
+  ...(hasMovers ? [["carry", "คะแนนยกมา (ย้ายเข้า)"]] : []), ["grades", "ผลการเรียนรวม"], ["attend", "บันทึกการมาเรียน"], ["logs", "บันทึกประจำวัน"]];
 if (location.hash === "#carry" && hasMovers) tab = "carry";
 const tabs = document.getElementById("tabs");
 tabs.innerHTML = TABS.map(([k, label]) => `<button role="tab" data-tab="${k}">${label}</button>`).join("");
@@ -48,7 +49,7 @@ function renderTabs() {
     b.onclick = async () => { await flush(); tab = b.dataset.tab; sessionStorage.setItem("sr-hr-tab", tab); renderTabs(); render(); };
   }
 }
-window.addEventListener("beforeunload", (e) => { if (pending.size || pendingC.size || pendingB.size || pendingA.size || saving) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (pending.size || pendingC.size || pendingB.size || pendingA.size || pendingL.size || saving) { e.preventDefault(); e.returnValue = ""; } });
 
 function render() {
   const group = ASSESSMENT_GROUPS.find((g) => g.key === tab);
@@ -58,6 +59,7 @@ function render() {
   else if (tab === "body") renderBody();
   else if (tab === "carry") renderCarry().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
   else if (tab === "grades") renderGrades();
+  else if (tab === "logs") renderLogs().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
   else renderAttendance().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
 }
 
@@ -320,10 +322,10 @@ function renderBody() {
 function schedule() { showState(); clearTimeout(timer); timer = setTimeout(flush, 700); }
 
 async function flush() {
-  if (saving || (!pending.size && !pendingC.size && !pendingB.size && !pendingA.size)) return;
+  if (saving || (!pending.size && !pendingC.size && !pendingB.size && !pendingA.size && !pendingL.size)) return;
   saving = true;
-  const a = [...pending.entries()], c = [...pendingC.entries()], b = [...pendingB.entries()], at = [...pendingA.entries()];
-  pending.clear(); pendingC.clear(); pendingB.clear(); pendingA.clear();
+  const a = [...pending.entries()], c = [...pendingC.entries()], b = [...pendingB.entries()], at = [...pendingA.entries()], lg = [...pendingL.entries()];
+  pending.clear(); pendingC.clear(); pendingB.clear(); pendingA.clear(); pendingL.clear();
   showState();
   // ส่งแยกทีละหมวด: หมวดหนึ่งผิด (400) ไม่ทำให้หมวดอื่นค้าง · เครือข่ายขัดข้อง → เก็บไว้ลองใหม่
   const jobs = [
@@ -332,6 +334,7 @@ async function flush() {
       (l) => api(`/api/homeroom/comments?${q}`, { method: "PUT", body: { term: t, changes: l.map(([k, body]) => { const [, sid, field] = k.split("|"); return { student_id: Number(sid), field, body }; }) } }), `ความคิดเห็นภาค ${t}`]),
     [b, pendingB, (l) => api(`/api/homeroom/body?${q}`, { method: "PUT", body: { changes: l.map(([k, v]) => { const [sid, round] = k.split("|").map(Number); return { student_id: sid, round, weight: v.weight, height: v.height }; }) } }), "น้ำหนักส่วนสูง"],
     [at, pendingA, (l) => api(`/api/homeroom/attendance?${q}`, { method: "PUT", body: { changes: l.map(([k, code]) => { const [sid, date] = k.split("|"); return { student_id: Number(sid), date, code }; }) } }), "การมาเรียน"],
+    [lg, pendingL, (l) => api(`/api/homeroom/logs?${q}`, { method: "PUT", body: { changes: l.map(([k, value]) => { const [sid, type, date] = k.split("|"); return { student_id: Number(sid), type, date, value }; }) } }), "แบบบันทึกประจำวัน"],
   ];
   let netErr = null, rejected = 0;
   for (const [list, map, send, label] of jobs) {
@@ -357,13 +360,13 @@ async function flush() {
   saving = false;
   if (netErr) { showState(netErr); showError(netErr); return; }
   showState();
-  if (pending.size || pendingC.size || pendingB.size || pendingA.size) flush();
+  if (pending.size || pendingC.size || pendingB.size || pendingA.size || pendingL.size) flush();
 }
 let reloadTimer;
 function reloadSoon() {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(async () => {
-    if (pending.size || pendingC.size || pendingB.size || pendingA.size || saving) return reloadSoon();
+    if (pending.size || pendingC.size || pendingB.size || pendingA.size || pendingL.size || saving) return reloadSoon();
     try { data = await api(`/api/homeroom?${q}`); render(); } catch { /* ลองครั้งหน้า */ }
   }, 1500);
 }
@@ -373,7 +376,7 @@ function showState(err) {
   if (!el) return;
   el.className = "save-state";
   if (err) { el.classList.add("error"); el.innerHTML = `บันทึกไม่สำเร็จ <button class="btn small" id="retry">ลองอีกครั้ง</button>`; document.getElementById("retry").onclick = flush; }
-  else if (saving || pending.size || pendingC.size || pendingB.size || pendingA.size) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
+  else if (saving || pending.size || pendingC.size || pendingB.size || pendingA.size || pendingL.size) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
   else el.textContent = "บันทึกแล้ว";
 }
 
@@ -477,6 +480,157 @@ async function renderAttendance() {
     else if (e.key === "ArrowLeft") { e.preventDefault(); accept(t); move(t, 0, -1); }
   });
   table.querySelector("th.today")?.scrollIntoView({ block: "nearest", inline: "center" });
+}
+
+// ---------- แบบบันทึกประจำวัน: ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ (ติ๊กรายวัน) + ตรวจสุขภาพ (สัปดาห์ละครั้ง) ----------
+// หน้าละ 1 เดือน วันในตารางมาจากปฏิทินวันหยุด (วันเรียนจันทร์–ศุกร์ในภาคเรียน) · นักเรียนที่บันทึกว่าขาด/ลาในวันนั้นจะขึ้นว่าไม่มา
+const LOG_FORMS = [["milk", "ดื่มนม"], ["brush", "แปรงฟัน"], ["lunch", "อาหารกลางวัน"], ["duty", "เขตรับผิดชอบ"], ["health", "ตรวจสุขภาพ"]];
+const LOG_TITLE = { milk: "แบบบันทึกการดื่มนม", brush: "แบบบันทึกการแปรงฟัน", lunch: "แบบบันทึกการรับประทานอาหารกลางวัน", duty: "แบบบันทึกการทำเขตรับผิดชอบ", health: "แบบบันทึกการตรวจสุขภาพ" };
+let logType = sessionStorage.getItem("sr-hr-log") || "milk";
+let lg;
+const ABS_LABEL = { "ข": "ขาด", "ล": "ลา", "ป": "ป่วย" };
+const dShort = (iso) => { const dt = new Date(`${iso}T00:00:00`); return `${dt.getDate()} ${dt.toLocaleDateString("th-TH", { month: "short" })}`; };
+
+async function renderLogs() {
+  if (!LOG_FORMS.some(([k]) => k === logType)) logType = "milk";
+  view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
+  lg = await api(`/api/homeroom/logs?${q}&type=${logType}${attMonth ? `&month=${attMonth}` : ""}`);
+  attMonth = lg.month;
+  const idx = lg.months.indexOf(lg.month);
+  const students = data.students;
+  const editable = (s) => s.enrollment_status === "enrolled";
+  const val = (sid, type, d) => lg.records[sid]?.[type]?.[d] || "";
+  const absent = (sid, d) => lg.absent[sid]?.[d] || "";
+  view.innerHTML = `
+    <div class="log-forms" role="tablist" aria-label="แบบบันทึก">${LOG_FORMS.map(([k, l]) => `<button role="tab" data-form="${k}" aria-selected="${k === logType}">${l}</button>`).join("")}</div>
+    <div class="sheet-tools">
+      <span class="actions">
+        <button class="btn small" id="mPrev" ${idx <= 0 ? "disabled" : ""} aria-label="เดือนก่อน">‹</button>
+        <select id="mSel" aria-label="เดือน">${(lg.months.length ? lg.months : [lg.month]).map((m) => `<option value="${m}" ${m === lg.month ? "selected" : ""}>${monthName(m)}</option>`).join("")}</select>
+        <button class="btn small" id="mNext" ${idx < 0 || idx >= lg.months.length - 1 ? "disabled" : ""} aria-label="เดือนถัดไป">›</button>
+        <strong class="log-title">${LOG_TITLE[logType]}</strong>
+      </span>
+      <span class="save-state" id="saveState">บันทึกแล้ว</span>
+    </div>
+    ${lg.holidays?.length ? `<p class="muted small" style="margin:0 0 8px">วันหยุดเดือนนี้ (ไม่แสดงในตาราง): ${lg.holidays.map((h) => `${new Date(`${h.holiday_date}T00:00:00`).getDate()} ${esc(h.name)}`).join(" · ")}</p>` : ""}
+    <div id="logSheet"></div>`;
+  const go = async (m) => { await flush(); attMonth = m; sessionStorage.setItem("sr-hr-month", m); renderLogs().catch(showError); };
+  document.getElementById("mSel").onchange = (e) => go(e.target.value);
+  document.getElementById("mPrev").onclick = () => go(lg.months[idx - 1]);
+  document.getElementById("mNext").onclick = () => go(lg.months[idx + 1]);
+  for (const b of view.querySelectorAll("[data-form]")) b.onclick = async () => { await flush(); logType = b.dataset.form; sessionStorage.setItem("sr-hr-log", logType); renderLogs().catch(showError); };
+  const box = document.getElementById("logSheet");
+  const set = (sid, type, d, v) => {
+    if (val(sid, type, d) === v) return false;
+    const r = (((lg.records[sid] ||= {})[type] ||= {}));
+    if (v) r[d] = v; else delete r[d];
+    pendingL.set(`${sid}|${type}|${d}`, v);
+    return true;
+  };
+  const queue = () => { showState(); clearTimeout(timer); timer = setTimeout(flush, 700); };
+
+  if (logType !== "health") {
+    // ---- ตารางติ๊กรายวัน ----
+    if (!lg.days.length) { box.innerHTML = `<div class="panel empty"><strong>เดือนนี้ไม่มีวันเรียน</strong>อยู่นอกช่วงภาคเรียน หรือเป็นวันหยุดทั้งเดือน</div>`; return; }
+    const T = logType;
+    const present = (s, d) => editable(s) && !absent(s.id, d);
+    const rowCount = (s) => lg.days.filter((d) => val(s.id, T, d) === "1").length;
+    const rowPresent = (s) => lg.days.filter((d) => present(s, d)).length;
+    const colText = (d) => { const p = students.filter((s) => present(s, d)); return `${p.filter((s) => val(s.id, T, d) === "1").length}/${p.length}`; };
+    const cell = (s, d) => {
+      const a = absent(s.id, d);
+      if (!editable(s)) return `<td class="lcell na"></td>`;
+      if (a) return `<td class="lcell absent" data-tip="${ABS_LABEL[a]} (จากบันทึกการมาเรียน)">${a}</td>`;
+      const on = val(s.id, T, d) === "1";
+      return `<td class="lcell"><button type="button" class="tick${on ? " on" : ""}" data-sid="${s.id}" data-d="${d}" aria-pressed="${on}" aria-label="${esc(s.name)} ${dShort(d)}">${on ? "✓" : ""}</button></td>`;
+    };
+    box.innerHTML = `<div class="sheet-wrap"><table class="sheet att-sheet log-sheet" id="sheet">
+      <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
+        ${lg.days.map((d) => { const dt = new Date(`${d}T00:00:00`); return `<th class="col-head att-day ${d === lg.today ? "today" : ""}"><span class="wd">${WD[dt.getDay()]}</span><b>${dt.getDate()}</b>
+          <button type="button" class="col-all" data-all="${d}" data-tip="ติ๊กทุกคนที่มาเรียนวันนี้ (กดอีกครั้ง = ล้าง)" aria-label="ติ๊กทั้งห้อง ${dShort(d)}">ทั้งห้อง</button></th>`; }).join("")}
+        <th class="col-head att-sum" data-tip="จำนวนวันที่ติ๊ก / วันที่มาเรียน">รวม</th></tr></thead>
+      <tbody>${students.map((s) => `<tr data-sid="${s.id}" class="${editable(s) ? "" : "inactive"}"><td class="stick no">${s.number ?? ""}</td><td class="stick name" title="${esc(s.name)}">${esc(s.name)}</td>
+        ${lg.days.map((d) => cell(s, d)).join("")}<td class="calc att-sum" data-row>${editable(s) ? `${rowCount(s)}/${rowPresent(s)}` : ""}</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td class="stick no"></td><td class="stick name" style="text-align:left">รวมรายวัน</td>${lg.days.map((d) => `<td class="calc log-foot" data-col="${d}">${colText(d)}</td>`).join("")}<td></td></tr></tfoot>
+    </table></div>
+    <p class="muted small" style="margin-top:10px">แตะช่องเพื่อติ๊ก ✓ (แตะซ้ำ = ล้าง) · ปุ่ม "ทั้งห้อง" ใต้วันที่ = ติ๊กทุกคนที่มาเรียนวันนั้น · ช่องสีเทาคือนักเรียนที่ขาด/ลาในบันทึกการมาเรียน
+      · วันหยุดจากปฏิทินวันหยุดไม่แสดงในตาราง · บันทึกอัตโนมัติ</p>`;
+    const table = document.getElementById("sheet");
+    const refresh = (sid, d) => {
+      const s = students.find((x) => x.id === sid), tr = table.querySelector(`tr[data-sid="${sid}"]`);
+      const btn = tr.querySelector(`[data-d="${d}"]`), on = val(sid, T, d) === "1";
+      if (btn) { btn.classList.toggle("on", on); btn.textContent = on ? "✓" : ""; btn.setAttribute("aria-pressed", String(on)); }
+      tr.querySelector("[data-row]").textContent = `${rowCount(s)}/${rowPresent(s)}`;
+      table.querySelector(`[data-col="${d}"]`).textContent = colText(d);
+    };
+    table.addEventListener("click", (e) => {
+      const t = e.target.closest(".tick");
+      if (t) { const sid = Number(t.dataset.sid), d = t.dataset.d; set(sid, T, d, val(sid, T, d) === "1" ? "" : "1"); refresh(sid, d); queue(); return; }
+      const all = e.target.closest("[data-all]");
+      if (all) {
+        const d = all.dataset.all, list = students.filter((s) => present(s, d));
+        const v = list.every((s) => val(s.id, T, d) === "1") ? "" : "1";
+        for (const s of list) { set(s.id, T, d, v); refresh(s.id, d); }
+        queue();
+      }
+    });
+    table.addEventListener("keydown", (e) => {
+      const t = e.target.closest(".tick"); if (!t) return;
+      const dirs = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+      if (!dirs[e.key]) return;
+      e.preventDefault();
+      const [dr, dc] = dirs[e.key], di = lg.days.indexOf(t.dataset.d), rows = [...table.querySelectorAll("tbody tr")];
+      let ri = rows.indexOf(t.closest("tr")), ci = di;
+      for (let i = 0; i < 60; i++) {
+        ri += dr; ci += dc;
+        const target = rows[ri]?.querySelector(`[data-d="${lg.days[ci]}"]`);
+        if (!rows[ri] || ci < 0 || ci >= lg.days.length) break;
+        if (target) { target.focus(); break; }
+      }
+    });
+    table.querySelector("th.today")?.scrollIntoView({ block: "nearest", inline: "center" });
+    return;
+  }
+
+  // ---- ตรวจสุขภาพ: 4 สัปดาห์ × เล็บ ฟัน ผม มือ · แตะวน ว่าง → ✓ สะอาด → ✗ ไม่สะอาด → ว่าง ----
+  const ITEMS = Object.entries(lg.health_items);
+  const wk = (w) => `${lg.month}-w${w}`;
+  const NEXT = { "": "ok", ok: "no", no: "" };
+  const badCount = (s) => lg.weeks.reduce((n, w) => n + ITEMS.filter(([k]) => val(s.id, k, wk(w.week)) === "no").length, 0);
+  const hcell = (s, k, w) => {
+    if (!editable(s)) return `<td class="lcell na"></td>`;
+    const v = val(s.id, k, wk(w));
+    return `<td class="lcell${w > 1 && k === ITEMS[0][0] ? " wk-start" : ""}"><button type="button" class="tick h ${v}" data-sid="${s.id}" data-k="${k}" data-w="${w}" aria-label="${esc(s.name)} สัปดาห์ ${w} ${lg.health_items[k]}">${v === "ok" ? "✓" : v === "no" ? "✗" : ""}</button></td>`;
+  };
+  box.innerHTML = `<div class="sheet-wrap"><table class="sheet log-sheet health" id="sheet">
+    <thead><tr><th class="stick no col-head" rowspan="2">เลขที่</th><th class="stick name col-head" rowspan="2" style="text-align:left">ชื่อ–สกุล</th>
+      ${lg.weeks.map((w) => `<th class="col-head wk-head${w.week > 1 ? " wk-start" : ""}" colspan="${ITEMS.length}">สัปดาห์ที่ ${w.week}<small>${w.from ? (w.from === w.to ? dShort(w.from) : `${dShort(w.from)} – ${dShort(w.to)}`) : "—"}</small>
+        <button type="button" class="col-all" data-wall="${w.week}" data-tip="ใส่ ✓ สะอาด ทุกช่องที่ยังว่างของสัปดาห์นี้ (ไม่ทับ ✗)">✓ ทั้งห้อง</button></th>`).join("")}
+      <th class="col-head att-sum" rowspan="2" data-tip="จำนวนรายการที่ไม่สะอาดในเดือนนี้">✗</th></tr>
+      <tr>${lg.weeks.map((w) => ITEMS.map(([k, l]) => `<th class="col-head h-item${w.week > 1 && k === ITEMS[0][0] ? " wk-start" : ""}">${l}</th>`).join("")).join("")}</tr></thead>
+    <tbody>${students.map((s) => `<tr data-sid="${s.id}" class="${editable(s) ? "" : "inactive"}"><td class="stick no">${s.number ?? ""}</td><td class="stick name" title="${esc(s.name)}">${esc(s.name)}</td>
+      ${lg.weeks.map((w) => ITEMS.map(([k]) => hcell(s, k, w.week)).join("")).join("")}<td class="calc att-sum bad" data-row>${editable(s) && badCount(s) ? badCount(s) : ""}</td></tr>`).join("")}</tbody>
+  </table></div>
+  <p class="muted small" style="margin-top:10px">ตรวจสัปดาห์ละครั้ง เดือนละ 4 สัปดาห์ · แตะช่องวน: ✓ สะอาด → ✗ ไม่สะอาด → ว่าง · ปุ่ม "✓ ทั้งห้อง" ใส่สะอาดให้ทุกช่องที่ยังว่างของสัปดาห์นั้น แล้วค่อยแก้เฉพาะคนที่ไม่สะอาด · บันทึกอัตโนมัติ</p>`;
+  const table = document.getElementById("sheet");
+  const draw = (sid, k, w) => {
+    const b = table.querySelector(`tr[data-sid="${sid}"] [data-k="${k}"][data-w="${w}"]`), v = val(sid, k, wk(w));
+    if (b) { b.className = `tick h ${v}`; b.textContent = v === "ok" ? "✓" : v === "no" ? "✗" : ""; }
+    const s = students.find((x) => x.id === sid), n = badCount(s);
+    table.querySelector(`tr[data-sid="${sid}"] [data-row]`).textContent = n || "";
+  };
+  table.addEventListener("click", (e) => {
+    const t = e.target.closest(".tick");
+    if (t) { const sid = Number(t.dataset.sid), k = t.dataset.k, w = Number(t.dataset.w); set(sid, k, wk(w), NEXT[val(sid, k, wk(w))]); draw(sid, k, w); queue(); return; }
+    const all = e.target.closest("[data-wall]");
+    if (all) {
+      const w = Number(all.dataset.wall), list = students.filter(editable);
+      const blanks = list.flatMap((s) => ITEMS.filter(([k]) => !val(s.id, k, wk(w))).map(([k]) => [s, k]));
+      if (blanks.length) for (const [s, k] of blanks) { set(s.id, k, wk(w), "ok"); draw(s.id, k, w); }
+      else for (const s of list) for (const [k] of ITEMS) if (val(s.id, k, wk(w)) === "ok") { set(s.id, k, wk(w), ""); draw(s.id, k, w); }
+      queue();
+    }
+  });
 }
 
 renderTabs();

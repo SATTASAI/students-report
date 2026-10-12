@@ -3,6 +3,11 @@ import { resolveYear, roomRoster, isHomeroomTeacher, assessmentsFor, yearResults
 import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
 
 export const ATT_CODES = [["ข", "ขาดเรียน"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]];
+// แบบบันทึกประจำวัน (ครูประจำชั้น) — ติ๊กรายวันตามวันเรียน
+export const DAILY_LOGS = { milk: "การดื่มนม", brush: "การแปรงฟัน", lunch: "การรับประทานอาหารกลางวัน", duty: "การทำเขตรับผิดชอบ" };
+// ตรวจสุขภาพสัปดาห์ละครั้ง 4 สัปดาห์ต่อเดือน
+export const HEALTH_ITEMS = { h_nail: "เล็บ", h_teeth: "ฟัน", h_hair: "ผม", h_hand: "มือ" };
+export const HEALTH_WEEKS = 4;
 export const COMMENT_FIELDS = ["learn", "habit", "health", "other"];
 
 async function roomContext(env, user, url) {
@@ -141,29 +146,13 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     const terms = cal.terms;
     const inTerm = (d) => terms.some((t) => d >= t.start_date && d <= t.end_date);
     if (method === "GET") {
-      const first = terms[0]?.start_date, last = terms.at(-1)?.end_date;
-      const today = thaiToday();
-      let month = /^\d{4}-\d{2}$/.test(url.searchParams.get("month") || "") ? url.searchParams.get("month")
-        : (first && today < first ? first : last && today > last ? last : today).slice(0, 7);
-      // วันเรียน = จันทร์–ศุกร์ในภาคเรียน ไม่รวมวันหยุดที่ฝ่ายวัดผลตั้ง (ถ้ายังไม่มีภาคเรียนในระบบ แสดงจันทร์–ศุกร์ทั้งเดือน)
-      const days = [];
-      for (let d = new Date(`${month}-01T00:00:00Z`); d.toISOString().slice(0, 7) === month; d.setUTCDate(d.getUTCDate() + 1)) {
-        const iso = d.toISOString().slice(0, 10), wd = d.getUTCDay();
-        if (wd !== 0 && wd !== 6 && (!terms.length || inTerm(iso)) && !cal.off.has(iso)) days.push(iso);
-      }
-      const holidays = cal.holidays.filter((h) => h.holiday_date.startsWith(month));
+      const { month, months, days, today, holidays } = monthSheet(cal, url);
       const records = {};
       if (ids.size) {
         const { results } = await env.DB.prepare(
           `SELECT student_id, att_date, code FROM gr_attendance WHERE academic_year_id = ? AND att_date LIKE ? AND student_id IN (${[...ids].map(() => "?").join(",")})`
         ).bind(year.id, `${month}-%`, ...ids).all();
         for (const r of results) (records[r.student_id] ||= {})[r.att_date] = r.code;
-      }
-      const months = [];
-      if (first && last) for (let m = first.slice(0, 7); m <= last.slice(0, 7);) {
-        months.push(m);
-        const [y, mm] = m.split("-").map(Number);
-        m = mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, "0")}`;
       }
       return json({ year, grade, room, month, months, days, today, records, codes: ATT_CODES, terms, holidays });
     }
@@ -185,6 +174,60 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       }
       await batchAll(env, stmts);
       await audit(env, user, "attendance.update", { grade, room, changes: stmts.length });
+      return json({ ok: true, saved: stmts.length });
+    }
+  }
+
+  // ---------- แบบบันทึกประจำวัน: ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ + ตรวจสุขภาพรายสัปดาห์ ----------
+  // หน้าละ 1 เดือน วันในตาราง = วันเรียน (จันทร์–ศุกร์ในภาคเรียน ไม่รวมวันหยุดจากปฏิทินวันหยุด)
+  if (sub === "logs") {
+    const { year, grade, room } = await roomContext(env, user, url);
+    const roster = await roomRoster(env, year.id, grade, room);
+    const ids = new Set(roster.map((s) => s.id));
+    const cal = await schoolCalendar(env, year.id);
+    const inTerm = (d) => !cal.terms.length || cal.terms.some((t) => d >= t.start_date && d <= t.end_date);
+    if (method === "GET") {
+      const type = url.searchParams.get("type") || "milk";
+      if (!DAILY_LOGS[type] && type !== "health") fail(400, "ไม่รู้จักแบบบันทึกนี้");
+      const { month, months, days, today, holidays } = monthSheet(cal, url);
+      const records = {}, absent = {};
+      if (ids.size) {
+        const ph = [...ids].map(() => "?").join(",");
+        const types = type === "health" ? Object.keys(HEALTH_ITEMS) : [type];
+        const [{ results }, { results: att }] = await Promise.all([
+          env.DB.prepare(`SELECT student_id, log_type, log_date, value FROM gr_daily_logs WHERE academic_year_id = ? AND log_type IN (${types.map(() => "?").join(",")}) AND log_date LIKE ? AND student_id IN (${ph})`)
+            .bind(year.id, ...types, `${month}-%`, ...ids).all(),
+          env.DB.prepare(`SELECT student_id, att_date, code FROM gr_attendance WHERE academic_year_id = ? AND att_date LIKE ? AND code IN ('ข','ล','ป') AND student_id IN (${ph})`)
+            .bind(year.id, `${month}-%`, ...ids).all(),
+        ]);
+        for (const r of results) ((records[r.student_id] ||= {})[r.log_type] ||= {})[r.log_date] = r.value;
+        for (const a of att) (absent[a.student_id] ||= {})[a.att_date] = a.code;
+      }
+      return json({ year, grade, room, type, month, months, days, today, holidays, weeks: weeksOf(days), records, absent, daily: DAILY_LOGS, health_items: HEALTH_ITEMS });
+    }
+    if (method === "PUT") {
+      const b = await readJson(request);
+      const changes = Array.isArray(b.changes) ? b.changes.slice(0, 5000) : [];
+      const stmts = [];
+      for (const c of changes) {
+        const sid = Number(c.student_id), type = String(c.type || ""), d = String(c.date || ""), v = String(c.value ?? "");
+        if (!ids.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
+        if (DAILY_LOGS[type]) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) fail(400, `วันที่ ${d} ไม่ถูกต้อง`);
+          if (!inTerm(d)) fail(400, `${d} อยู่นอกช่วงภาคเรียน`);
+          if (v && cal.off.has(d)) fail(400, `${d} เป็นวันหยุด (${cal.off.get(d)})`);
+          if (v && v !== "1") fail(400, "ค่าไม่ถูกต้อง");
+        } else if (HEALTH_ITEMS[type]) {
+          if (!new RegExp(`^\\d{4}-\\d{2}-w[1-${HEALTH_WEEKS}]$`).test(d)) fail(400, "สัปดาห์ไม่ถูกต้อง");
+          if (v && v !== "ok" && v !== "no") fail(400, "ใส่ได้เฉพาะ สะอาด / ไม่สะอาด");
+        } else fail(400, "ไม่รู้จักแบบบันทึกนี้");
+        stmts.push(v
+          ? env.DB.prepare(`INSERT INTO gr_daily_logs (academic_year_id, student_id, log_type, log_date, value, recorded_by, updated_at) VALUES (?,?,?,?,?,?,datetime('now'))
+              ON CONFLICT(student_id, log_type, log_date) DO UPDATE SET value = excluded.value, recorded_by = excluded.recorded_by, updated_at = datetime('now')`).bind(year.id, sid, type, d, v, user.id)
+          : env.DB.prepare("DELETE FROM gr_daily_logs WHERE student_id = ? AND log_type = ? AND log_date = ?").bind(sid, type, d));
+      }
+      await batchAll(env, stmts);
+      await audit(env, user, "logs.update", { grade, room, changes: stmts.length });
       return json({ ok: true, saved: stmts.length });
     }
   }
@@ -295,5 +338,42 @@ export async function bodyFor(env, yearId, ids) {
     ).bind(yearId, ...chunk).all();
     for (const r of results) (out[r.student_id] ||= {})[r.round] = { weight: r.weight, height: r.height };
   }
+  return out;
+}
+
+// ตารางรายเดือน: เดือนที่เลือก, รายการเดือนในปีการศึกษา, วันเรียนของเดือน (จันทร์–ศุกร์ในภาคเรียน ไม่รวมวันหยุด)
+// ถ้ายังไม่มีภาคเรียนในระบบ แสดงจันทร์–ศุกร์ทั้งเดือน
+export function monthSheet(cal, url) {
+  const terms = cal.terms;
+  const inTerm = (d) => terms.some((t) => d >= t.start_date && d <= t.end_date);
+  const first = terms[0]?.start_date, last = terms.at(-1)?.end_date;
+  const today = thaiToday();
+  const month = /^\d{4}-\d{2}$/.test(url.searchParams.get("month") || "") ? url.searchParams.get("month")
+    : (first && today < first ? first : last && today > last ? last : today).slice(0, 7);
+  const days = [];
+  for (let d = new Date(`${month}-01T00:00:00Z`); d.toISOString().slice(0, 7) === month; d.setUTCDate(d.getUTCDate() + 1)) {
+    const iso = d.toISOString().slice(0, 10), wd = d.getUTCDay();
+    if (wd !== 0 && wd !== 6 && (!terms.length || inTerm(iso)) && !cal.off.has(iso)) days.push(iso);
+  }
+  const months = [];
+  if (first && last) for (let m = first.slice(0, 7); m <= last.slice(0, 7);) {
+    months.push(m);
+    const [y, mm] = m.split("-").map(Number);
+    m = mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, "0")}`;
+  }
+  return { month, months, days, today, holidays: cal.holidays.filter((h) => h.holiday_date.startsWith(month)) };
+}
+
+// แบ่งวันเรียนของเดือนเป็นสัปดาห์ (จันทร์–ศุกร์) สำหรับตรวจสุขภาพ — เอา 4 สัปดาห์แรกที่มีวันเรียน
+// ถ้ามีวันเรียนน้อยกว่า 4 สัปดาห์ ช่องที่เหลือยังกรอกได้ (ไม่มีช่วงวันที่กำกับ)
+export function weeksOf(days) {
+  const groups = [];
+  for (const d of days) {
+    const dt = new Date(`${d}T00:00:00Z`), mon = new Date(dt); mon.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7));
+    const key = mon.toISOString().slice(0, 10), g = groups.at(-1);
+    if (g && g.key === key) g.to = d; else groups.push({ key, from: d, to: d });
+  }
+  const out = groups.slice(0, HEALTH_WEEKS).map((g, i) => ({ week: i + 1, from: g.from, to: g.to }));
+  while (out.length < HEALTH_WEEKS) out.push({ week: out.length + 1, from: null, to: null });
   return out;
 }

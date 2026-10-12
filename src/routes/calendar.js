@@ -1,17 +1,23 @@
 // ปฏิทินวันหยุดของโรงเรียน (ฝ่ายวัดผลตั้ง) — ใช้ซ่อนวันหยุดในตารางมาเรียน และนับวันเรียนจริงเพื่อคิดร้อยละการมาเรียน / มส
 // ช่วงภาคเรียน (วันเปิด–ปิด) มาจาก academic_terms ของระบบบริหารโรงเรียน
-import { json, readJson, fail, requireAdmin, text, audit, batchAll } from "../lib/http.js";
+import { json, readJson, fail, requireAdmin, requireUser, text, audit, batchAll } from "../lib/http.js";
 import { resolveYear, schoolCalendar } from "../lib/data.js";
 
 const validDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "") && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
 
 export async function handleCalendar(request, env, user, parts, method, url) {
-  requireAdmin(user);
+  requireUser(user);
   const year = await resolveYear(env, url.searchParams.get("year"));
   if (method === "GET") {
+    // ดูได้: ฝ่ายวิชาการ/วัดผล และครูประจำชั้น (ครูประจำชั้นดูอย่างเดียว แก้ไม่ได้)
+    if (!user.is_admin) {
+      const hr = await env.DB.prepare("SELECT 1 AS ok FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ? LIMIT 1").bind(year.id, user.id).first();
+      if (!hr) fail(403, "ปฏิทินวันหยุดดูได้เฉพาะครูประจำชั้นและฝ่ายวัดผล");
+    }
     const cal = await schoolCalendar(env, year.id);
-    return json({ year, terms: cal.terms, holidays: cal.holidays, school_days: cal.days.length });
+    return json({ year, terms: cal.terms, holidays: cal.holidays, school_days: cal.days.length, can_edit: !!(user.is_admin && user.can_import) });
   }
+  requireAdmin(user);
   if (!user.can_import) fail(403, "ตั้งปฏิทินได้เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล");
   if (method === "POST") {
     const b = await readJson(request);
@@ -31,6 +37,7 @@ export async function handleCalendar(request, env, user, parts, method, url) {
       env.DB.prepare(`INSERT INTO gr_holidays (academic_year_id, holiday_date, name, created_by) VALUES (?,?,?,?)
         ON CONFLICT(academic_year_id, holiday_date) DO UPDATE SET name = excluded.name`).bind(year.id, d, name, user.id),
       env.DB.prepare("DELETE FROM gr_attendance WHERE academic_year_id = ? AND att_date = ?").bind(year.id, d),
+      env.DB.prepare("DELETE FROM gr_daily_logs WHERE academic_year_id = ? AND log_date = ?").bind(year.id, d),
     ]));
     await audit(env, user, "calendar.add", { year: year.id, from, to, name, days: dates.length });
     return json({ ok: true, added: dates.length });

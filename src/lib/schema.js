@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-8";
+export const SCHEMA_VERSION = "gr-9";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -193,6 +193,17 @@ export const SCHEMA_SQL = [
     detail TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_gr_course_edits ON gr_course_edits(course_id, id)`,
+  // gr-9: แบบบันทึกประจำวันของครูประจำชั้น — ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ (ติ๊กรายวัน, เก็บเฉพาะวันที่ติ๊ก value '1')
+  // และตรวจสุขภาพ เล็บ/ฟัน/ผม/มือ สัปดาห์ละครั้ง 4 สัปดาห์ต่อเดือน (log_date = 'YYYY-MM-w1'..'w4', value 'ok' สะอาด / 'no' ไม่สะอาด)
+  `CREATE TABLE IF NOT EXISTS gr_daily_logs (
+    academic_year_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    log_type TEXT NOT NULL,
+    log_date TEXT NOT NULL,
+    value TEXT NOT NULL,
+    recorded_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (student_id, log_type, log_date))`,
+  `CREATE INDEX IF NOT EXISTS idx_gr_daily_logs ON gr_daily_logs(academic_year_id, log_type, log_date)`,
   `CREATE TABLE IF NOT EXISTS gr_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER, action TEXT NOT NULL, detail TEXT,
