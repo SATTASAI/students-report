@@ -110,3 +110,18 @@ test("รายชื่อนักเรียน: ฝ่ายวัดผล
   const p6 = (await call("admin", "GET", `/api/roster?grade=${encodeURIComponent("ป.6")}&room=1`, null, { expect: 200 })).data;
   assert.ok(p6.students.some((s) => s.id === s3.id && !s.manual_number));
 });
+
+test("ครูสมัครใหม่ (ยังไม่มีบทบาท): ฝ่ายวัดผลเห็นในรายชื่อ มอบหมายวิชาได้ และได้บทบาทครูอัตโนมัติ", async () => {
+  const { call, env, c } = await setup();
+  const list = (await call("admin", "GET", "/api/admin/teachers", null, { expect: 200 })).data.teachers;
+  const fresh = list.find((t) => t.email === "pending@test.local");
+  assert.ok(fresh && fresh.pending === 1);
+  await call("t1", "PUT", `/api/admin/courses/${c.id}/teachers`, { user_ids: [fresh.id] }, { expect: 403 });
+  await call("admin", "PUT", `/api/admin/courses/${c.id}/teachers`, { user_ids: [2, fresh.id] }, { expect: 200 });
+  const u = await env.DB.prepare("SELECT role, approved_at FROM users WHERE id = ?").bind(fresh.id).first();
+  assert.equal(u.role, "teacher");
+  assert.ok(u.approved_at);
+  // บทบาทเดิมไม่ถูกเปลี่ยน
+  await call("admin", "PUT", `/api/admin/courses/${c.id}/teachers`, { user_ids: [1] }, { expect: 200 });
+  assert.equal((await env.DB.prepare("SELECT role FROM users WHERE id = 1").first()).role, "superadmin");
+});

@@ -103,8 +103,10 @@ export async function handleAdmin(request, env, user, parts, method, url) {
 
   if (section === "teachers" && method === "GET") {
     const { results } = await env.DB.prepare(
-      `SELECT u.id, u.full_name, u.email, u.role, r.role AS grade_role FROM users u LEFT JOIN gr_staff_roles r ON r.user_id = u.id
-        WHERE u.status = 'active' AND u.deleted_at IS NULL AND u.role IS NOT NULL ORDER BY u.full_name`
+      // รวมครูที่เพิ่งสมัคร (ยังไม่มีบทบาท) — ฝ่ายวัดผลมอบหมายวิชาได้เลย และได้บทบาทครูอัตโนมัติ
+      `SELECT u.id, u.full_name, u.email, u.role, u.created_at, r.role AS grade_role, CASE WHEN u.role IS NULL THEN 1 ELSE 0 END AS pending
+         FROM users u LEFT JOIN gr_staff_roles r ON r.user_id = u.id
+        WHERE u.status = 'active' AND u.deleted_at IS NULL ORDER BY u.full_name`
     ).all();
     return json({ teachers: results });
   }
@@ -212,6 +214,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
           ...p.teacherIds.map((t) => env.DB.prepare("INSERT OR IGNORE INTO gr_course_teachers (course_id, user_id) SELECT id, ? FROM gr_courses WHERE subject_id = ? AND classroom = ?").bind(t, p.subjectId, p.classroom)),
         ]));
       }
+      await grantTeacherRole(env, user, plan.flatMap((p) => p.teacherIds));
       await audit(env, user, `import.${idPart}`, { year: year.id, rows: plan.length });
       return json({ ok: true, summary: { rows: plan.length } });
     }
@@ -352,6 +355,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       if (!courseIds.length) fail(400, "กรุณาเลือกรายวิชา");
       await assertTeacher(env, teacher);
       await batchAll(env, courseIds.map((cid) => env.DB.prepare("INSERT OR IGNORE INTO gr_course_teachers (course_id, user_id) SELECT id, ? FROM gr_courses WHERE id = ?").bind(teacher, cid)));
+      await grantTeacherRole(env, user, [teacher]);
       await audit(env, user, "courses.assign", { teacher, courseIds });
       return json({ ok: true });
     }
@@ -367,6 +371,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         env.DB.prepare("DELETE FROM gr_course_teachers WHERE course_id = ?").bind(id),
         ...ids.map((t) => env.DB.prepare("INSERT INTO gr_course_teachers (course_id, user_id) VALUES (?, ?)").bind(id, t)),
       ]);
+      await grantTeacherRole(env, user, ids);
       await audit(env, user, "course.teachers", { id, ids });
       return json({ ok: true });
     }
@@ -454,6 +459,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         ...ids.map((t) => env.DB.prepare("INSERT INTO gr_homerooms (academic_year_id, grade_level, classroom, user_id) VALUES (?,?,?,?)").bind(year.id, grade, room, t)),
       ]);
       await mirrorHomerooms(env, year.id, [{ grade, classroom: room, userIds: ids }], user.id);
+      await grantTeacherRole(env, user, ids);
       await audit(env, user, "homeroom.set", { year: year.id, grade, room, ids });
       return json({ ok: true });
     }
@@ -574,7 +580,7 @@ const normName = (n) => {
   return s.replace(/\s+/g, "");
 };
 async function teacherMatcher(env) {
-  const { results } = await env.DB.prepare("SELECT id, email, full_name FROM users WHERE status = 'active' AND deleted_at IS NULL AND role IS NOT NULL").all();
+  const { results } = await env.DB.prepare("SELECT id, email, full_name FROM users WHERE status = 'active' AND deleted_at IS NULL").all();
   const byEmail = new Map(results.map((u) => [String(u.email).toLowerCase(), u.id]));
   const byName = new Map();
   for (const u of results) { const k = normName(u.full_name); byName.set(k, byName.has(k) ? -1 : u.id); }
@@ -596,8 +602,20 @@ async function countCourses(env, yearId) {
   return r.n;
 }
 
+// ครูที่เพิ่งสมัคร (ยังไม่มีบทบาท) เมื่อฝ่ายวัดผลมอบหมายวิชา/ประจำชั้น → ได้บทบาท "ครู" ทันที (ไม่เปลี่ยนบทบาทที่มีอยู่แล้ว)
+async function grantTeacherRole(env, actor, ids) {
+  const list = [...new Set(ids.map(Number).filter(Boolean))];
+  if (!list.length) return;
+  const ph = list.map(() => "?").join(",");
+  const { results } = await env.DB.prepare(`SELECT id FROM users WHERE role IS NULL AND id IN (${ph})`).bind(...list).all();
+  if (!results.length) return;
+  await env.DB.prepare(`UPDATE users SET role = 'teacher', approved_at = COALESCE(approved_at, datetime('now')), approved_by = COALESCE(approved_by, ?)
+    WHERE role IS NULL AND id IN (${results.map(() => "?").join(",")})`).bind(actor.id, ...results.map((r) => r.id)).run();
+  await audit(env, actor, "users.grant_teacher", { users: results.map((r) => r.id) });
+}
+
 async function assertTeacher(env, id) {
-  const t = await env.DB.prepare("SELECT id FROM users WHERE id = ? AND status = 'active' AND deleted_at IS NULL AND role IS NOT NULL").bind(id).first();
+  const t = await env.DB.prepare("SELECT id FROM users WHERE id = ? AND status = 'active' AND deleted_at IS NULL").bind(id).first();
   if (!t) fail(400, "ผู้ใช้ที่เลือกไม่ใช่บัญชีครูที่ใช้งานอยู่");
 }
 

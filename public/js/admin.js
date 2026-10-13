@@ -267,14 +267,22 @@ const statusTag = (c) => (c.status === "approved" ? '<span class="tag ok">อน
 
 // ---------- ครูผู้สอน ----------
 let selRoom = sessionStorage.getItem("sr-admin-room") || "";
+let teachView = sessionStorage.getItem("sr-admin-teachview") || "room"; // room = รายห้อง · teacher = รายครู
+const perWeek = (hours) => Math.round((Number(hours) || 0) / 40 * 10) / 10; // ชั่วโมง/ปี ÷ 40 สัปดาห์ = คาบ/สัปดาห์
+const pendingTag = (t) => (t.pending ? ' <span class="tag warn" data-tip="เพิ่งสมัคร — มอบหมายวิชาแล้วจะได้สิทธิ์ครูอัตโนมัติ">สมัครใหม่</span>' : "");
 async function renderCourses() {
   const [{ courses }, list] = await Promise.all([api(`/api/admin/courses?${yq}`), teachers()]);
   const rooms = [...new Set(courses.map((c) => `${c.grade_level}/${c.classroom}`))];
   if (!rooms.length) { view.innerHTML = `<div class="panel empty"><strong>ยังไม่มีรายวิชาของห้องเรียน</strong>ทำขั้นตอนในเมนู "เริ่มต้นปีการศึกษา" ก่อน</div>`; return; }
   if (!rooms.includes(selRoom)) selRoom = rooms[0];
+  const viewSwitch = `<div class="log-forms" role="tablist" aria-label="มุมมอง" style="margin-bottom:14px">
+    <button role="tab" data-view="room" aria-selected="${teachView === "room"}">รายห้อง</button>
+    <button role="tab" data-view="teacher" aria-selected="${teachView === "teacher"}">รายครู</button></div>
+    <p class="muted small" style="margin:-4px 0 12px">ข้อมูลวิชาที่ครูแต่ละคนสอน (กำหนดที่หน้านี้ที่เดียว) เป็นข้อมูลกลาง — ระบบบริหารโรงเรียนใช้จัดตารางสอน สอนแทน และแสดงภาระสอนในทะเบียนบุคลากร</p>`;
+  if (teachView === "teacher") return renderTeacherLoad(courses, list, viewSwitch);
   const inRoom = courses.filter((c) => `${c.grade_level}/${c.classroom}` === selRoom);
   const missing = (r) => courses.filter((c) => `${c.grade_level}/${c.classroom}` === r && !c.teachers.length).length;
-  view.innerHTML = `<div class="panel">
+  view.innerHTML = `${viewSwitch}<div class="panel">
     <div class="panel-head"><div class="actions">${rooms.map((r) => `<button class="btn small ${r === selRoom ? "primary" : ""}" data-room="${r}">${r}${missing(r) ? ` <span class="tag warn">${missing(r)}</span>` : ""}</button>`).join("")}</div></div>
     <div class="actions" style="margin-bottom:12px"><button class="btn" id="assignAll">ให้ครู 1 คนสอนหลายวิชาในห้อง ${selRoom}</button></div>
     <div class="table-wrap"><table class="list"><thead><tr><th>รหัส</th><th>วิชา</th><th>ครูผู้สอน</th><th>ความคืบหน้า</th><th>สถานะ</th><th></th></tr></thead>
@@ -285,20 +293,21 @@ async function renderCourses() {
       <td class="actions"><button class="btn small" data-teach="${c.id}">ครูผู้สอน</button></td></tr>`).join("")}</tbody></table></div>
     <p class="muted small" style="margin-top:10px">ตรวจผล ส่งคืนให้ครูแก้ และส่งต่อผู้บริหาร ทำที่เมนู <a href="/admin.html#review">ตรวจผลการเรียน</a></p></div>`;
   for (const b of view.querySelectorAll("[data-room]")) b.onclick = () => { selRoom = b.dataset.room; sessionStorage.setItem("sr-admin-room", selRoom); render(); };
+  bindViewSwitch();
   const teacherChecks = (chosen) => `<input type="search" placeholder="ค้นหาชื่อครู" data-filter style="margin-bottom:10px">
-    <div style="display:grid;gap:4px;max-height:340px;overflow:auto">${list.map((t) => `<label class="check" data-name="${esc(t.full_name)}"><input type="checkbox" name="t${t.id}" ${chosen.includes(t.id) ? "checked" : ""}> ${esc(t.full_name)}</label>`).join("")}</div>`;
+    <div style="display:grid;gap:4px;max-height:340px;overflow:auto">${list.map((t) => `<label class="check" data-name="${esc(t.full_name)}"><input type="checkbox" name="t${t.id}" ${chosen.includes(t.id) ? "checked" : ""}> ${esc(t.full_name)}${pendingTag(t)}</label>`).join("")}</div>`;
   const bindFilter = (d) => { const f = d.querySelector("[data-filter]"); f.oninput = () => { for (const l of d.querySelectorAll("[data-name]")) l.hidden = !l.dataset.name.includes(f.value.trim()); }; };
   for (const b of view.querySelectorAll("[data-teach]")) b.onclick = async () => {
     const c = inRoom.find((x) => x.id === Number(b.dataset.teach));
     const r = await dialog({ title: `ครูผู้สอน ${c.code} ${c.grade_level}/${c.classroom}`, body: teacherChecks(c.teachers.map((t) => t.id)), onOpen: bindFilter });
     if (!r.ok) return;
     const ids = list.filter((t) => r.data[`t${t.id}`]).map((t) => t.id);
-    try { await api(`/api/admin/courses/${c.id}/teachers`, { method: "PUT", body: { user_ids: ids } }); toast("บันทึกแล้ว"); render(); } catch (err) { showError(err); }
+    try { await api(`/api/admin/courses/${c.id}/teachers`, { method: "PUT", body: { user_ids: ids } }); teachersCache = null; toast("บันทึกแล้ว"); render(); } catch (err) { showError(err); }
   };
   document.getElementById("assignAll").onclick = async () => {
     const r = await dialog({
       title: `มอบหมายหลายวิชาในห้อง ${selRoom}`,
-      body: `<label class="field">ครูผู้สอน<select name="user_id" required><option value="">เลือกครู</option>${list.map((t) => `<option value="${t.id}">${esc(t.full_name)}</option>`).join("")}</select></label>
+      body: `<label class="field">ครูผู้สอน<select name="user_id" required><option value="">เลือกครู</option>${list.map((t) => `<option value="${t.id}">${esc(t.full_name)}${t.pending ? " (สมัครใหม่)" : ""}</option>`).join("")}</select></label>
         <p class="muted small" style="margin:12px 0 6px">วิชาที่ให้สอน (เพิ่มเป็นครูผู้สอนร่วม ไม่ลบครูเดิม)</p>
         <div style="display:grid;gap:4px">${inRoom.map((c) => `<label class="check"><input type="checkbox" name="c${c.id}" ${c.teachers.length ? "" : "checked"}> ${esc(c.code)} ${esc(c.name)}</label>`).join("")}</div>`,
     });
@@ -309,6 +318,62 @@ async function renderCourses() {
 }
 
 // ---------- ครูประจำชั้น ----------
+function bindViewSwitch() {
+  for (const b of view.querySelectorAll("[data-view]")) b.onclick = () => { teachView = b.dataset.view; sessionStorage.setItem("sr-admin-teachview", teachView); render(); };
+}
+
+// มุมมองรายครู: ครู → วิชาที่สอน (ห้อง, คาบ/สัปดาห์) · ครูที่ยังไม่มีวิชา (รวมครูที่เพิ่งสมัคร) อยู่บนสุด
+function renderTeacherLoad(courses, list, viewSwitch) {
+  const byTeacher = new Map();
+  for (const c of courses) for (const t of c.teachers) (byTeacher.get(t.id) || byTeacher.set(t.id, []).get(t.id)).push(c);
+  const people = list.filter((t) => byTeacher.has(t.id) || t.pending || t.role === "teacher");
+  const none = people.filter((t) => !byTeacher.has(t.id));
+  const some = people.filter((t) => byTeacher.has(t.id));
+  const unassigned = courses.filter((c) => !c.teachers.length).length;
+  const load = (t) => (byTeacher.get(t.id) || []).reduce((a, c) => a + perWeek(c.hours_per_year), 0);
+  const row = (t) => {
+    const cs = (byTeacher.get(t.id) || []).sort((a, b) => `${a.grade_level}${a.classroom}${a.code}`.localeCompare(`${b.grade_level}${b.classroom}${b.code}`, "th"));
+    return `<tr><td><b>${esc(t.full_name)}</b>${pendingTag(t)}<br><span class="muted small">${esc(t.email || "")}</span></td>
+      <td>${cs.length ? cs.map((c) => `<span class="chip-use" style="display:inline-block;border:1px solid var(--line);border-radius:999px;margin:2px">${esc(c.grade_level)}/${esc(c.classroom)} ${esc(c.code)} ${esc(c.name)}</span>`).join("") : '<span class="tag warn">ยังไม่มีวิชาสอน</span>'}</td>
+      <td class="num">${cs.length || ""}</td><td class="num">${cs.length ? fmtNum(load(t)) : ""}</td>
+      <td class="actions"><button class="btn small" data-tload="${t.id}">กำหนดวิชา</button></td></tr>`;
+  };
+  view.innerHTML = `${viewSwitch}<div class="panel">
+    <div class="panel-head"><h2>ภาระสอนรายครู</h2><span class="muted small">${some.length} คนมีวิชาสอน · ยังไม่มีวิชา ${none.length} คน${unassigned ? ` · รายวิชาที่ยังไม่มีครู ${unassigned} วิชา` : ""}</span></div>
+    <div class="table-wrap"><table class="list"><thead><tr><th>ครู</th><th>วิชาที่สอน (ชั้น/ห้อง รหัส ชื่อวิชา)</th><th class="num">วิชา</th><th class="num" data-tip="ชั่วโมงต่อปี ÷ 40 สัปดาห์">คาบ/สัปดาห์</th><th></th></tr></thead>
+    <tbody>${[...none, ...some].map(row).join("") || '<tr><td colspan="5" class="empty">ยังไม่มีบัญชีครู</td></tr>'}</tbody></table></div>
+    <p class="muted small" style="margin-top:10px">ครูสมัครเข้าใช้ระบบเอง → ฝ่ายวัดผลกำหนดวิชาที่สอนที่นี่ (ครูที่เพิ่งสมัครได้สิทธิ์ครูอัตโนมัติเมื่อได้รับวิชา) → ระบบอื่นใช้ข้อมูลนี้</p></div>`;
+  bindViewSwitch();
+  for (const b of view.querySelectorAll("[data-tload]")) b.onclick = async () => {
+    const t = list.find((x) => x.id === Number(b.dataset.tload));
+    const mine = new Set((byTeacher.get(t.id) || []).map((c) => c.id));
+    const rooms = [...new Set(courses.map((c) => `${c.grade_level}/${c.classroom}`))];
+    const r = await dialog({
+      title: `วิชาที่ ${t.full_name} สอน`, wide: true,
+      body: `<input type="search" placeholder="ค้นหา ชั้น/ห้อง รหัส หรือชื่อวิชา" data-filter style="margin-bottom:10px">
+        <div style="display:grid;gap:10px;max-height:420px;overflow:auto">${rooms.map((room) => `<div data-group><b class="small">${esc(room)}</b>
+          <div style="display:grid;gap:2px;margin-top:4px">${courses.filter((c) => `${c.grade_level}/${c.classroom}` === room).map((c) => `<label class="check" data-name="${esc(`${room} ${c.code} ${c.name}`)}">
+            <input type="checkbox" name="c${c.id}" ${mine.has(c.id) ? "checked" : ""}> ${esc(c.code)} ${esc(c.name)}
+            <span class="muted small">${c.teachers.filter((x) => x.id !== t.id).map((x) => esc(x.full_name)).join(", ") || ""}</span></label>`).join("")}</div></div>`).join("")}</div>
+        <p class="muted small">ติ๊ก = ครูคนนี้สอนวิชานั้น (สอนร่วมกับครูคนอื่นได้) · เอาติ๊กออก = ไม่ได้สอนแล้ว</p>`,
+      onOpen: (d) => { const f = d.querySelector("[data-filter]"); f.oninput = () => { for (const l of d.querySelectorAll("[data-name]")) l.hidden = !l.dataset.name.includes(f.value.trim()); for (const g of d.querySelectorAll("[data-group]")) g.hidden = ![...g.querySelectorAll("[data-name]")].some((l) => !l.hidden); }; },
+    });
+    if (!r.ok) return;
+    const want = new Set(courses.filter((c) => r.data[`c${c.id}`]).map((c) => c.id));
+    const changed = courses.filter((c) => want.has(c.id) !== mine.has(c.id));
+    try {
+      for (const c of changed) {
+        const ids = c.teachers.map((x) => x.id).filter((id) => id !== t.id);
+        if (want.has(c.id)) ids.push(t.id);
+        await api(`/api/admin/courses/${c.id}/teachers`, { method: "PUT", body: { user_ids: ids } });
+      }
+      teachersCache = null;
+      toast(changed.length ? `บันทึก ${changed.length} วิชาแล้ว` : "ไม่มีการเปลี่ยนแปลง"); render();
+    } catch (err) { showError(err); render(); }
+  };
+}
+const fmtNum = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
 async function renderHomerooms() {
   const [{ rooms }, list] = await Promise.all([api(`/api/admin/homerooms?${yq}`), teachers()]);
   view.innerHTML = `<div class="panel">
