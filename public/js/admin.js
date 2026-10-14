@@ -234,7 +234,7 @@ async function renderSubjects() {
   document.getElementById("addSub").onclick = async () => {
     const r = await dialog({ title: "เพิ่มรายวิชา", body: form(), okText: "เพิ่ม" });
     if (!r.ok) return;
-    try { await api("/api/admin/subjects", { method: "POST", body: { ...r.data, year: Y } }); toast("เพิ่มรายวิชาแล้ว — กดสร้าง/เติมรายวิชาทุกห้องเพื่อใช้กับห้องเรียน"); render(); } catch (err) { showError(err); }
+    try { await api("/api/admin/subjects", { method: "POST", body: { ...r.data, year: Y } }); toast("เพิ่มรายวิชาแล้ว — ทุกห้องของชั้นนี้มีวิชานี้แล้ว มอบหมายครูได้ที่เมนูครูผู้สอน"); render(); } catch (err) { showError(err); }
   };
   for (const b of view.querySelectorAll("[data-edit]")) b.onclick = async () => {
     const s = subjects.find((x) => x.id === Number(b.dataset.edit));

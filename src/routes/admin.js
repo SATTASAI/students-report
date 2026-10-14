@@ -92,6 +92,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
     const rooms = [...new Set((Array.isArray(b.rooms) ? b.rooms : []).map((r) => text(r, 20)))];
     for (const r of rooms) if (!valid.has(r)) fail(400, `ไม่พบห้อง ${r} ในปีการศึกษานี้`);
     await upsertSettings(env, year.id, { pilot_rooms: rooms.length ? JSON.stringify(rooms) : null }, user);
+    await syncCourses(env, year.id);
     await audit(env, user, "pilot.set", { year: year.id, rooms });
     return json({ ok: true, pilot_rooms: rooms.length ? rooms : null });
   }
@@ -169,6 +170,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(academic_year_id, grade_level, code) DO UPDATE SET name=excluded.name, learning_area=excluded.learning_area,
         subject_type=excluded.subject_type, hours_per_year=excluded.hours_per_year, collect_ratio=excluded.collect_ratio, sort_order=excluded.sort_order`)
         .bind(year.id, s.grade, s.code, s.name, s.area, s.type, s.hours, s.ratio, s.sort)));
+      await syncCourses(env, year.id);
       await audit(env, user, "import.subjects", { year: year.id, ...summary });
       return json({ ok: true, summary });
     }
@@ -228,6 +230,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
     if (from.id === year.id) fail(400, "เลือกปีต้นทางที่ไม่ใช่ปีเดียวกัน");
     const r = await env.DB.prepare(`INSERT OR IGNORE INTO gr_subjects (academic_year_id, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order)
       SELECT ?, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order FROM gr_subjects WHERE academic_year_id = ?`).bind(year.id, from.id).run();
+    await syncCourses(env, year.id);
     await audit(env, user, "subjects.copy", { year: year.id, from: from.id, added: r.meta?.changes ?? 0 });
     return json({ ok: true, added: r.meta?.changes ?? 0 });
   }
@@ -259,6 +262,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         });
       }
       await batchAll(env, stmts);
+      await syncCourses(env, year.id);
       await audit(env, user, "subjects.template", { year: year.id, grades });
       return json({ ok: true, created_for: grades });
     }
@@ -269,6 +273,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       try {
         const r = await env.DB.prepare(`INSERT INTO gr_subjects (academic_year_id, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order)
           VALUES (?,?,?,?,?,?,?,?,?)`).bind(year.id, s.grade, s.code, s.name, s.area, s.type, s.hours, s.ratio, s.sort).run();
+        await syncCourses(env, year.id, [r.meta.last_row_id]);
         await audit(env, user, "subject.create", { id: r.meta.last_row_id, ...s });
         return json({ ok: true, id: r.meta.last_row_id });
       } catch (e) {
@@ -297,6 +302,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         if (String(e.message).includes("UNIQUE")) fail(409, `มีรหัสวิชา ${s.code} ของ ${s.grade} อยู่แล้ว`);
         throw e;
       }
+      if (s.grade !== existing.grade_level) await syncCourses(env, existing.academic_year_id, [id]);
       await audit(env, user, existing.collect_ratio !== s.ratio ? "subject.ratio" : "subject.update", { id, before: existing, after: s });
       return json({ ok: true });
     }
@@ -330,21 +336,15 @@ export async function handleAdmin(request, env, user, parts, method, url) {
     if (method === "POST" && idPart === "generate") {
       const b = await readJson(request);
       const year = await resolveYear(env, b.year);
-      const pilot = (await getSettings(env, year.id)).pilot_rooms;
-      const rooms = (await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level) && (!pilot || pilot.includes(`${r.grade_level}/${r.classroom}`)));
-      const { results: subjects } = await env.DB.prepare("SELECT id, grade_level FROM gr_subjects WHERE academic_year_id = ?").bind(year.id).all();
-      const stmts = [];
-      for (const s of subjects) for (const r of rooms) if (r.grade_level === s.grade_level) {
-        stmts.push(env.DB.prepare("INSERT OR IGNORE INTO gr_courses (subject_id, classroom) VALUES (?, ?)").bind(s.id, r.classroom));
-      }
-      const before = await countCourses(env, year.id);
-      await batchAll(env, stmts);
-      const after = await countCourses(env, year.id);
-      await audit(env, user, "courses.generate", { year: year.id, created: after - before });
-      return json({ ok: true, created: after - before, total: after });
+      const created = await syncCourses(env, year.id);
+      const total = await countCourses(env, year.id);
+      await audit(env, user, "courses.generate", { year: year.id, created });
+      return json({ ok: true, created, total });
     }
     if (method === "GET" && !idPart) {
       const year = await resolveYear(env, url.searchParams.get("year"));
+      // รายวิชาของชั้น ↔ รายวิชาของห้อง ต้องตรงกันเสมอ: วิชาที่เพิ่มทีหลังยังไม่มีห้อง → สร้างให้ก่อนแสดง
+      await syncCourses(env, year.id);
       return json({ year, courses: await courseOverview(env, year.id) });
     }
     if (method === "POST" && idPart === "assign-room") {
@@ -595,6 +595,26 @@ async function teacherMatcher(env) {
 // อ่าน body โดยไม่กิน stream (ใช้แยกเส้นทาง lock เก่า)
 async function peekJson(request) {
   try { return await request.clone().json(); } catch { return {}; }
+}
+
+// สร้างรายวิชาของห้อง (gr_courses) ที่ยังขาด ให้ทุกวิชาของชั้นมีครบทุกห้องของชั้นนั้น (เฉพาะห้องที่เปิดใช้ถ้าตั้งไว้)
+// ไม่ลบของเดิม — ครูผู้สอน/คะแนนที่มีอยู่ไม่กระทบ คืนจำนวนที่สร้างเพิ่ม
+export async function syncCourses(env, yearId, subjectIds = null) {
+  const pilot = (await getSettings(env, yearId)).pilot_rooms;
+  const rooms = (await listRooms(env, yearId)).filter((r) => isPrimaryGrade(r.grade_level) && (!pilot || pilot.includes(`${r.grade_level}/${r.classroom}`)));
+  const { results: subjects } = await env.DB.prepare("SELECT id, grade_level FROM gr_subjects WHERE academic_year_id = ?").bind(yearId).all();
+  const { results: have } = await env.DB.prepare("SELECT c.subject_id, c.classroom FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id WHERE s.academic_year_id = ?").bind(yearId).all();
+  const exists = new Set(have.map((c) => `${c.subject_id}|${c.classroom}`));
+  const only = subjectIds ? new Set(subjectIds.map(Number)) : null;
+  const stmts = [];
+  for (const s of subjects) {
+    if (only && !only.has(s.id)) continue;
+    for (const r of rooms) if (r.grade_level === s.grade_level && !exists.has(`${s.id}|${r.classroom}`)) {
+      stmts.push(env.DB.prepare("INSERT OR IGNORE INTO gr_courses (subject_id, classroom) VALUES (?, ?)").bind(s.id, r.classroom));
+    }
+  }
+  if (stmts.length) await batchAll(env, stmts);
+  return stmts.length;
 }
 
 async function countCourses(env, yearId) {

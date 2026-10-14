@@ -55,8 +55,9 @@ test("ผู้ดูแลสร้างวิชา/รายวิชาต�
   const { call } = await setup();
   await call("t1", "POST", "/api/admin/subjects/template", {}, { expect: 403 });
   const { gen, courses } = await prepareYear(call);
-  // ป.1 มี 2 ห้อง × 9 วิชา + ป.4 1 ห้อง × 9 วิชา = 27 (อ.3 ไม่มีเพราะไม่ใช่ประถม)
-  assert.equal(gen.created, 27);
+  // ป.1 มี 2 ห้อง × 9 วิชา + ป.4 1 ห้อง × 9 วิชา = 27 (อ.3 ไม่มีเพราะไม่ใช่ประถม) — สร้างให้ทันทีตอนเพิ่มรายวิชา
+  assert.equal(gen.total, 27);
+  assert.equal(courses.length, 27);
   const again = await call("admin", "POST", "/api/admin/courses/generate", {}, { expect: 200 });
   assert.equal(again.data.created, 0, "สร้างซ้ำต้องไม่เพิ่ม");
   const thai11 = courses.find((c) => c.code === "ท11101" && c.classroom === "1");

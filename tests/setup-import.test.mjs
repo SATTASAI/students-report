@@ -88,18 +88,21 @@ test("เกณฑ์ผ่านตัวชี้วัดแยกภาค �
 
 test("ห้องนำร่อง: สร้างรายวิชาเฉพาะห้องที่เลือก", async () => {
   const { call } = await setup();
-  await call("admin", "POST", "/api/admin/subjects/template", { grades: ["ป.1", "ป.4"] }, { expect: 200 });
   await call("admin", "PUT", "/api/admin/pilot", { rooms: ["ป.9/9"] }, { expect: 400 });
   await call("t1", "PUT", "/api/admin/pilot", { rooms: ["ป.4/1"] }, { expect: 403 });
   const p = await call("admin", "PUT", "/api/admin/pilot", { rooms: ["ป.4/1"] }, { expect: 200 });
   assert.deepEqual(p.data.pilot_rooms, ["ป.4/1"]);
+  // เพิ่มรายวิชา → สร้างรายวิชาของห้องให้ทันทีเฉพาะห้องนำร่อง
+  await call("admin", "POST", "/api/admin/subjects/template", { grades: ["ป.1", "ป.4"] }, { expect: 200 });
   const gen = await call("admin", "POST", "/api/admin/courses/generate", {}, { expect: 200 });
-  assert.equal(gen.data.created, 9);
+  assert.equal(gen.data.created, 0);
+  assert.equal(gen.data.total, 9);
   const { courses } = (await call("admin", "GET", "/api/admin/courses", null, { expect: 200 })).data;
+  assert.equal(courses.length, 9);
   assert.ok(courses.every((c) => c.grade_level === "ป.4" && c.classroom === "1"));
-  // ยกเลิกนำร่อง → เติมห้องที่เหลือ
+  // ยกเลิกนำร่อง → เติมห้องที่เหลือให้อัตโนมัติ
   await call("admin", "PUT", "/api/admin/pilot", { rooms: [] }, { expect: 200 });
-  assert.equal((await call("admin", "POST", "/api/admin/courses/generate", {}, { expect: 200 })).data.created, 18);
+  assert.equal((await call("admin", "GET", "/api/admin/courses", null, { expect: 200 })).data.courses.length, 27);
 });
 
 test("นำเข้ารายวิชา ครูผู้สอน และครูประจำชั้นจาก Excel", async () => {
@@ -143,7 +146,9 @@ test("นำเข้ารายวิชา ครูผู้สอน แล
     { room: "ป 4/1", code: "ค14101", teachers: "teacher2@test.local, ครูสมใจ ใจดี" },
   ] }, { expect: 200 });
   const courses = (await call("admin", "GET", "/api/admin/courses", null, { expect: 200 })).data.courses;
-  assert.equal(courses.length, 2);
+  // ทุกวิชาที่นำเข้ามีครบทุกห้องของชั้น: ป.4/1 × 2 วิชา + ป.1 2 ห้อง × 1 วิชา
+  assert.equal(courses.length, 4);
+  assert.equal(courses.filter((c) => c.grade_level === "ป.4").length, 2);
   assert.deepEqual(courses.find((c) => c.code === "ค14101").teachers.map((x) => x.id).sort(), [2, 3]);
   // ครูเห็นเฉพาะวิชาที่ได้รับมอบหมาย
   const mine = (await call("t1", "GET", "/api/my/courses", null)).data;
