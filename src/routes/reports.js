@@ -1,7 +1,7 @@
 import { json, fail, requireUser, requireAdmin, intParam, text } from "../lib/http.js";
 import {
   resolveYear, listYears, getSettings, listRooms, roomRoster, isHomeroomTeacher, yearResultsForStudents,
-  assessmentsFor, absenceCounts, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, compareGrade,
+  assessmentsFor, absenceCounts, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, compareGrade, compareRoom, compareSubject, homeroomNames,
 } from "../lib/data.js";
 import { courseOverview } from "./admin.js";
 import { listAbsences, commentsFor } from "./homeroom.js";
@@ -17,6 +17,7 @@ export async function handleMe(request, env, user, url) {
   const { results: homerooms } = await env.DB.prepare(
     "SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?"
   ).bind(year.id, user.id).all();
+  homerooms.sort(compareRoom); // เมนูประจำชั้นเรียง อ.1 → ป.6 และห้อง 1, 2, …, 10
   const rooms = await listRooms(env, year.id);
   for (const h of homerooms) h.students = rooms.find((r) => r.grade_level === h.grade_level && r.classroom === h.classroom)?.students || 0;
   const summary = user.is_admin ? {
@@ -51,8 +52,7 @@ async function roomReport(env, year, grade, room, onlyStudent) {
     assessmentsFor(env, year.id, ids),
     absenceCounts(env, year.id, ids),
     getSettings(env, year.id),
-    env.DB.prepare("SELECT u.full_name FROM gr_homerooms h JOIN users u ON u.id = h.user_id WHERE h.academic_year_id = ? AND h.grade_level = ? AND h.classroom = ?")
-      .bind(year.id, grade, room).all().then((r) => r.results.map((x) => x.full_name)),
+    homeroomNames(env, year.id, grade, room),
     commentsFor(env, year.id, ids),
   ]);
   return {
@@ -177,7 +177,7 @@ export async function handleReports(request, env, user, parts, method, url) {
           if (gp != null) gpas.push(gp);
           for (const sub of list) {
             const key = `${g}|${sub.code}`;
-            const row = bySubject[key] ||= { grade_level: g, code: sub.code, name: sub.name, learning_area: sub.learning_area, subject_type: sub.subject_type, counts: {}, n: 0, sum: 0, graded: 0 };
+            const row = bySubject[key] ||= { grade_level: g, code: sub.code, name: sub.name, learning_area: sub.learning_area, subject_type: sub.subject_type, sort_order: sub.sort_order, counts: {}, n: 0, sum: 0, graded: 0 };
             const grade = sub.grade ?? "ยังไม่มีผล";
             row.counts[grade] = (row.counts[grade] || 0) + 1;
             row.n++;
@@ -190,7 +190,7 @@ export async function handleReports(request, env, user, parts, method, url) {
     const subjects = Object.values(bySubject).map((r) => ({
       ...r, mean: r.graded ? Math.floor((r.sum / r.graded) * 100) / 100 : null,
       good_pct: r.graded && r.n ? Math.round((((r.counts["4"] || 0) + (r.counts["3.5"] || 0) + (r.counts["3"] || 0)) / r.n) * 1000) / 10 : null,
-    })).sort((a, b) => compareGrade(a.grade_level, b.grade_level) || (a.subject_type === "additional") - (b.subject_type === "additional") || a.code.localeCompare(b.code));
+    })).sort((a, b) => compareGrade(a.grade_level, b.grade_level) || compareSubject(a, b));
     return json({ year, settings: await getSettings(env, year.id), subjects, rooms: byRoom });
   }
 

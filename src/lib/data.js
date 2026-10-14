@@ -66,10 +66,29 @@ export function compareRoom(a, b) {
   return compareGrade(a.grade_level, b.grade_level) ||
     String(a.classroom).localeCompare(String(b.classroom), "th", { numeric: true });
 }
+export const sortRooms = (rows) => rows.sort(compareRoom);
 export const isPrimaryGrade = (g) => /^ป\.[1-6]$/.test(g);
 // อนุบาล: ใช้ระบบส่วนงานครูประจำชั้น (บันทึกการมาเรียน น้ำหนักส่วนสูง ย้ายเข้า/ออก) — ยังไม่มีรายวิชา/ปพ.5/ปพ.6
 export const isKinderGrade = (g) => /^อ\.[1-3]$/.test(g);
 export const isSchoolGrade = (g) => isPrimaryGrade(g) || isKinderGrade(g);
+
+// เรียงชื่อคนแบบไทย: ไม่สนคำนำหน้า (นาย/นาง/นางสาว/ครู…) และเรียงสระหน้า (เ แ โ ใ ไ) ตามพจนานุกรม
+const NAME_PREFIX = /^(นางสาว|นาง|นาย|น\.ส\.|ว่าที่ร้อยตรี|ว่าที่ ร\.ต\.|ดร\.|ครู|เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.)\s*/;
+const thaiCollator = new Intl.Collator("th", { numeric: true, sensitivity: "base" });
+export function bareName(n) {
+  let s = String(n || "").trim(), prev;
+  do { prev = s; s = s.replace(NAME_PREFIX, ""); } while (s !== prev);
+  return s;
+}
+export const compareThaiName = (a, b) => thaiCollator.compare(bareName(a), bareName(b)) || thaiCollator.compare(String(a || ""), String(b || ""));
+export const compareThai = (a, b) => thaiCollator.compare(String(a ?? ""), String(b ?? ""));
+// ลำดับรายวิชาที่ใช้ทุกหน้า/ทุกเอกสาร: พื้นฐานก่อนเพิ่มเติม → ลำดับในรายงาน → รหัสวิชา
+export const compareSubject = (a, b) => (a.subject_type === "additional") - (b.subject_type === "additional") || (a.sort_order ?? 0) - (b.sort_order ?? 0) || compareThai(a.code, b.code);
+// ลำดับช่องคะแนนของรายวิชา (หน้ากรอกคะแนน ปพ.5 แม่แบบ คัดลอก ใช้ลำดับเดียวกับหน้าโครงสร้าง):
+// ภาค → ระหว่างภาคก่อนปลายภาค → ตามหน่วยการเรียนรู้ (หน่วยที่ 1, 2, …; ไม่สังกัดหน่วยไว้ท้าย) → ลำดับที่เพิ่ม
+export const ITEM_ORDER_SQL = `FROM gr_items i LEFT JOIN gr_units un ON un.id = i.unit_id AND un.course_id = i.course_id
+  WHERE i.course_id = ?`;
+export const ITEM_ORDER_BY = `ORDER BY i.term_number, i.kind = 'final', un.unit_no IS NULL, un.unit_no, un.id, i.sort_order, i.id`;
 
 const ROSTER_CTE = `WITH ranked AS (
   SELECT se.student_id, se.grade_level, se.classroom, se.status,
@@ -159,6 +178,16 @@ export function studentName(s) {
   return s.full_name;
 }
 
+// บัญชีที่ยังใช้งานอยู่ (ครูที่ถูกปิดบัญชี/ลบในระบบบริหารฯ ไม่นับเป็นครูผู้สอน/ครูประจำชั้น — รายวิชาจะขึ้นว่ายังไม่กำหนดครู)
+export const ACTIVE_USER = "u.status = 'active' AND u.deleted_at IS NULL";
+// ครูประจำชั้นของห้อง (ชื่อ เรียงแบบไทย) — ใช้ทุกเอกสารให้ลำดับตรงกัน
+export async function homeroomNames(env, yearId, grade, room) {
+  const { results } = await env.DB.prepare(
+    `SELECT u.full_name FROM gr_homerooms h JOIN users u ON u.id = h.user_id WHERE h.academic_year_id = ? AND h.grade_level = ? AND h.classroom = ? AND ${ACTIVE_USER}`
+  ).bind(yearId, grade, room).all();
+  return results.map((r) => r.full_name).sort(compareThaiName);
+}
+
 export async function loadCourse(env, courseId) {
   const course = await env.DB.prepare(
     `SELECT c.id, c.classroom, c.locked, c.submitted_at, c.submitted_by, c.subject_id,
@@ -175,14 +204,14 @@ export async function loadCourse(env, courseId) {
   ).bind(courseId).first();
   if (!course) fail(404, "ไม่พบรายวิชา");
   const { results: teachers } = await env.DB.prepare(
-    `SELECT u.id, u.full_name FROM gr_course_teachers ct JOIN users u ON u.id = ct.user_id WHERE ct.course_id = ? ORDER BY u.full_name`
+    `SELECT u.id, u.full_name FROM gr_course_teachers ct JOIN users u ON u.id = ct.user_id WHERE ct.course_id = ? AND ${ACTIVE_USER}`
   ).bind(courseId).all();
-  course.teachers = teachers;
+  course.teachers = teachers.sort((a, b) => compareThaiName(a.full_name, b.full_name));
   course.status = courseStatus(course);
   const { results: homeroom } = await env.DB.prepare(
-    "SELECT u.full_name FROM gr_homerooms h JOIN users u ON u.id = h.user_id WHERE h.academic_year_id = ? AND h.grade_level = ? AND h.classroom = ? ORDER BY u.full_name"
+    `SELECT u.full_name FROM gr_homerooms h JOIN users u ON u.id = h.user_id WHERE h.academic_year_id = ? AND h.grade_level = ? AND h.classroom = ? AND ${ACTIVE_USER}`
   ).bind(course.academic_year_id, course.grade_level, course.classroom).all();
-  course.homeroom_teachers = homeroom.map((h) => h.full_name);
+  course.homeroom_teachers = homeroom.map((h) => h.full_name).sort(compareThaiName);
   return course;
 }
 
@@ -214,7 +243,7 @@ export async function assertCourseAccess(env, user, courseId, { write = false } 
 export async function courseBundle(env, course) {
   const settings = await getSettings(env, course.academic_year_id);
   const [items, units, roster, scoreRows, resultRows] = await Promise.all([
-    env.DB.prepare("SELECT id, term_number, kind, code, title, max_score, sort_order, unit_id FROM gr_items WHERE course_id = ? ORDER BY term_number, kind = 'final', sort_order, id")
+    env.DB.prepare(`SELECT i.id, i.term_number, i.kind, i.code, i.title, i.max_score, i.sort_order, i.unit_id ${ITEM_ORDER_SQL} ${ITEM_ORDER_BY}`)
       .bind(course.id).all().then((r) => r.results),
     env.DB.prepare("SELECT id, term_number, unit_no, title, hours, task FROM gr_units WHERE course_id = ? ORDER BY term_number, unit_no, id")
       .bind(course.id).all().then((r) => r.results),
@@ -321,7 +350,7 @@ export async function yearResultsForStudents(env, yearId, grade, studentIds) {
         locked: !!course.locked, ...calc, remedial_type: resIdx[key]?.remedial_type || null,
       });
     }
-    out[sid].sort((a, b) => (a.subject_type === "additional") - (b.subject_type === "additional") || a.sort_order - b.sort_order || a.code.localeCompare(b.code));
+    out[sid].sort(compareSubject);
   }
   return out;
 }

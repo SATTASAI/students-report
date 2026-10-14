@@ -8,6 +8,9 @@ import {
 } from "../lib/data.js";
 import { ASSESSMENT_GROUPS, summarizeGroup } from "../../public/js/grading.js";
 import { SAR_ITEM_KEYS, CORE_AREAS, DEFAULT_LEVELS } from "../../public/js/sar.js";
+import { LEARNING_AREAS } from "./admin.js";
+// กลุ่มสาระเรียงตามหลักสูตรแกนกลาง (ภาษาไทย คณิต วิทย์ …) กลุ่มอื่นของ ป.1–3 ต่อท้าย
+const areaRank = (a) => { const i = LEARNING_AREAS.indexOf(a); return i < 0 ? 99 : i; };
 
 const GOOD = new Set(["3", "3.5", "4"]);
 const FINAL = new Set(["4", "3.5", "3", "2.5", "2", "1.5", "1", "0", "ร", "มส"]);
@@ -123,7 +126,7 @@ export async function sarData(env, year) {
   return {
     year, school: { name: settings.school_name, director: settings.director_name, affiliation: settings.affiliation },
     metrics, values, levels, coverage,
-    grade_area: Object.values(byGradeArea).sort((a, b) => compareGrade(a.grade_level, b.grade_level) || a.learning_area.localeCompare(b.learning_area, "th")),
+    grade_area: Object.values(byGradeArea).sort((a, b) => compareGrade(a.grade_level, b.grade_level) || areaRank(a.learning_area) - areaRank(b.learning_area) || a.learning_area.localeCompare(b.learning_area, "th")),
   };
 }
 

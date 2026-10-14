@@ -1,7 +1,7 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
 import { assertCourseAccess, courseBundle, loadCourse, canViewCourse, studentName } from "../lib/data.js";
 import { computeStudentResult, resultWithAttendance, validateRemedial, structureIssues, indicatorWord, indicatorResult, submissionChecks } from "../../public/js/grading.js";
-import { gradeSettings, getSettings, assessmentsFor } from "../lib/data.js";
+import { gradeSettings, getSettings, assessmentsFor, ITEM_ORDER_SQL, ITEM_ORDER_BY, compareThai } from "../lib/data.js";
 import { ADMIN_ROLES } from "../lib/http.js";
 
 const MAX_ITEMS_PER_COURSE = 80;
@@ -88,7 +88,7 @@ async function readStructure(env, courseId, terms = [1, 2]) {
   const ph = terms.map(() => "?").join(",");
   const [{ results: units }, { results: items }] = await Promise.all([
     env.DB.prepare(`SELECT id, term_number, unit_no, title, hours, task FROM gr_units WHERE course_id = ? AND term_number IN (${ph}) ORDER BY term_number, unit_no, id`).bind(courseId, ...terms).all(),
-    env.DB.prepare(`SELECT term_number, kind, code, title, max_score, unit_id FROM gr_items WHERE course_id = ? AND term_number IN (${ph}) ORDER BY term_number, kind = 'final', sort_order, id`).bind(courseId, ...terms).all(),
+    env.DB.prepare(`SELECT i.term_number, i.kind, i.code, i.title, i.max_score, i.unit_id ${ITEM_ORDER_SQL} AND i.term_number IN (${ph}) ${ITEM_ORDER_BY}`).bind(courseId, ...terms).all(),
   ]);
   return {
     units: units.map((u) => ({ key: u.id, term_number: u.term_number, unit_no: u.unit_no, title: u.title, hours: u.hours, task: u.task })),
@@ -217,16 +217,19 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
               (SELECT COUNT(*) FROM gr_items i WHERE i.course_id = c.id) AS item_count
          FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id JOIN academic_years y ON y.id = s.academic_year_id
         WHERE c.id <> ? AND (s.id = ? OR (s.code = ? AND s.grade_level = ?))
-        ORDER BY y.year_be DESC, c.classroom`
+        ORDER BY y.year_be DESC`
     ).bind(course.id, course.subject_id, course.code, course.grade_level).all();
+    results.sort((a, b) => b.year_be - a.year_be || compareThai(a.classroom, b.classroom));
     return json({ courses: results.filter((r) => r.item_count > 0) });
   }
 
   if (sub === "bank" && method === "GET") {
     const course = await assertCourseAccess(env, user, id);
     const { results } = await env.DB.prepare(
-      "SELECT id, code, title FROM gr_indicator_bank WHERE grade_level = ? AND learning_area = ? ORDER BY code, id LIMIT 500"
+      "SELECT id, code, title FROM gr_indicator_bank WHERE grade_level = ? AND learning_area = ? LIMIT 500"
     ).bind(course.grade_level, course.learning_area).all();
+    // เรียงรหัสแบบตัวเลข: ท 1.1 ป.4/2 มาก่อน ท 1.1 ป.4/10 · ตัวชี้วัดที่ไม่มีรหัสไว้ท้าย ตามลำดับที่เพิ่ม
+    results.sort((a, b) => (!a.code) - (!b.code) || compareThai(a.code, b.code) || a.id - b.id);
     return json({ indicators: results });
   }
 

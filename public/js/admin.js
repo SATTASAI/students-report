@@ -164,7 +164,10 @@ async function renderImport() {
     const save = document.getElementById("saveImport");
     if (save) save.onclick = async () => {
       save.disabled = true;
-      try { await send(false); toast(`นำเข้า${spec.title}แล้ว`); teachersCache = null; box.value = ""; info.textContent = ""; out.innerHTML = `<p class="note">บันทึกแล้ว ${rows.length} แถว</p>`; }
+      try {
+        const res = await send(false); toast(`นำเข้า${spec.title}แล้ว`); teachersCache = null; box.value = ""; info.textContent = "";
+        out.innerHTML = `<p class="note">บันทึกแล้ว ${rows.length} แถว${res?.appended ? ` · เปิดภาคเรียนแล้ว นักเรียนที่เพิ่ม/ย้ายเข้าห้อง ${res.appended} คนได้เลขที่ต่อท้ายห้อง (เลขที่ของคนเดิมไม่เลื่อน — แก้เลขที่ได้ที่เมนูนักเรียน)` : ""}</p>`;
+      }
       catch (err) { save.disabled = false; showError(err); }
     };
   };
@@ -228,7 +231,7 @@ async function renderSubjects() {
     <label class="field">กลุ่มสาระ<select name="learning_area">${[...learning_areas, "อื่น ๆ"].map((a) => `<option ${s.learning_area === a ? "selected" : ""}>${a}</option>`).join("")}</select></label>
     <label class="field">เวลาเรียน (ชม./ปี)<input name="hours_per_year" inputmode="numeric" required value="${s.hours_per_year ?? 40}"></label>
     <label class="field">ระหว่างภาค : ปลายภาค<select name="collect_ratio">${ratioOptions(s.collect_ratio ?? defaultRatio)}</select></label>
-    <label class="field">ลำดับในรายงาน<input name="sort_order" inputmode="numeric" value="${s.sort_order ?? 100}"></label>
+    <label class="field">ลำดับในรายงาน<input name="sort_order" inputmode="numeric" value="${s.sort_order ?? ""}" placeholder="ว่าง = ต่อท้ายวิชาของชั้นนี้"></label>
   </div>
   ${s.id && s.course_count ? '<p class="note warn" style="margin-top:12px">แก้สัดส่วนหรือเวลาเรียนแล้ว ผลการเรียนของทุกห้องจะคำนวณใหม่ตามค่าใหม่ทันที</p>' : ""}`;
   document.getElementById("addSub").onclick = async () => {
@@ -333,7 +336,7 @@ function renderTeacherLoad(courses, list, viewSwitch) {
   const unassigned = courses.filter((c) => !c.teachers.length).length;
   const load = (t) => (byTeacher.get(t.id) || []).reduce((a, c) => a + perWeek(c.hours_per_year), 0);
   const row = (t) => {
-    const cs = (byTeacher.get(t.id) || []).sort((a, b) => `${a.grade_level}${a.classroom}${a.code}`.localeCompare(`${b.grade_level}${b.classroom}${b.code}`, "th"));
+    const cs = byTeacher.get(t.id) || []; // ตามลำดับรายวิชาจากเซิร์ฟเวอร์: ชั้น → ห้อง (1, 2, …, 10) → พื้นฐาน/เพิ่มเติม → ลำดับในรายงาน
     return `<tr><td><b>${esc(t.full_name)}</b>${pendingTag(t)}<br><span class="muted small">${esc(t.email || "")}</span></td>
       <td>${cs.length ? cs.map((c) => `<span class="chip-use" style="display:inline-block;border:1px solid var(--line);border-radius:999px;margin:2px">${esc(c.grade_level)}/${esc(c.classroom)} ${esc(c.code)} ${esc(c.name)}</span>`).join("") : '<span class="tag warn">ยังไม่มีวิชาสอน</span>'}</td>
       <td class="num">${cs.length || ""}</td><td class="num">${cs.length ? fmtNum(load(t)) : ""}</td>
@@ -438,7 +441,7 @@ async function renderStudents() {
     let body;
     if (f === "room") {
       const [grade_level, classroom] = el.value.split("/");
-      if (!(await confirmBox("ย้ายห้อง", `ย้ายนักเรียนไปห้อง ${esc(el.value)} — คะแนนที่กรอกไว้ในห้องเดิมยังอยู่ (แสดงเป็น "ย้ายห้อง")`, "ย้ายห้อง"))) { el.value = rosterRoom; return; }
+      if (!(await confirmBox("ย้ายห้อง", `ย้ายนักเรียนไปห้อง ${esc(el.value)} — คะแนนที่กรอกไว้ในห้องเดิมยังอยู่ (แสดงเป็น "ย้ายห้อง") · ถ้าเปิดภาคเรียนแล้ว นักเรียนได้เลขที่ต่อท้ายห้องใหม่ เลขที่ของคนเดิมไม่เลื่อน`, "ย้ายห้อง"))) { el.value = rosterRoom; return; }
       body = { grade_level, classroom };
     } else body = { [f]: el.value.trim() };
     try {

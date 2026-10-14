@@ -2,7 +2,7 @@
 // ค่าเริ่มต้นผ่าน: เก็บเฉพาะ "มผ" ในช่อง act_xxx_t (เวลาเรียน) / act_xxx_o (จุดประสงค์) ของ gr_assessments
 // ปพ.6 / ปพ.5 / ปพ.1 อ่านจากตารางเดียวกันนี้
 import { json, readJson, fail, requireUser, text, audit, batchAll } from "../lib/http.js";
-import { resolveYear, roomRoster, listRooms, getSettings, assessmentsFor, studentName, isPrimaryGrade } from "../lib/data.js";
+import { resolveYear, roomRoster, listRooms, getSettings, assessmentsFor, studentName, isPrimaryGrade, compareRoom } from "../lib/data.js";
 import { ASSESSMENT_GROUPS, ACTIVITY_PARTS } from "../../public/js/grading.js";
 
 const GROUP = ASSESSMENT_GROUPS.find((g) => g.type === "activity");
@@ -17,9 +17,10 @@ async function editableRooms(env, user, year) {
       .filter((r) => !settings.pilot_rooms || settings.pilot_rooms.includes(`${r.grade_level}/${r.classroom}`));
   }
   const { results } = await env.DB.prepare(
-    "SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ? ORDER BY grade_level, classroom"
+    "SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?"
   ).bind(year.id, user.id).all();
-  return results;
+  // กิจกรรมพัฒนาผู้เรียนเป็นของ ป.1–6 (อนุบาลไม่มี ปพ.5.1) — ครูประจำชั้นอนุบาลไม่ต้องเห็นห้องที่บันทึกไม่ได้
+  return results.filter((r) => isPrimaryGrade(r.grade_level)).sort(compareRoom);
 }
 
 export async function handleActivities(request, env, user, parts, method, url) {

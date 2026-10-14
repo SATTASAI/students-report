@@ -1,5 +1,5 @@
 import { json, readJson, fail, requireAdmin, intParam, text, audit, batchAll, HttpError, requireImporter } from "../lib/http.js";
-import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade, isSchoolGrade, mirrorHomerooms } from "../lib/data.js";
+import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade, isSchoolGrade, mirrorHomerooms, compareThaiName, compareSubject, compareGrade, compareThai, ACTIVE_USER } from "../lib/data.js";
 
 export const LEARNING_AREAS = [
   "ภาษาไทย", "คณิตศาสตร์", "วิทยาศาสตร์และเทคโนโลยี", "สังคมศึกษา ศาสนาและวัฒนธรรม",
@@ -39,7 +39,10 @@ function cleanSubject(body, settings) {
   if (!Number.isInteger(hours) || hours < 1 || hours > 400) fail(400, "เวลาเรียนต้องเป็นจำนวนเต็ม 1–400 ชั่วโมง");
   const ratio = body.collect_ratio == null || body.collect_ratio === "" ? settings.collect_ratio : Number(body.collect_ratio);
   if (!ALLOWED_RATIOS.includes(ratio)) fail(400, `สัดส่วนคะแนนเก็บต้องเป็นหนึ่งใน ${RATIO_TEXT}`);
-  const sort = Number.isInteger(Number(body.sort_order)) ? Number(body.sort_order) : 0;
+  // ลำดับในรายงานว่าง = ต่อท้ายวิชาของชั้นนั้น (เพิ่มใหม่) หรือคงลำดับเดิม (แก้ไข/นำเข้าซ้ำ)
+  const rawSort = body.sort_order;
+  const sort = rawSort === "" || rawSort == null ? null : Number(rawSort);
+  if (sort != null && (!Number.isInteger(sort) || sort < 0 || sort > 9999)) fail(400, "ลำดับในรายงานต้องเป็นจำนวนเต็ม 0–9999");
   return { grade, code, name, area, type, hours, ratio, sort };
 }
 
@@ -107,9 +110,9 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       // รวมครูที่เพิ่งสมัคร (ยังไม่มีบทบาท) — ฝ่ายวัดผลมอบหมายวิชาได้เลย และได้บทบาทครูอัตโนมัติ
       `SELECT u.id, u.full_name, u.email, u.role, u.created_at, r.role AS grade_role, CASE WHEN u.role IS NULL THEN 1 ELSE 0 END AS pending
          FROM users u LEFT JOIN gr_staff_roles r ON r.user_id = u.id
-        WHERE u.status = 'active' AND u.deleted_at IS NULL ORDER BY u.full_name`
+        WHERE u.status = 'active' AND u.deleted_at IS NULL`
     ).all();
-    return json({ teachers: results });
+    return json({ teachers: results.sort((a, b) => compareThaiName(a.full_name, b.full_name)) });
   }
 
   if (section === "staff-roles") {
@@ -146,7 +149,6 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         const key = `${s.grade}|${s.code}`;
         if (seen.has(key)) fail(400, `รหัส ${s.code} ของ ${s.grade} ซ้ำในไฟล์`);
         seen.add(key);
-        if (!r.sort_order && r.sort_order !== 0) s.sort = (i + 1) * 10;
         return s;
       }));
       const { results: existing } = await env.DB.prepare(
@@ -164,6 +166,17 @@ export async function handleAdmin(request, env, user, parts, method, url) {
             error: `${s.code} ${s.grade}: เปลี่ยนสัดส่วนคะแนน/เวลาเรียนไม่ได้ เพราะมี ${e.locked} ห้องส่งผลแล้ว — ส่งคืนให้ครูก่อน` });
         }
       });
+      // ลำดับในรายงาน: วิชาเดิมที่ไม่ได้ระบุลำดับ คงลำดับเดิม · วิชาใหม่ต่อท้ายวิชาของชั้นนั้นตามลำดับแถวในไฟล์
+      const { results: sorts } = await env.DB.prepare("SELECT grade_level, code, sort_order FROM gr_subjects WHERE academic_year_id = ?").bind(year.id).all();
+      const oldSort = Object.fromEntries(sorts.map((x) => [`${x.grade_level}|${x.code}`, x.sort_order]));
+      const nextSort = {};
+      for (const x of sorts) nextSort[x.grade_level] = Math.max(nextSort[x.grade_level] || 0, x.sort_order || 0);
+      for (const p of plan) {
+        if (p.sort != null) continue;
+        const k = `${p.grade}|${p.code}`;
+        if (k in oldSort) p.sort = oldSort[k];
+        else p.sort = nextSort[p.grade] = (nextSort[p.grade] || 0) + 10;
+      }
       const summary = { add: plan.filter((s) => !have.has(`${s.grade}|${s.code}`)).length, update: plan.filter((s) => have.has(`${s.grade}|${s.code}`)).length };
       if (b.dry_run || errors.length) return json({ ok: !errors.length, dry_run: true, errors, summary, preview: plan });
       await batchAll(env, plan.map((s) => env.DB.prepare(`INSERT INTO gr_subjects (academic_year_id, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order)
@@ -243,8 +256,9 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         `SELECT s.*, (SELECT COUNT(*) FROM gr_courses c WHERE c.subject_id = s.id) AS course_count,
                 (SELECT COUNT(*) FROM gr_courses c WHERE c.subject_id = s.id AND c.locked = 1) AS locked_count,
                 (SELECT COUNT(DISTINCT i.course_id) FROM gr_items i JOIN gr_courses c ON c.id = i.course_id WHERE c.subject_id = s.id) AS structured_count
-           FROM gr_subjects s WHERE s.academic_year_id = ? ORDER BY s.grade_level, s.subject_type, s.sort_order, s.code`
+           FROM gr_subjects s WHERE s.academic_year_id = ?`
       ).bind(year.id).all();
+      results.sort((a, b) => compareGrade(a.grade_level, b.grade_level) || compareSubject(a, b));
       return json({ year, subjects: results, learning_areas: LEARNING_AREAS });
     }
     if (method === "POST" && idPart === "template") {
@@ -255,10 +269,11 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       const stmts = [];
       for (const g of grades) {
         const digit = g.slice(-1);
+        const base = (await nextSubjectSort(env, year.id, g)) - 10; // ชั้นที่มีวิชาอยู่แล้ว → วิชาพื้นฐานที่เพิ่มต่อท้าย ไม่แทรกกลาง
         BASIC_TEMPLATE.forEach((t, i) => {
           stmts.push(env.DB.prepare(`INSERT OR IGNORE INTO gr_subjects (academic_year_id, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order)
             VALUES (?,?,?,?,?, 'basic', ?, ?, ?)`).bind(year.id, g, `${t.p}1${digit}${t.n}`, t.name, LEARNING_AREAS[t.area],
-            Number(digit) <= 3 ? t.lower : t.upper, settings.collect_ratio, (i + 1) * 10));
+            Number(digit) <= 3 ? t.lower : t.upper, settings.collect_ratio, base + (i + 1) * 10));
         });
       }
       await batchAll(env, stmts);
@@ -270,6 +285,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       const b = await readJson(request);
       const year = await resolveYear(env, b.year);
       const s = cleanSubject(b, await getSettings(env, year.id));
+      if (s.sort == null) s.sort = await nextSubjectSort(env, year.id, s.grade);
       try {
         const r = await env.DB.prepare(`INSERT INTO gr_subjects (academic_year_id, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order)
           VALUES (?,?,?,?,?,?,?,?,?)`).bind(year.id, s.grade, s.code, s.name, s.area, s.type, s.hours, s.ratio, s.sort).run();
@@ -286,18 +302,40 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       const existing = await env.DB.prepare("SELECT * FROM gr_subjects WHERE id = ?").bind(id).first();
       if (!existing) fail(404, "ไม่พบรายวิชา");
       const s = cleanSubject(await readJson(request), await getSettings(env, existing.academic_year_id));
+      if (s.sort == null) s.sort = existing.sort_order;
       if (s.ratio !== existing.collect_ratio || s.hours !== existing.hours_per_year) {
         // ผลของรายวิชาที่ส่ง/อนุมัติแล้วต้องไม่เปลี่ยนเงียบ ๆ — ให้ส่งคืนก่อน
         const locked = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_courses WHERE subject_id = ? AND locked = 1").bind(id).first();
         if (locked.n > 0) fail(409, `เปลี่ยนสัดส่วนคะแนน/เวลาเรียนไม่ได้ เพราะมี ${locked.n} ห้องส่งผลแล้ว — ส่งคืนให้ครูก่อน`);
       }
+      const extra = [];
       if (s.grade !== existing.grade_level) {
-        const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_courses WHERE subject_id = ?").bind(id).first();
-        if (used.n > 0) fail(409, "เปลี่ยนระดับชั้นไม่ได้ เพราะสร้างรายวิชาของห้องเรียนแล้ว");
+        // รายวิชาของห้องสร้างให้อัตโนมัติ — เปลี่ยนชั้นได้ถ้ายังไม่มีใครใช้ (ไม่มีครูผู้สอน โครงสร้าง คะแนน หรือผล) แล้วสร้างห้องของชั้นใหม่ให้
+        const used = await env.DB.prepare(
+          `SELECT (SELECT COUNT(*) FROM gr_course_teachers ct JOIN gr_courses c ON c.id = ct.course_id WHERE c.subject_id = ?) AS teachers,
+                  (SELECT COUNT(*) FROM gr_items i JOIN gr_courses c ON c.id = i.course_id WHERE c.subject_id = ?) AS items,
+                  (SELECT COUNT(*) FROM gr_results r JOIN gr_courses c ON c.id = r.course_id WHERE c.subject_id = ?) AS results,
+                  (SELECT COUNT(*) FROM gr_units u JOIN gr_courses c ON c.id = u.course_id WHERE c.subject_id = ?) AS units,
+                  (SELECT COUNT(*) FROM gr_courses c WHERE c.subject_id = ? AND c.locked = 1) AS locked`
+        ).bind(id, id, id, id, id).first();
+        if (used.teachers || used.items || used.results || used.units || used.locked) fail(409, "เปลี่ยนระดับชั้นไม่ได้ เพราะห้องเรียนของวิชานี้มีครูผู้สอนหรือข้อมูลคะแนนแล้ว — เพิ่มเป็นรายวิชาใหม่ของชั้นนั้นแทน");
+        extra.push(env.DB.prepare("DELETE FROM gr_courses WHERE subject_id = ?").bind(id));
+      }
+      if (s.code !== existing.code) {
+        // คะแนนยกมา (ปพ.6 โรงเรียนเดิม) ผูกกับรหัสวิชา → เปลี่ยนรหัสตามให้ ไม่ให้คะแนนยกมาหลุดจากวิชา
+        extra.push(env.DB.prepare(`UPDATE gr_carryover SET subject_code = ? WHERE academic_year_id = ? AND subject_code = ?
+            AND student_id IN (SELECT se.student_id FROM student_enrollments se JOIN academic_terms t ON t.id = se.academic_term_id
+                                WHERE t.academic_year_id = ? AND se.grade_level = ?)
+            AND NOT EXISTS (SELECT 1 FROM gr_carryover x WHERE x.academic_year_id = gr_carryover.academic_year_id AND x.student_id = gr_carryover.student_id
+                            AND x.subject_code = ? AND x.term_number = gr_carryover.term_number)`)
+          .bind(s.code, existing.academic_year_id, existing.code, existing.academic_year_id, existing.grade_level, s.code));
       }
       try {
-        await env.DB.prepare(`UPDATE gr_subjects SET grade_level=?, code=?, name=?, learning_area=?, subject_type=?, hours_per_year=?, collect_ratio=?, sort_order=? WHERE id=?`)
-          .bind(s.grade, s.code, s.name, s.area, s.type, s.hours, s.ratio, s.sort, id).run();
+        await env.DB.batch([
+          env.DB.prepare(`UPDATE gr_subjects SET grade_level=?, code=?, name=?, learning_area=?, subject_type=?, hours_per_year=?, collect_ratio=?, sort_order=? WHERE id=?`)
+            .bind(s.grade, s.code, s.name, s.area, s.type, s.hours, s.ratio, s.sort, id),
+          ...extra,
+        ]);
       } catch (e) {
         if (String(e.message).includes("UNIQUE")) fail(409, `มีรหัสวิชา ${s.code} ของ ${s.grade} อยู่แล้ว`);
         throw e;
@@ -317,6 +355,11 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       if (res.n > 0) fail(409, `ลบไม่ได้ — มีข้อมูลเวลาเรียน/ผลพิเศษของนักเรียนแล้ว ${res.n} คน`);
       const subject = await env.DB.prepare("SELECT * FROM gr_subjects WHERE id = ?").bind(id).first();
       if (!subject) fail(404, "ไม่พบรายวิชา");
+      const carry = await env.DB.prepare(
+        `SELECT COUNT(DISTINCT student_id) AS n FROM gr_carryover WHERE academic_year_id = ? AND subject_code = ?
+           AND student_id IN (SELECT se.student_id FROM student_enrollments se JOIN academic_terms t ON t.id = se.academic_term_id WHERE t.academic_year_id = ? AND se.grade_level = ?)`
+      ).bind(subject.academic_year_id, subject.code, subject.academic_year_id, subject.grade_level).first();
+      if (carry.n > 0) fail(409, `ลบไม่ได้ — มีคะแนนยกมาจากโรงเรียนเดิมของวิชานี้ ${carry.n} คน`);
       // ลบลูกก่อนเพื่อไม่พึ่งการตั้งค่า foreign key
       await env.DB.batch([
         env.DB.prepare("DELETE FROM gr_scores WHERE item_id IN (SELECT i.id FROM gr_items i JOIN gr_courses c ON c.id = i.course_id WHERE c.subject_id = ?)").bind(id),
@@ -441,8 +484,9 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       const year = await resolveYear(env, url.searchParams.get("year"));
       const rooms = (await listRooms(env, year.id)).filter((r) => isSchoolGrade(r.grade_level));
       const { results } = await env.DB.prepare(
-        `SELECT h.grade_level, h.classroom, u.id, u.full_name FROM gr_homerooms h JOIN users u ON u.id = h.user_id WHERE h.academic_year_id = ?`
+        `SELECT h.grade_level, h.classroom, u.id, u.full_name FROM gr_homerooms h JOIN users u ON u.id = h.user_id WHERE h.academic_year_id = ? AND ${ACTIVE_USER}`
       ).bind(year.id).all();
+      results.sort((a, b) => compareThaiName(a.full_name, b.full_name));
       for (const r of rooms) r.teachers = results.filter((h) => h.grade_level === r.grade_level && h.classroom === r.classroom).map((h) => ({ id: h.id, full_name: h.full_name }));
       return json({ year, rooms });
     }
@@ -506,6 +550,10 @@ export async function handleAdmin(request, env, user, parts, method, url) {
           env.DB.prepare("DELETE FROM gr_homerooms WHERE academic_year_id = ?").bind(year.id),
           ...reg.map((r) => env.DB.prepare("INSERT OR IGNORE INTO gr_homerooms (academic_year_id, grade_level, classroom, user_id) VALUES (?,?,?,?)").bind(year.id, r.grade_level, r.classroom, r.user_id)),
         ]);
+        // ระบบทะเบียนเก็บครูประจำชั้นแยกภาค — สะท้อนกลับให้ทุกภาคของปีตรงกับระบบเกรด
+        const byRoom = new Map();
+        for (const r of reg) { const k = `${r.grade_level}/${r.classroom}`; if (!byRoom.has(k)) byRoom.set(k, { grade: r.grade_level, classroom: r.classroom, userIds: [] }); byRoom.get(k).userIds.push(r.user_id); }
+        await mirrorHomerooms(env, year.id, [...byRoom.values()], user.id);
         await audit(env, user, "sync.homerooms", { year: year.id, rows: reg.length });
         return json({ ok: true, rows: reg.length });
       }
@@ -566,10 +614,13 @@ async function upsertSettings(env, yearId, values, user) {
     .bind(...cols.map((c) => values[c]), user.id, yearId).run();
 }
 
-// "ป.4/2", "ป4/2", "ป. 4 / 2", "4/2" → "ป.4/2"
+// "ป.4/2", "ป4/2", "ป. 4 / 2", "4/2" → "ป.4/2" · อนุบาล "อ.1/2", "อ1/2", "อนุบาล 1/2" → "อ.1/2"
 export function normRoom(v) {
-  const m = String(v ?? "").replace(/\s+/g, "").match(/^(?:ป\.?)?([1-6])\/(\d+)$/);
-  return m ? `ป.${m[1]}/${m[2]}` : String(v ?? "").trim();
+  const s = String(v ?? "").replace(/\s+/g, "");
+  const k = s.match(/^(?:อ\.?|อนุบาล)([1-3])\/(\d+)$/);
+  if (k) return `อ.${k[1]}/${Number(k[2])}`;
+  const m = s.match(/^(?:ป\.?|ประถมศึกษาปีที่)?([1-6])\/(\d+)$/);
+  return m ? `ป.${m[1]}/${Number(m[2])}` : String(v ?? "").trim();
 }
 
 // จับคู่ชื่อครูในไฟล์กับบัญชีผู้ใช้: ตรงกับอีเมล หรือชื่อ-สกุล (ไม่สนคำนำหน้าและช่องว่าง)
@@ -617,6 +668,12 @@ export async function syncCourses(env, yearId, subjectIds = null) {
   return stmts.length;
 }
 
+// ลำดับในรายงานของวิชาที่เพิ่มใหม่: ต่อท้ายวิชาของชั้นนั้น
+async function nextSubjectSort(env, yearId, grade) {
+  const r = await env.DB.prepare("SELECT COALESCE(MAX(sort_order), 0) AS mx FROM gr_subjects WHERE academic_year_id = ? AND grade_level = ?").bind(yearId, grade).first();
+  return (r.mx || 0) + 10;
+}
+
 async function countCourses(env, yearId) {
   const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id WHERE s.academic_year_id = ?").bind(yearId).first();
   return r.n;
@@ -652,8 +709,9 @@ export async function courseOverview(env, yearId, { teacherId = null } = {}) {
   ).bind(...(teacherId ? [yearId, teacherId] : [yearId])).all();
   const { results: teachers } = await env.DB.prepare(
     `SELECT ct.course_id, u.id, u.full_name FROM gr_course_teachers ct JOIN users u ON u.id = ct.user_id
-       JOIN gr_courses c ON c.id = ct.course_id JOIN gr_subjects s ON s.id = c.subject_id WHERE s.academic_year_id = ?`
+       JOIN gr_courses c ON c.id = ct.course_id JOIN gr_subjects s ON s.id = c.subject_id WHERE s.academic_year_id = ? AND ${ACTIVE_USER}`
   ).bind(yearId).all();
+  teachers.sort((a, b) => compareThaiName(a.full_name, b.full_name));
   const rooms = await listRooms(env, yearId);
   const { results: edits } = await env.DB.prepare("SELECT course_id, COUNT(*) AS n FROM gr_course_edits GROUP BY course_id").all();
   const editCounts = Object.fromEntries(edits.map((e) => [e.course_id, e.n]));
@@ -666,5 +724,5 @@ export async function courseOverview(env, yearId, { teacherId = null } = {}) {
     c.status = !c.locked ? "draft" : c.approved_at ? "approved" : c.reviewed_at ? "reviewed" : "submitted";
     c.edit_count = editCounts[c.id] || 0;
   }
-  return courses.sort((a, b) => compareRoom(a, b) || (a.subject_type === "additional") - (b.subject_type === "additional") || a.sort_order - b.sort_order || a.code.localeCompare(b.code));
+  return courses.sort((a, b) => compareRoom(a, b) || compareSubject(a, b));
 }

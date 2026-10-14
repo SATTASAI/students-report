@@ -111,7 +111,9 @@ function roleMenu(role, me) {
   if (role === "teacher") return [
     { href: "/", icon: "book", label: "รายวิชาที่สอน" },
     ...me.homerooms.map((h) => ({ href: `/homeroom.html?grade=${encodeURIComponent(h.grade_level)}&room=${encodeURIComponent(h.classroom)}`, icon: "room", label: `ประจำชั้น ${h.grade_level}/${h.classroom}` })),
-    ...(me.homerooms.length ? [{ href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" }, { href: "/logs.html", icon: "list", label: "บันทึกประจำวัน" }, { href: "/calendar.html", icon: "clock", label: "ปฏิทินวันหยุด" }] : []),
+    // กิจกรรมพัฒนาผู้เรียน (ปพ.5.1) มีเฉพาะ ป.1–6 — ครูประจำชั้นอนุบาลไม่เห็นเมนูที่เปิดแล้วว่าง
+    ...(me.homerooms.some((h) => /^ป\./.test(h.grade_level)) ? [{ href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" }] : []),
+    ...(me.homerooms.length ? [{ href: "/logs.html", icon: "list", label: "บันทึกประจำวัน" }, { href: "/calendar.html", icon: "clock", label: "ปฏิทินวันหยุด" }] : []),
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   if (role === "measure") return [

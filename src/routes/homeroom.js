@@ -1,5 +1,5 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
-import { resolveYear, listRooms, getSettings, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday, mirrorBody } from "../lib/data.js";
+import { resolveYear, listRooms, getSettings, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday, mirrorBody, compareRoom, compareSubject, homeroomNames } from "../lib/data.js";
 import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
 
 export const ATT_CODES = [["ข", "ขาดเรียน"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]];
@@ -186,7 +186,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       const year = await resolveYear(env, url.searchParams.get("year"));
       const rooms = user.is_admin
         ? (await listRooms(env, year.id)).filter((r) => isSchoolGrade(r.grade_level)).map((r) => ({ grade_level: r.grade_level, classroom: r.classroom }))
-        : (await env.DB.prepare("SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ? ORDER BY grade_level, classroom").bind(year.id, user.id).all()).results;
+        : (await env.DB.prepare("SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?").bind(year.id, user.id).all()).results.sort(compareRoom);
       return json({ year, rooms, daily: DAILY_LOGS, health_items: HEALTH_ITEMS });
     }
     const { year, grade, room } = await roomContext(env, user, url);
@@ -211,14 +211,11 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
         for (const r of results) ((records[r.student_id] ||= {})[r.log_type] ||= {})[r.log_date] = r.value;
         for (const a of att) (absent[a.student_id] ||= {})[a.att_date] = a.code;
       }
-      const [settings, { results: hrTeachers }] = await Promise.all([
-        getSettings(env, year.id),
-        env.DB.prepare("SELECT u.full_name FROM gr_homerooms h JOIN users u ON u.id = h.user_id WHERE h.academic_year_id = ? AND h.grade_level = ? AND h.classroom = ? ORDER BY u.full_name").bind(year.id, grade, room).all(),
-      ]);
+      const [settings, hrTeachers] = await Promise.all([getSettings(env, year.id), homeroomNames(env, year.id, grade, room)]);
       const students = roster.map((s) => ({ id: s.id, number: s.number, name: studentName(s), enrollment_status: s.enrollment_status }));
       return json({ year, grade, room, type, month, months, days, today, holidays, terms: cal.terms, weeks: weeksOf(days), records, absent, students,
         daily: DAILY_LOGS, health_items: HEALTH_ITEMS,
-        school: { name: settings.school_name, director: settings.director_name }, teachers: hrTeachers.map((t) => t.full_name) });
+        school: { name: settings.school_name, director: settings.director_name }, teachers: hrTeachers });
     }
     if (method === "PUT") {
       const b = await readJson(request);
@@ -254,9 +251,10 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     const roster = await roomRoster(env, year.id, grade, room);
     const movers = roster.filter((s) => s.transfer_in_term > 1);
     const { results: subjects } = await env.DB.prepare(
-      `SELECT s.code, s.name, s.subject_type, s.collect_ratio, c.locked FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
-        WHERE s.academic_year_id = ? AND s.grade_level = ? AND c.classroom = ? ORDER BY s.subject_type, s.sort_order, s.code`
+      `SELECT s.code, s.name, s.subject_type, s.sort_order, s.collect_ratio, c.locked FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
+        WHERE s.academic_year_id = ? AND s.grade_level = ? AND c.classroom = ?`
     ).bind(year.id, grade, room).all();
+    subjects.sort(compareSubject);
     if (method === "GET") {
       const ids = movers.map((s) => s.id);
       const schools = ids.length ? (await env.DB.prepare(
