@@ -6,6 +6,7 @@ import { login, logout } from "./routes/auth.js";
 import { handleAdmin } from "./routes/admin.js";
 import { handleCourses } from "./routes/courses.js";
 import { handleHomeroom } from "./routes/homeroom.js";
+import { handleSar } from "./routes/sar.js";
 import { handleReports, handleMe } from "./routes/reports.js";
 import { handleActivities } from "./routes/activities.js";
 import { handleMoves } from "./routes/moves.js";
@@ -48,6 +49,7 @@ async function routeApi(request, env, url) {
     case "moves": return handleMoves(request, env, user, parts, method, url);
     case "roster": return handleRoster(request, env, user, parts, method, url);
     case "calendar": return handleCalendar(request, env, user, parts, method, url);
+    case "sar": return handleSar(request, env, user, parts, method, url);
     default: return json({ error: "ไม่พบเส้นทาง API" }, 404);
   }
 }

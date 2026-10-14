@@ -477,3 +477,20 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-มส inpu
 .log-sheet.health .wk-start { border-left: 2px solid var(--line); }
 .log-sheet td.att-sum.bad { color: var(--bad); font-weight: 600; text-align: center; }
 @media print { .log-forms, .col-all { display: none !important; } }
+
+/* ---------- ข้อมูล SAR ---------- */
+.sar-table td { vertical-align: top; }
+.sar-table td:first-child { min-width: 280px; }
+.sar-in { width: 84px; text-align: right; }
+.sar-in.bad { border-color: var(--bad); background: var(--bad-bg); }
+.sar-more { margin-top: 4px; }
+.sar-more summary { color: var(--ink-2); cursor: pointer; }
+.sar-more ul { margin: 6px 0; padding-left: 18px; color: var(--muted); }
+.sar-more .field { margin-top: 6px; }
+.sar-lv { display: inline-block; border-radius: 999px; padding: 1px 10px; font-size: 13px; font-weight: 600; white-space: nowrap; background: var(--wash); color: var(--ink); }
+.sar-lv.lv5 { background: #dff3e8; color: #13623f; }
+.sar-lv.lv4 { background: #e3eafc; color: #24389a; }
+.sar-lv.lv3 { background: #eef0f6; color: #3b4466; }
+.sar-lv.lv2 { background: var(--warn-bg); color: var(--warn); }
+.sar-lv.lv1 { background: var(--bad-bg); color: var(--bad); }
+details.panel > summary { cursor: pointer; }

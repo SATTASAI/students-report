@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-10";
+export const SCHEMA_VERSION = "gr-11";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -211,6 +211,13 @@ export const SCHEMA_SQL = [
     name TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (academic_year_id, holiday_date))`,
+  // gr-11: SAR มาตรฐานที่ 1 — ค่าเป้าหมาย / ผลที่ครูกรอกเอง (ประเด็นที่ระบบไม่มีข้อมูล) / หมายเหตุ ต่อประเด็น ต่อปี · item_key '_levels' = เกณฑ์ระดับคุณภาพ (JSON ใน note)
+  `CREATE TABLE IF NOT EXISTS gr_sar_values (
+    academic_year_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    target REAL, manual_value REAL, note TEXT,
+    updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (academic_year_id, item_key))`,
   `CREATE TABLE IF NOT EXISTS gr_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER, action TEXT NOT NULL, detail TEXT,
