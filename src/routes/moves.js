@@ -8,13 +8,44 @@
 //   เพราะระบบทะเบียนจะยกรายชื่อขึ้นภาคใหม่ก็ต่อเมื่อภาคนั้นยังว่างอยู่
 // - อัปเดต students.status/grade_level/classroom ให้ตรงกัน (ระบบทะเบียนมี trigger ซิงก์ภาคที่เปิดใช้อยู่ให้เอง)
 import { json, readJson, fail, requireImporter, intParam, text, audit } from "../lib/http.js";
-import { resolveYear, listRooms, studentName, isSchoolGrade, getSettings, LEFT_STATUSES } from "../lib/data.js";
+import { resolveYear, listRooms, studentName, isSchoolGrade, getSettings, LEFT_STATUSES, roomRoster, thaiToday } from "../lib/data.js";
 
 const OUT_REASONS = { transfer: "transferred", dropout: "withdrawn" };
 export const MOVE_LABEL = { new: "ย้ายเข้า (นักเรียนใหม่)", return: "รับกลับเข้าเรียน", transfer: "ย้ายออก", dropout: "ออกกลางคัน / ติดตามไม่ได้" };
 
 const maskId = (v) => { const s = String(v || "").replace(/\D/g, ""); return s.length === 13 ? `${s[0]}-xxxx-xxxxx-${s.slice(10, 12)}-${s[12]}` : (s ? "xxxx" + s.slice(-3) : ""); };
 const dateOrNull = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : null);
+
+// เปิดภาคเรียนแล้วหรือยัง (ภาคที่มีรายชื่อ) — หลังเปิดภาค เลขที่ของห้องต้องนิ่ง เพราะครูวางคะแนนจาก Excel ตามเลขที่
+export async function termStarted(env, term) {
+  if (!term) return false;
+  const t = await env.DB.prepare("SELECT start_date FROM academic_terms WHERE id = ?").bind(term.id).first();
+  return !!(t?.start_date && String(t.start_date).slice(0, 10) <= thaiToday());
+}
+// นักเรียนที่เข้าห้องหลังเปิดภาค (ย้ายห้อง/เพิ่มจากไฟล์) ได้เลขที่ต่อท้ายห้อง — เลขที่ของคนเดิมไม่เลื่อน (เหมือนนักเรียนย้ายเข้า)
+// next: Map ห้อง → เลขที่ถัดไป (ใช้ต่อเนื่องเมื่อเพิ่มหลายคนในห้องเดียวกันรอบเดียว) · คืน null ถ้าห้องยังไม่มีนักเรียน (เรียงตามปกติ)
+export async function nextNumber(env, yearId, grade, room, next) {
+  const k = `${grade}/${room}`;
+  if (!next.has(k)) {
+    const roster = await roomRoster(env, yearId, grade, room);
+    const nums = roster.map((r) => r.number).filter((n) => n != null); // รวมเลขที่ที่เว้นไว้ของคนที่ย้ายออก (อยู่ท้ายห้อง)
+    next.set(k, nums.length ? Math.max(...nums) + 1 : null);
+  }
+  const n = next.get(k);
+  if (n == null || n > 99) return null;
+  next.set(k, n + 1);
+  return n;
+}
+export const pinStatement = (env, yearId, sid, n, userId) => env.DB.prepare(`INSERT INTO gr_roster_numbers (academic_year_id, student_id, number, updated_by) VALUES (?,?,?,?)
+  ON CONFLICT(academic_year_id, student_id) DO UPDATE SET number = excluded.number, updated_by = excluded.updated_by, updated_at = datetime('now')`).bind(yearId, sid, n, userId);
+
+// นักเรียนย้ายห้องภายในโรงเรียนหลังเปิดภาค: ตรึงเลขที่ของคนที่อยู่ถัดไปในห้องเดิม — เลขที่ของคนที่ย้ายไปเว้นว่างไว้ ไม่มีใครเลื่อน
+export async function holdNumbersAfter(env, yearId, grade, room, leaverId, userId) {
+  const roster = await roomRoster(env, yearId, grade, room);
+  const me = roster.find((r) => r.id === leaverId);
+  if (!me?.number) return [];
+  return roster.filter((r) => r.id !== leaverId && r.number > me.number && r.manual_number !== r.number && !LEFT_STATUSES.includes(r.enrollment_status)).map((r) => pinStatement(env, yearId, r.id, r.number, userId));
+}
 
 export async function rosterTerm(env, yearId) {
   // ภาคล่าสุดของปีที่มีรายชื่อนักเรียนแล้ว (ใช้เป็นภาคที่แก้สถานะ)
@@ -116,10 +147,12 @@ export async function handleMoves(request, env, user, parts, method, url) {
     if (![1, 2].includes(termNo)) fail(400, "ภาคเรียนไม่ถูกต้อง");
     const cur = await latestInYear(env, year.id, sid);
     if (!cur || LEFT_STATUSES.includes(cur.status)) fail(409, "นักเรียนคนนี้ไม่ได้เรียนอยู่ในปีการศึกษานี้");
+    // หลังเปิดภาค: เว้นเลขที่ของคนที่ออกไว้ (ตรึงเลขเดิม) — เลขที่ของเพื่อนในห้องไม่เลื่อน · ก่อนเปิดภาค: เลขที่ไม่ตามไป ห้องเรียงใหม่ตามปกติ
+    const mine = (await termStarted(env, term)) ? (await roomRoster(env, year.id, cur.grade_level, cur.classroom)).find((r) => r.id === sid)?.number : null;
     await env.DB.batch([
       ...enrollStatements(env, year.id, term, sid, cur.grade_level, cur.classroom, status),
-      // เลขที่ที่เคยตรึงไว้ไม่ตามไป (กลับมาแล้วต่อท้ายห้อง ไม่ชนกับเลขที่ของคนอื่น)
-      env.DB.prepare("DELETE FROM gr_roster_numbers WHERE academic_year_id = ? AND student_id = ?").bind(year.id, sid),
+      mine ? pinStatement(env, year.id, sid, mine, user.id)
+        : env.DB.prepare("DELETE FROM gr_roster_numbers WHERE academic_year_id = ? AND student_id = ?").bind(year.id, sid),
       env.DB.prepare(`INSERT INTO gr_transfers (academic_year_id, student_id, direction, reason, term_number, move_date, school, note, grade_level, classroom, created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(year.id, sid, "out", b.reason, termNo, dateOrNull(b.move_date), text(b.school, 200) || null, text(b.note, 300) || null, cur.grade_level, cur.classroom, user.id),
     ]);
@@ -134,13 +167,15 @@ export async function handleMoves(request, env, user, parts, method, url) {
     if (!isSchoolGrade(grade) || !room) fail(400, "เลือกห้องเรียนที่จะเข้าเรียน");
     const termNo = Number(b.term_number) || term.term_number;
     if (![1, 2].includes(termNo)) fail(400, "ภาคเรียนไม่ถูกต้อง");
-    let sid, reason;
+    let sid, reason, keepNumber = false;
     if (b.student_id) {
       sid = intParam(b.student_id, "นักเรียน");
       const s = await env.DB.prepare("SELECT id FROM students WHERE id = ?").bind(sid).first();
       if (!s) fail(404, "ไม่พบนักเรียน");
       const cur = await latestInYear(env, year.id, sid);
       if (cur && !LEFT_STATUSES.includes(cur.status)) fail(409, `นักเรียนคนนี้เรียนอยู่แล้วที่ ${cur.grade_level}/${cur.classroom}`);
+      // กลับเข้าห้องเดิมในปีเดียวกัน → ได้เลขที่เดิมที่เว้นไว้คืน
+      keepNumber = !!cur && cur.grade_level === grade && cur.classroom === room;
       reason = "return";
     } else {
       const n = b.student || {};
@@ -167,8 +202,8 @@ export async function handleMoves(request, env, user, parts, method, url) {
     }
     await env.DB.batch([
       ...enrollStatements(env, year.id, term, sid, grade, room, "enrolled"),
-      // เลขที่ที่เคยตรึงไว้ไม่ตามไป (กลับมาแล้วต่อท้ายห้อง ไม่ชนกับเลขที่ของคนอื่น)
-      env.DB.prepare("DELETE FROM gr_roster_numbers WHERE academic_year_id = ? AND student_id = ?").bind(year.id, sid),
+      // เข้าห้องอื่น/ปีใหม่: เลขที่เดิมไม่ตามไป (ต่อท้ายห้อง ไม่ชนกับเลขที่ของคนอื่นและเลขที่ที่เว้นไว้)
+      ...(keepNumber ? [] : [env.DB.prepare("DELETE FROM gr_roster_numbers WHERE academic_year_id = ? AND student_id = ?").bind(year.id, sid)]),
       env.DB.prepare(`INSERT INTO gr_transfers (academic_year_id, student_id, direction, reason, term_number, move_date, school, note, grade_level, classroom, created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(year.id, sid, "in", reason, termNo, dateOrNull(b.move_date), text(b.school, 200) || null, text(b.note, 300) || null, grade, room, user.id),
     ]);

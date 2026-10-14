@@ -175,7 +175,7 @@ function rowHtml(s, items, term) {
   const inactive = s.enrollment_status !== "enrolled";
   const rem = studentRemedials(s.id);
   const carried = !!calc?.term_scores?.[term]?.carried;
-  return `<tr data-sid="${s.id}" class="${inactive ? "inactive" : ""}">
+  return `<tr data-sid="${s.id}" class="${inactive ? "inactive" : ""} ${s.enrollment_status === "moved" ? "moved" : ""}">
     <td class="stick no">${s.number ?? ""}</td>
     <td class="stick name" title="${esc(s.name)}">${esc(s.name)}${statusTag(s)}</td>
     ${items.map((it) => {
@@ -415,14 +415,14 @@ function renderSummary() {
         <tbody>${data.students.map((s) => {
           const k = data.computed[s.id], r = data.results[s.id] || {};
           const failed = k.failed_indicators.length;
-          return `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "muted" : ""}">
+          return `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "muted" : ""} ${s.enrollment_status === "transferred" || s.enrollment_status === "withdrawn" ? "inactive" : ""}">
             <td class="num">${s.number ?? ""}</td><td>${esc(s.name)}${statusTag(s)}</td>
             <td class="num">${fmt(k.collect_scaled)}</td><td class="num">${fmt(k.final_scaled)}</td><td class="num"><b>${yearTotalText(k)}</b></td>
             <td class="num">${attText(s.id)}</td>
             <td><select data-special style="width:80px" ${can ? "" : "disabled"} aria-label="ผลพิเศษ ${esc(s.name)}"><option value="">–</option><option ${r.special === "ร" ? "selected" : ""}>ร</option><option ${r.special === "มส" ? "selected" : ""}>มส</option></select></td>
             <td>${gradeBadge(k.original_grade)}</td>
             <td>${r.remedial_grade ? `<span class="tag">${r.remedial_type === "repeat" ? "เรียนซ้ำ" : "แก้ตัว"} → ${esc(r.remedial_grade)}</span> ` : ""}
-              ${can && (["0", "ร", "มส"].includes(k.original_grade) || r.remedial_grade) ? `<button class="btn small" data-remedial>${r.remedial_grade ? "แก้ไข" : "บันทึกผลแก้ตัว"}</button>` : ""}</td>
+              ${can && !["transferred", "withdrawn"].includes(s.enrollment_status) && (["0", "ร", "มส"].includes(k.original_grade) || r.remedial_grade) ? `<button class="btn small" data-remedial>${r.remedial_grade ? "แก้ไข" : "บันทึกผลแก้ตัว"}</button>` : ""}</td>
             <td>${gradeBadge(k.grade)}</td>
             <td class="small muted">${[k.reason, failed ? `ไม่ผ่าน ${failed} ${W}` : ""].filter(Boolean).map(esc).join(" · ")}</td>
           </tr>`;

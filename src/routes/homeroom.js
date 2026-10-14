@@ -1,5 +1,5 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
-import { resolveYear, listRooms, getSettings, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday, mirrorBody, compareRoom, compareSubject, homeroomNames } from "../lib/data.js";
+import { resolveYear, listRooms, getSettings, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday, mirrorBody, compareRoom, compareSubject, homeroomNames, writableIds, isLeft } from "../lib/data.js";
 import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
 
 export const ATT_CODES = [["ข", "ขาดเรียน"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]];
@@ -44,13 +44,15 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
 
   if (sub === "assessments" && method === "PUT") {
     const { year, grade, room } = await roomContext(env, user, url);
-    const roster = new Set((await roomRoster(env, year.id, grade, room)).map((s) => s.id));
+    const all = await roomRoster(env, year.id, grade, room);
+    const roster = new Set(all.map((s) => s.id)), writable = writableIds(all);
     const b = await readJson(request);
     const changes = Array.isArray(b.changes) ? b.changes.slice(0, 2000) : [];
     const stmts = [];
     for (const c of changes) {
       const sid = Number(c.student_id);
       if (!roster.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
+      if (!writable.has(sid)) continue; // ย้ายออก/ออกกลางคัน: อ่านอย่างเดียว
       if (!ASSESSMENT_KEYS.has(c.item_key)) fail(400, "หัวข้อประเมินไม่ถูกต้อง");
       if (c.item_key.startsWith("act_")) fail(400, "บันทึกกิจกรรมพัฒนาผู้เรียนที่หน้า \"กิจกรรมพัฒนาผู้เรียน\"");
       const value = c.value == null ? "" : String(c.value);
@@ -68,7 +70,8 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   // ความคิดเห็นครูประจำชั้น: changes [{student_id, field, body}] (body ว่าง = ลบ)
   if (sub === "comments" && method === "PUT") {
     const { year, grade, room } = await roomContext(env, user, url);
-    const roster = new Set((await roomRoster(env, year.id, grade, room)).map((s) => s.id));
+    const all = await roomRoster(env, year.id, grade, room);
+    const roster = new Set(all.map((s) => s.id)), writable = writableIds(all);
     const b = await readJson(request);
     const term = Number(b.term);
     if (![1, 2].includes(term)) fail(400, "ภาคเรียนไม่ถูกต้อง");
@@ -77,6 +80,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     for (const c of changes) {
       const sid = Number(c.student_id);
       if (!roster.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
+      if (!writable.has(sid)) continue; // ย้ายออก/ออกกลางคัน: อ่านอย่างเดียว
       if (!COMMENT_FIELDS.includes(c.field)) fail(400, "หัวข้อความคิดเห็นไม่ถูกต้อง");
       const body = String(c.body ?? "").replace(/\s+/g, " ").trim();
       if (body.length > 300) fail(400, "ความคิดเห็นยาวได้ไม่เกิน 300 ตัวอักษร");
@@ -110,7 +114,8 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   // น้ำหนัก/ส่วนสูง: changes [{student_id, round, weight, height}]
   if (sub === "body" && method === "PUT") {
     const { year, grade, room } = await roomContext(env, user, url);
-    const roster = new Set((await roomRoster(env, year.id, grade, room)).map((s) => s.id));
+    const all = await roomRoster(env, year.id, grade, room);
+    const roster = new Set(all.map((s) => s.id)), writable = writableIds(all);
     const b = await readJson(request);
     const changes = Array.isArray(b.changes) ? b.changes.slice(0, 1000) : [];
     const num = (v, lo, hi, label) => {
@@ -123,6 +128,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     for (const c of changes) {
       const sid = Number(c.student_id), round = Number(c.round);
       if (!roster.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
+      if (!writable.has(sid)) continue; // ย้ายออก/ออกกลางคัน: อ่านอย่างเดียว
       if (![1, 2, 3, 4].includes(round)) fail(400, "ครั้งที่ชั่งต้องเป็น 1–4");
       const w = num(c.weight, 0, 200, "น้ำหนัก (กก.) "), h = num(c.height, 30, 230, "ส่วนสูง (ซม.) ");
       stmts.push(w == null && h == null
@@ -141,7 +147,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   if (sub === "attendance") {
     const { year, grade, room } = await roomContext(env, user, url);
     const roster = await roomRoster(env, year.id, grade, room);
-    const ids = new Set(roster.map((s) => s.id));
+    const ids = new Set(roster.map((s) => s.id)), writable = writableIds(roster);
     const cal = await schoolCalendar(env, year.id);
     const terms = cal.terms;
     const inTerm = (d) => terms.some((t) => d >= t.start_date && d <= t.end_date);
@@ -163,6 +169,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       for (const c of changes) {
         const sid = Number(c.student_id), d = String(c.date || ""), code = String(c.code ?? "").trim();
         if (!ids.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
+        if (!writable.has(sid)) continue; // ย้ายออก/ออกกลางคัน: อ่านอย่างเดียว
         if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) fail(400, `วันที่ ${d} ไม่ถูกต้อง`);
         if (terms.length && !inTerm(d)) fail(400, `${d} อยู่นอกช่วงภาคเรียน`);
         if (code && cal.off.has(d)) fail(400, `${d} เป็นวันหยุด (${cal.off.get(d)})`);
@@ -191,7 +198,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     }
     const { year, grade, room } = await roomContext(env, user, url);
     const roster = await roomRoster(env, year.id, grade, room);
-    const ids = new Set(roster.map((s) => s.id));
+    const ids = new Set(roster.map((s) => s.id)), writable = writableIds(roster);
     const cal = await schoolCalendar(env, year.id);
     const inTerm = (d) => !cal.terms.length || cal.terms.some((t) => d >= t.start_date && d <= t.end_date);
     if (method === "GET") {
@@ -224,6 +231,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       for (const c of changes) {
         const sid = Number(c.student_id), type = String(c.type || ""), d = String(c.date || ""), v = String(c.value ?? "");
         if (!ids.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
+        if (!writable.has(sid)) continue; // ย้ายออก/ออกกลางคัน: อ่านอย่างเดียว
         if (DAILY_LOGS[type]) {
           if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) fail(400, `วันที่ ${d} ไม่ถูกต้อง`);
           if (!inTerm(d)) fail(400, `${d} อยู่นอกช่วงภาคเรียน`);
@@ -249,7 +257,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   if (sub === "carryover") {
     const { year, grade, room } = await roomContext(env, user, url);
     const roster = await roomRoster(env, year.id, grade, room);
-    const movers = roster.filter((s) => s.transfer_in_term > 1);
+    const movers = roster.filter((s) => s.transfer_in_term > 1 && !isLeft(s));
     const { results: subjects } = await env.DB.prepare(
       `SELECT s.code, s.name, s.subject_type, s.sort_order, s.collect_ratio, c.locked FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
         WHERE s.academic_year_id = ? AND s.grade_level = ? AND c.classroom = ?`

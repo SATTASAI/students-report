@@ -165,7 +165,27 @@ const sameItem = (href) => {
 };
 
 // โครงหน้าทุกหน้า: เมนูซ้าย (มือถือ/แท็บเล็ตเป็นลิ้นชัก) + สลับบทบาท + ปีการศึกษา
+// นักเรียนที่ย้ายออก/ออกกลางคัน: แสดงท้ายห้องพร้อมเลขที่เดิม แต่แก้ไม่ได้ทุกหน้า (ตารางคะแนน ประจำชั้น กิจกรรม รายชื่อ)
+// แถวที่มี class "inactive" (ยกเว้น "moved" = ย้ายห้องภายในโรงเรียน ซึ่งครูยังแก้คะแนนเดิมได้) จะถูกล็อกอัตโนมัติ
+const LOCK_SEL = "tr.inactive:not(.moved) input, tr.inactive:not(.moved) select, tr.inactive:not(.moved) textarea, .cm-row.inactive textarea";
+function lockInactive(root = document) {
+  for (const el of root.querySelectorAll(LOCK_SEL)) {
+    if (el.dataset.locked) continue;
+    el.dataset.locked = "1";
+    if (el.tagName === "SELECT" || el.type === "checkbox") el.disabled = true; else el.readOnly = true;
+    el.title = "ย้ายออก/ออกกลางคันแล้ว — แก้ไม่ได้";
+  }
+}
+let lockObserver;
+function startLockObserver() {
+  if (lockObserver || typeof MutationObserver === "undefined") return;
+  lockObserver = new MutationObserver(() => lockInactive());
+  lockObserver.observe(document.body, { childList: true, subtree: true });
+  lockInactive();
+}
+
 export async function shell(active) {
+  startLockObserver();
   const yearParam = selectedYear();
   let me;
   try {

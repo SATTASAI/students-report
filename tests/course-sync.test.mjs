@@ -115,3 +115,63 @@ async function loginCookie(env) {
   const r = await worker.fetch(new Request(ORIGIN + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json", Origin: ORIGIN }, body: JSON.stringify({ email: "admin@test.local", password: PASSWORD }) }), env);
   return r.headers.get("Set-Cookie").split(";")[0];
 }
+
+test("ย้ายออกหลังเปิดภาค: เว้นเลขที่ไว้ เพื่อนไม่เลื่อน · ยกเลิก/รับกลับได้เลขเดิม · เรียงใหม่ทั้งห้องได้", async () => {
+  const { env, call } = await setup();
+  env.DB.raw.prepare("UPDATE academic_terms SET start_date = '2026-01-01' WHERE id = 2").run();
+  const room = async () => (await call("GET", "/api/roster?year=1&grade=ป.4&room=1")).students;
+  const before = await room();
+  const leaver = before[3]; // เลขที่ 4
+  const num = Object.fromEntries(before.map((s) => [s.id, s.number]));
+  await call("POST", "/api/moves/out?year=1", { student_id: leaver.id, reason: "transfer" });
+  let now = await room();
+  // คนที่ออกแสดงท้ายห้องพร้อมเลขที่เดิม เพื่อนทุกคนเลขที่เดิม
+  assert.equal(now.at(-1).id, leaver.id);
+  assert.equal(now.at(-1).enrollment_status, "transferred");
+  for (const s of now) assert.equal(s.number, num[s.id], `${s.name} ต้องได้เลขที่เดิม`);
+  assert.equal(now.filter((s) => s.number === leaver.number).length, 1, "ไม่มีใครได้เลขที่ซ้ำกับคนที่ออก");
+  // ย้ายห้องภายในโรงเรียน: ห้องเดิมเว้นเลขเช่นกัน
+  const mover = now[5];
+  await call("PUT", `/api/roster/${mover.id}?year=1`, { grade_level: "ป.1", classroom: "1" });
+  now = await room();
+  for (const s of now) assert.equal(s.number, num[s.id]);
+  // หน้ากรอกคะแนน: คนที่ออกอยู่ท้ายรายชื่อ เลขที่เดิม และแก้คะแนนไม่ได้ (ข้ามโดยไม่ทำให้ทั้งชุดล้ม)
+  await call("POST", "/api/admin/subjects/template", { grades: ["ป.4"] });
+  const course = (await call("GET", "/api/admin/courses?year=1")).courses.find((c) => c.grade_level === "ป.4");
+  const d = await call("POST", `/api/courses/${course.id}/items`, { term_number: 2, title: "ตัวชี้วัด", max_score: 10 });
+  assert.equal(d.students.filter((s) => s.enrollment_status !== "moved").at(-1).id, leaver.id);
+  assert.equal(d.students.find((s) => s.id === leaver.id).number, leaver.number);
+  const itemId = d.items[0].id, friend = d.students[0].id;
+  await call("PUT", `/api/courses/${course.id}/scores`, { changes: [{ item_id: itemId, student_id: friend, score: 8 }, { item_id: itemId, student_id: leaver.id, score: 9 }] });
+  const after = await call("GET", `/api/courses/${course.id}`);
+  assert.equal(after.scores[friend][itemId], 8);
+  assert.equal(after.scores[leaver.id]?.[itemId], undefined);
+  // ปพ.6 / ประจำชั้น: อยู่ท้ายห้อง เลขที่เดิม
+  const rep = await call("GET", "/api/reports/room?year=1&grade=ป.4&room=1");
+  assert.equal(rep.students.at(-1).id, leaver.id);
+  const hr = await call("GET", "/api/homeroom?year=1&grade=ป.4&room=1");
+  assert.equal(hr.students.at(-1).number, leaver.number);
+  // ยกเลิกการย้ายออก → ได้เลขที่เดิม
+  const { moves } = await call("GET", "/api/moves?year=1");
+  await call("POST", `/api/moves/${moves.find((m) => m.student_id === leaver.id).id}/undo?year=1`, {});
+  now = await room();
+  assert.equal(now.find((s) => s.id === leaver.id).number, leaver.number);
+  // ออกอีกครั้งแล้วรับกลับห้องเดิม → เลขที่เดิม
+  await call("POST", "/api/moves/out?year=1", { student_id: leaver.id, reason: "dropout" });
+  await call("POST", "/api/moves/in?year=1", { student_id: leaver.id, grade_level: "ป.4", classroom: "1" });
+  assert.equal((await room()).find((s) => s.id === leaver.id).number, leaver.number);
+  // เรียงใหม่ทั้งห้อง → เลขที่ต่อเนื่อง 1..n ไม่มีช่องว่าง
+  await call("POST", "/api/roster/renumber?year=1", { grade_level: "ป.4", classroom: "1" });
+  now = await room();
+  assert.deepEqual(now.map((s) => s.number), now.map((_, i) => i + 1));
+});
+
+test("ย้ายออกก่อนเปิดภาค: เรียงเลขที่ใหม่ตามปกติ", async () => {
+  const { env, call } = await setup();
+  env.DB.raw.prepare("UPDATE academic_terms SET start_date = '2099-01-01' WHERE id = 2").run();
+  const room = async () => (await call("GET", "/api/roster?year=1&grade=ป.4&room=1")).students;
+  const before = await room();
+  await call("POST", "/api/moves/out?year=1", { student_id: before[0].id, reason: "transfer" });
+  const now = await room();
+  assert.deepEqual(now.map((s) => s.number), now.map((_, i) => i + 1));
+});

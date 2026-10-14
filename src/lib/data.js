@@ -103,7 +103,9 @@ export const LEFT_STATUSES = ["transferred", "withdrawn"];
 const LEFT_SQL = `('transferred','withdrawn')`;
 const TRANSFER_IN_SQL = `(SELECT MIN(t.term_number) FROM gr_transfers t WHERE t.student_id = s.id AND t.academic_year_id = ? AND t.direction = 'in' AND t.undone_at IS NULL)`;
 
-// รายชื่อนักเรียนของห้อง ณ ภาคเรียนล่าสุดของปีนั้น (ไม่รวมคนที่ย้ายออก/ออกกลางคัน)
+// รายชื่อนักเรียนของห้อง ณ ภาคเรียนล่าสุดของปีนั้น
+// คนที่ย้ายออก/ออกกลางคันหลังเปิดภาค (มีเลขที่ตรึงไว้ตอนออก) ยังแสดงท้ายห้องพร้อมเลขที่เดิม แบบอ่านอย่างเดียว — เพื่อนไม่เลื่อนเลขที่
+// คนที่ออกก่อนเปิดภาค (ไม่มีเลขที่ตรึง) ไม่แสดง
 export async function roomRoster(env, yearId, grade, room) {
   const { results } = await env.DB.prepare(
     `${ROSTER_CTE}
@@ -111,10 +113,15 @@ export async function roomRoster(env, yearId, grade, room) {
             (SELECT n.number FROM gr_roster_numbers n WHERE n.academic_year_id = ? AND n.student_id = s.id) AS manual_number
        FROM ranked r JOIN students s ON s.id = r.student_id
        LEFT JOIN student_details d ON d.student_id = s.id
-      WHERE r.rn = 1 AND r.grade_level = ? AND r.classroom = ? AND r.status NOT IN ${LEFT_SQL}`
-  ).bind(yearId, yearId, yearId, grade, room).all();
+      WHERE r.rn = 1 AND r.grade_level = ? AND r.classroom = ?
+        AND (r.status NOT IN ${LEFT_SQL} OR EXISTS (SELECT 1 FROM gr_roster_numbers n WHERE n.academic_year_id = ? AND n.student_id = s.id))`
+  ).bind(yearId, yearId, yearId, grade, room, yearId).all();
   return sortRoster(results, (await getSettings(env, yearId)).roster_order);
 }
+// ย้ายออก/ออกกลางคัน (แสดงท้ายห้อง อ่านอย่างเดียว ไม่นับในสถิติ)
+export const isLeft = (s) => LEFT_STATUSES.includes(s?.enrollment_status);
+// นักเรียนที่บันทึกข้อมูลได้ (ไม่รวมคนที่ย้ายออก/ออกกลางคัน)
+export const writableIds = (roster) => new Set(roster.filter((s) => !isLeft(s)).map((s) => s.id));
 
 // รายชื่อของรายวิชา = นักเรียนในห้อง + คนที่ย้ายห้อง (ยังเรียนอยู่ในโรงเรียน) แต่มีคะแนนในรายวิชานี้แล้ว
 export async function courseRoster(env, course) {
@@ -134,28 +141,34 @@ export async function courseRoster(env, course) {
 }
 
 // เลขที่ในห้อง: นักเรียนที่ยังเรียนอยู่ขึ้นก่อน (ชายก่อนหญิง แล้วตามเลขประจำตัว หรือตามเลขประจำตัวอย่างเดียว
-// ตามที่ตั้งค่า) — นักเรียนย้ายเข้าระหว่างปีต่อท้ายเสมอ เลขที่ของคนเดิมจึงไม่เลื่อน — แล้วตามด้วยคนที่ย้ายห้อง (ไม่มีเลขที่)
+// ตามที่ตั้งค่า) — นักเรียนย้ายเข้าระหว่างปีต่อท้ายเสมอ เลขที่ของคนเดิมจึงไม่เลื่อน
+// — แล้วคนที่ย้ายออก/ออกกลางคัน (ท้ายห้อง เลขที่เดิม) — แล้วคนที่ย้ายห้อง (ไม่มีเลขที่)
 // สำคัญ: ลำดับนี้ต้องตรงกับรายชื่อในห้อง เพราะครูวางคะแนนจาก Excel ตามลำดับเลขที่
 const genderRank = (g) => (/^(ช|ชาย|M)/i.test(g || "") ? 0 : /^(ญ|หญิง|F)/i.test(g || "") ? 1 : 2);
 function sortRoster(rows, order = "gender") {
   const active = (r) => (r.enrollment_status || "enrolled") !== "moved" && !LEFT_STATUSES.includes(r.enrollment_status);
+  const left = (r) => LEFT_STATUSES.includes(r.enrollment_status);
+  const rank = (r) => (active(r) ? 0 : left(r) ? 1 : 2);
   const late = (r) => (r.transfer_in_term ? 1 : 0);
-  rows.sort((a, b) => active(b) - active(a) || late(a) - late(b) ||
+  rows.sort((a, b) => rank(a) - rank(b) || late(a) - late(b) ||
     (order === "gender" ? genderRank(a.gender) - genderRank(b.gender) : 0) ||
     String(a.student_code).localeCompare(String(b.student_code), "th", { numeric: true }));
   // เลขที่ที่ฝ่ายวัดผลกำหนดเอง (manual_number) ตรึงไว้ คนอื่นได้เลขที่ว่างถัดไปตามลำดับปกติ
   // ถ้าเลขที่ตรึงซ้ำกัน (ข้อมูลเก่า) ให้คนแรกได้เลขนั้น คนถัดไปได้เลขอัตโนมัติ — ห้ามมีเลขที่ซ้ำในห้อง
   const owner = new Map();
   for (const r of rows) if (active(r) && r.manual_number && !owner.has(r.manual_number)) owner.set(r.manual_number, r);
-  const fixed = new Set(owner.keys());
+  // เลขที่ของคนที่ย้ายออก/ออกกลางคันเว้นไว้ ไม่มีใครได้เลขนั้นอัตโนมัติ
+  const kept = rows.filter((r) => left(r) && r.manual_number).map((r) => r.manual_number);
+  const fixed = new Set([...owner.keys(), ...kept]);
   let n = 0;
   for (const r of rows) {
+    if (left(r)) { r.number = r.manual_number || null; continue; }
     if (!active(r)) { r.number = null; continue; }
     if (r.manual_number && owner.get(r.manual_number) === r) { r.number = r.manual_number; continue; }
     do n++; while (fixed.has(n));
     r.number = n;
   }
-  if (fixed.size) rows.sort((a, b) => active(b) - active(a) || (a.number ?? 999) - (b.number ?? 999));
+  if (fixed.size) rows.sort((a, b) => rank(a) - rank(b) || (a.number ?? 999) - (b.number ?? 999));
   return rows;
 }
 

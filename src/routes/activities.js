@@ -2,7 +2,7 @@
 // ค่าเริ่มต้นผ่าน: เก็บเฉพาะ "มผ" ในช่อง act_xxx_t (เวลาเรียน) / act_xxx_o (จุดประสงค์) ของ gr_assessments
 // ปพ.6 / ปพ.5 / ปพ.1 อ่านจากตารางเดียวกันนี้
 import { json, readJson, fail, requireUser, text, audit, batchAll } from "../lib/http.js";
-import { resolveYear, roomRoster, listRooms, getSettings, assessmentsFor, studentName, isPrimaryGrade, compareRoom } from "../lib/data.js";
+import { resolveYear, roomRoster, listRooms, getSettings, assessmentsFor, studentName, isPrimaryGrade, compareRoom, writableIds } from "../lib/data.js";
 import { ASSESSMENT_GROUPS, ACTIVITY_PARTS } from "../../public/js/grading.js";
 
 const GROUP = ASSESSMENT_GROUPS.find((g) => g.type === "activity");
@@ -48,12 +48,13 @@ export async function handleActivities(request, env, user, parts, method, url) {
   if (method === "PUT") {
     const b = await readJson(request);
     const { grade, room, roster } = await pick(b.grade, b.room);
-    const ids = new Set(roster.map((s) => s.id));
+    const ids = new Set(roster.map((s) => s.id)), writable = writableIds(roster);
     const changes = Array.isArray(b.changes) ? b.changes.slice(0, 3000) : [];
     const stmts = [];
     for (const c of changes) {
       const sid = Number(c.student_id);
       if (!ids.has(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
+      if (!writable.has(sid)) continue; // ย้ายออก/ออกกลางคัน: อ่านอย่างเดียว
       if (!KEYS.includes(c.item_key)) fail(400, "หัวข้อกิจกรรมไม่ถูกต้อง");
       if (c.value && c.value !== "มผ") fail(400, "บันทึกได้เฉพาะ มผ (ค่าเริ่มต้นคือผ่าน)");
       stmts.push(c.value

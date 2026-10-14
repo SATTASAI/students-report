@@ -420,12 +420,14 @@ async function renderStudents() {
   const roomOpts = (cur) => d.rooms.map((r) => `<option value="${esc(key(r))}" ${key(r) === cur ? "selected" : ""}>${esc(key(r))}</option>`).join("");
   view.innerHTML = `${studentTabs("students")}<div class="panel">
     <div class="panel-head"><div class="actions">${d.rooms.map((r) => `<button class="btn small ${key(r) === rosterRoom ? "primary" : ""}" data-rr="${esc(key(r))}">${esc(key(r))}</button>`).join("")}</div></div>
+    <div class="actions" style="margin-bottom:8px"><button class="btn small" id="renumber">เรียงเลขที่ใหม่ทั้งห้อง ${esc(rosterRoom)}</button></div>
+    <p class="muted small">หลังเปิดภาค นักเรียนที่ย้ายออก/ย้ายห้องจะถูกเว้นเลขที่ไว้ เลขที่ของคนอื่นไม่เลื่อน และคนที่เข้าใหม่ได้เลขที่ต่อท้าย — ขึ้นภาคหรือปีใหม่กด "เรียงเลขที่ใหม่ทั้งห้อง" เพื่อเรียงใหม่ไม่ให้มีเลขที่เว้น</p>
     <p class="muted small">ข้อมูลนักเรียนแก้ที่นี่ที่เดียว (ระบบทะเบียนแสดงตามนี้) แก้แล้วบันทึกทันที · เลขที่ว่าง = เรียงอัตโนมัติ (${"ชายก่อนหญิง แล้วตามเลขประจำตัว"} — เปลี่ยนวิธีเรียงได้ที่ "เกณฑ์และผู้ลงนาม") ใส่เลขที่เองเพื่อตรึงไว้
       · ย้ายห้องภายในโรงเรียน: เลือกห้องใหม่ · นักเรียนย้ายออก/ย้ายเข้าใช้แท็บ "ย้ายเข้า / ย้ายออก"</p>
     <div class="table-wrap"><table class="list roster-edit"><thead><tr><th class="num">เลขที่</th><th>เลขประจำตัว</th><th>คำนำหน้า</th><th>ชื่อ</th><th>นามสกุล</th><th>เพศ</th><th>เลขประจำตัวประชาชน</th><th>วันเกิด</th><th>ห้อง</th></tr></thead>
-    <tbody>${d.students.map((s) => `<tr data-sid="${s.id}">
+    <tbody>${d.students.map((s) => `<tr data-sid="${s.id}" class="${s.enrollment_status === "transferred" || s.enrollment_status === "withdrawn" ? "inactive" : ""}">
       <td class="num"><input data-f="number" inputmode="numeric" value="${s.manual_number ?? ""}" placeholder="${s.number ?? ""}" aria-label="เลขที่ ${esc(s.name)}" style="width:56px;text-align:center"></td>
-      <td>${esc(s.student_code)}${s.transfer_in_term ? ' <span class="tag">ย้ายเข้า</span>' : ""}</td>
+      <td>${esc(s.student_code)}${s.transfer_in_term ? ' <span class="tag">ย้ายเข้า</span>' : ""}${s.enrollment_status === "transferred" ? ' <span class="tag warn">ย้ายออก</span>' : s.enrollment_status === "withdrawn" ? ' <span class="tag warn">ออกกลางคัน</span>' : ""}</td>
       <td><input data-f="name_prefix" list="prefixList" value="${esc(s.name_prefix)}" style="width:96px" aria-label="คำนำหน้า"></td>
       <td><input data-f="first_name" value="${esc(s.first_name)}" aria-label="ชื่อ" style="min-width:130px"></td>
       <td><input data-f="last_name" value="${esc(s.last_name)}" aria-label="นามสกุล" style="min-width:130px"></td>
@@ -435,6 +437,10 @@ async function renderStudents() {
       <td><select data-f="room" style="width:96px" aria-label="ห้อง">${roomOpts(rosterRoom)}</select></td></tr>`).join("")}</tbody></table></div>
     <datalist id="prefixList">${d.prefixes.map((p) => `<option value="${esc(p)}">`).join("")}</datalist></div>`;
   for (const b of view.querySelectorAll("[data-rr]")) b.onclick = () => { rosterRoom = b.dataset.rr; sessionStorage.setItem("sr-admin-roster", rosterRoom); render(); };
+  document.getElementById("renumber").onclick = async () => {
+    if (!(await confirmBox("เรียงเลขที่ใหม่ทั้งห้อง", `ห้อง ${esc(rosterRoom)}: ล้างเลขที่ที่ตรึงไว้และเลขที่ที่เว้นไว้ของคนที่ย้ายออก แล้วเรียงใหม่ตามเกณฑ์ปกติ — <b>เลขที่ของนักเรียนอาจเปลี่ยน</b> ครูที่วางคะแนนจาก Excel ตามเลขที่ต้องใช้รายชื่อใหม่`, "เรียงใหม่", true))) return;
+    try { await api(`/api/roster/renumber?${yq}`, { method: "POST", body: { grade_level: g, classroom: rm } }); toast("เรียงเลขที่ใหม่แล้ว"); render(); } catch (err) { showError(err); }
+  };
   view.querySelector("tbody").addEventListener("change", async (e) => {
     const el = e.target, tr = el.closest("tr"), f = el.dataset.f;
     if (!f) return;
@@ -465,7 +471,7 @@ async function renderMoves() {
     <div class="panel">
       <div class="panel-head"><h2>ค้นหานักเรียน</h2><button class="btn primary" id="newKid">+ นักเรียนย้ายเข้าใหม่</button></div>
       <p class="muted small">นักเรียนที่ย้ายออกหรือออกกลางคันจะไม่แสดงในรายชื่อทุกหน้า แต่ระบบไม่ลบข้อมูล — ถ้ากลับมาเรียนอีก ให้ค้นหาแล้วกด "รับกลับเข้าเรียน" จะได้เลขประจำตัวเดิมและข้อมูลเดิมทั้งหมด
-        · นักเรียนที่เข้าระหว่างปีได้เลขที่ต่อท้ายห้อง เลขที่ของคนเดิมไม่เลื่อน</p>
+        · นักเรียนที่เข้าระหว่างปีได้เลขที่ต่อท้ายห้อง · หลังเปิดภาค คนที่ย้ายออกถูกเว้นเลขที่ไว้ เลขที่ของคนอื่นไม่เลื่อน (ยกเลิก/รับกลับห้องเดิมได้เลขที่เดิม)</p>
       <form id="findForm" class="row-form" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <input type="search" name="q" value="${esc(moveQuery)}" placeholder="เลขประจำตัว / เลขบัตรประชาชน 13 หลัก / ชื่อ" style="flex:1;min-width:220px" required>
         <button class="btn">ค้นหา</button>

@@ -167,7 +167,7 @@ export async function handleReports(request, env, user, parts, method, url) {
     const byRoom = [];
     for (const g of grades) {
       for (const r of rooms.filter((x) => x.grade_level === g)) {
-        const roster = await roomRoster(env, year.id, g, r.classroom);
+        const roster = (await roomRoster(env, year.id, g, r.classroom)).filter((s) => s.enrollment_status === "enrolled"); // สถิติไม่นับคนที่ย้ายออก/ออกกลางคัน
         const ids = roster.map((s) => s.id);
         const res = await yearResultsForStudents(env, year.id, g, ids);
         const gpas = [];

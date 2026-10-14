@@ -424,7 +424,7 @@ async function renderAttendance() {
       <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
         ${att.days.map((d) => { const dt = new Date(`${d}T00:00:00`); return `<th class="col-head att-day ${d === att.today ? "today" : ""}"><span class="wd">${WD[dt.getDay()]}</span><b>${dt.getDate()}</b></th>`; }).join("")}
         ${Object.keys(ATT).map((k) => `<th class="col-head att-sum" data-tip="${ATT[k]} (วัน) ในเดือนนี้">${k}</th>`).join("")}</tr></thead>
-      <tbody>${data.students.map((s) => { const c = counts(s.id); return `<tr data-sid="${s.id}">
+      <tbody>${data.students.map((s) => { const c = counts(s.id); return `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}">
         <td class="stick no">${s.number ?? ""}</td><td class="stick name" title="${esc(s.name)}">${esc(s.name)}</td>
         ${att.days.map((d) => { const v = codeOf(s.id, d); return `<td class="cell att ${v ? `c-${v}` : ""} ${d === att.today ? "today" : ""}"><input data-date="${d}" value="${esc(v)}" maxlength="2" autocomplete="off" aria-label="${esc(s.name)} ${d}"></td>`; }).join("")}
         ${Object.keys(ATT).map((k) => `<td class="calc att-sum" data-n="${k}">${c[k] || ""}</td>`).join("")}</tr>`; }).join("")}</tbody>

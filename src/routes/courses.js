@@ -1,5 +1,5 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
-import { assertCourseAccess, courseBundle, loadCourse, canViewCourse, studentName } from "../lib/data.js";
+import { assertCourseAccess, courseBundle, loadCourse, canViewCourse, studentName, isLeft } from "../lib/data.js";
 import { computeStudentResult, resultWithAttendance, validateRemedial, structureIssues, indicatorWord, indicatorResult, submissionChecks } from "../../public/js/grading.js";
 import { gradeSettings, getSettings, assessmentsFor, ITEM_ORDER_SQL, ITEM_ORDER_BY, compareThai } from "../lib/data.js";
 import { ADMIN_ROLES } from "../lib/http.js";
@@ -318,6 +318,7 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     const bundle = await courseBundle(env, course);
     const items = Object.fromEntries(bundle.items.map((i) => [i.id, i]));
     const students = new Set(bundle.roster.map((s) => s.id));
+    const readOnly = new Set(bundle.roster.filter(isLeft).map((s) => s.id)); // ย้ายออก/ออกกลางคัน: แสดงท้ายห้อง แก้คะแนนไม่ได้
     const errors = [];
     const stmts = [];
     const rawAfter = (sid, itemId) => { // คะแนนเดิมหลังรวมการแก้ในชุดนี้
@@ -337,6 +338,7 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
       const sid = Number(c.student_id);
       if (!item) { errors.push({ index: i, error: "ไม่พบช่องคะแนน" }); continue; }
       if (!students.has(sid)) { errors.push({ index: i, error: "นักเรียนไม่อยู่ในรายวิชานี้" }); continue; }
+      if (readOnly.has(sid)) continue; // ข้ามเงียบ ๆ (เช่น วางคะแนนทั้งคอลัมน์ทับแถวท้ายห้อง)
       const where = { index: i, item_id: c.item_id, student_id: c.student_id };
       if ("score" in c) {
         let score = decimalOf(c.score);
@@ -384,11 +386,13 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     const changes = Array.isArray(b.changes) ? b.changes.slice(0, 200) : [];
     const bundle = await courseBundle(env, course);
     const students = new Set(bundle.roster.map((s) => s.id));
+    const readOnly = new Set(bundle.roster.filter(isLeft).map((s) => s.id));
     const settings = gradeSettings(course, bundle.settings);
     const stmts = [];
     for (const c of changes) {
       const sid = Number(c.student_id);
       if (!students.has(sid)) fail(400, "นักเรียนไม่อยู่ในรายวิชานี้");
+      if (readOnly.has(sid)) continue;
       const prev = bundle.results[sid] || {};
       const next = { ...prev };
       if ("hours_attended" in c) {
