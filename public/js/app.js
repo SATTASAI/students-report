@@ -84,6 +84,7 @@ const MI = {
   check: I('<path d="M20 6L9 17l-5-5"/>'),
   doc: I('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>'),
   key: I('<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>'),
+  save: I('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/>'),
   award: I('<circle cx="12" cy="9" r="6"/><path d="M8.5 14.5L7 22l5-3 5 3-1.5-7.5"/>'),
   clock: I('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   menu: I('<path d="M4 6h16M4 12h16M4 18h16"/>'),
@@ -143,6 +144,7 @@ function roleMenu(role, me) {
     { href: "/admin.html#people", icon: "key", label: "สิทธิ์ทีมวัดผล" },
     { href: "/admin.html#sync", icon: "upload", label: "ดึงข้อมูลจากระบบทะเบียน" },
     { href: "/admin.html#audit", icon: "clock", label: "ประวัติการใช้งาน" },
+    { href: "/admin.html#backup", icon: "save", label: "สำรองและกู้คืนข้อมูล" },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
 }

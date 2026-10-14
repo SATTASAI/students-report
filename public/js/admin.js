@@ -3,6 +3,7 @@ import { parseIndicatorLines } from "/js/indicators.js";
 import { IMPORT_KINDS, parseGrid, gridToRows } from "/js/paste.js";
 import { loadXlsx } from "/js/export.js";
 import { renderHolidayCalendar } from "/js/holiday-calendar.js";
+import { renderBackup } from "/js/backup.js";
 
 const me = await shell("admin");
 const view = document.getElementById("view");
@@ -22,10 +23,10 @@ const GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
 // ส่วนของหน้า เลือกจากเมนูซ้ายผ่าน #hash
 const SECTIONS = {
   start: "เริ่มต้นปีการศึกษา", subjects: "รายวิชา", import: "นำเข้าจาก Excel", courses: "ครูผู้สอน", homerooms: "ครูประจำชั้น",
-  students: "นักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียน", sync: "ดึงข้อมูลจากระบบทะเบียน", review: "ตรวจผลการเรียน", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน",
+  students: "นักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียน", sync: "ดึงข้อมูลจากระบบทะเบียน", review: "ตรวจผลการเรียน", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน", backup: "สำรองและกู้คืนข้อมูล",
 };
 const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves", "students", "calendar"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super)
-  && !(k === "sync" && me.user.role !== "superadmin"));
+  && !(["sync", "backup"].includes(k) && me.user.role !== "superadmin"));
 let tab = hashTab(allowed, me.role === "exec" && allowed.includes("approve") ? "approve" : "start");
 document.getElementById("tabs")?.classList.add("by-menu");
 if (location.hash === "#activity") location.replace("/activities.html"); // ลิงก์เก่า
@@ -41,7 +42,7 @@ function renderTabs() {
 async function render() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   try {
-    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), sync: renderSync, bank: renderBank, settings: renderSettings, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit })[tab]();
+    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), sync: renderSync, bank: renderBank, settings: renderSettings, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit, backup: () => renderBackup(view) })[tab]();
   } catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong>${esc(err.message)}</div>`; }
 }
 
