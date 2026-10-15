@@ -641,8 +641,8 @@ async function drawBankSummary() {
   if (!box) return;
   const { groups } = await api("/api/admin/indicator-bank");
   if (!groups.length) { box.innerHTML = `<p class="muted">ยังไม่มีตัวชี้วัดในคลัง</p>`; return; }
-  box.innerHTML = `<div class="table-wrap"><table class="list"><thead><tr><th>ชั้น</th><th>รหัสวิชา</th><th>กลุ่มสาระ</th><th class="num">ระหว่างทาง</th><th class="num">ปลายทาง</th><th class="num">ผลการเรียนรู้/ผลลัพธ์</th><th class="num">รวม</th><th></th></tr></thead>
-    <tbody>${groups.map((g, i) => `<tr><td>${esc(g.grade_level)}</td><td>${esc(g.subject_code || "ทุกวิชาในกลุ่มสาระ")}</td><td>${esc(g.learning_area)}</td>
+  box.innerHTML = `<div class="table-wrap"><table class="list"><thead><tr><th>ชั้น</th><th>รหัสวิชา</th><th>กลุ่มสาระ</th><th class="num">ระหว่างทาง</th><th class="num">ปลายทาง</th><th class="num">ผลการเรียนรู้/ผลลัพธ์/ความสามารถ</th><th class="num">รวม</th><th></th></tr></thead>
+    <tbody>${groups.map((g, i) => `<tr><td>${esc(g.grade_level)}</td><td>${esc(g.subject_code || (g.grade_level.startsWith("อ.") ? "ปฐมวัย (ประเมินพัฒนาการ)" : "ทุกวิชาในกลุ่มสาระ"))}</td><td>${esc(g.learning_area)}</td>
       <td class="num">${g.mid || ""}</td><td class="num">${g.final || ""}</td><td class="num">${g.outcome || ""}</td><td class="num"><b>${g.n}</b></td>
       <td><button class="btn small" data-g="${i}">ดูรายการ</button></td></tr>`).join("")}</tbody></table></div>`;
   for (const b of box.querySelectorAll("[data-g]")) b.onclick = () => showBankGroup(groups[Number(b.dataset.g)]);

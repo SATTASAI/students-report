@@ -1,11 +1,12 @@
 import BANK_2569 from "../data/indicator-bank-2569.js";
 import BANK_2569_P13 from "../data/indicator-bank-2569-p13.js";
+import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตารางของระบบรายงานผลการเรียน — ขึ้นต้นด้วย gr_ ทั้งหมด เพื่อไม่ชนกับตารางเดิมของ banpadeng-school-db
 // สร้างอัตโนมัติครั้งแรกที่ Worker ทำงาน (CREATE ... IF NOT EXISTS ไม่แตะข้อมูลเดิม)
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-15";
+export const SCHEMA_VERSION = "gr-16";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -277,7 +278,8 @@ async function addMissingColumns(env) {
 
 // gr-13: ตัวชี้วัด ป.4–6 จากหลักสูตรสถานศึกษา 2569 ใส่คลังครั้งเดียว (มีตัวบอกแยก — ถ้าฝ่ายวัดผลลบบางข้อทีหลัง จะไม่กลับมาอีก)
 // gr-14: ผลลัพธ์การเรียนรู้ ป.1–3 (หลักสูตรประถมศึกษาตอนต้น 2569) — ตัวบอกแยกจากชุด ป.4–6
-const SEEDS = [["students_report_seed_bank_2569", BANK_2569], ["students_report_seed_bank_2569_p13", BANK_2569_P13]];
+// gr-16: ความสามารถผู้เรียนเมื่อจบชั้นปี อ.1–อ.3 (หลักสูตรปฐมวัย 2569)
+const SEEDS = [["students_report_seed_bank_2569", BANK_2569], ["students_report_seed_bank_2569_p13", BANK_2569_P13], ["students_report_seed_bank_2569_kinder", BANK_2569_KINDER]];
 export async function seedIndicatorBank(env) {
   for (const [key, data] of SEEDS) await seedOne(env, key, data);
 }
