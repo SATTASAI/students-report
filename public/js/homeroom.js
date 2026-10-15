@@ -26,7 +26,7 @@ document.getElementById("main").hidden = false;
 document.title = `ครูประจำชั้น ${grade}/${room}`;
 document.getElementById("title").textContent = `ครูประจำชั้น ${grade}/${room}`;
 const active = () => data.students.filter((s) => s.enrollment_status === "enrolled");
-document.getElementById("meta").textContent = `ปีการศึกษา ${data.year.year_be} · นักเรียน ${active().length} คน`;
+document.getElementById("meta").textContent = `ปีการศึกษา ${data.year.year_be} · นักเรียน ${active().length} คน${data.teachers?.length ? ` · ครูประจำชั้น ${data.teachers.join(", ")}` : ""}`;
 document.getElementById("backLink").href = withYear("/", data.year.id);
 const pp6 = document.getElementById("pp6Btn");
 pp6.innerHTML = `${ICONS.print} ${/^อ\./.test(grade) ? "เอกสารของห้อง" : "ปพ.6 และเอกสารของห้อง"}`;

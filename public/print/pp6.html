@@ -59,8 +59,8 @@ function page(st) {
     </table>
     <div style="margin-top:3mm">จำนวนวันที่ขาดเรียน (ตามที่ครูประจำชั้นบันทึก) ${td(st.absent_days)} วัน</div>
     <div style="margin-top:2mm">ความคิดเห็นของครูประจำชั้น</div><div class="dots"></div>
-    <div class="signs" style="grid-template-columns:1fr 1fr 1fr;gap:4mm;margin-top:6mm;font-size:14pt">
-      <div class="sign"><div class="line" style="margin:0 2mm 1mm"></div>(${esc(d.homeroom_teachers[0] || "..........................................")})<br>ครูประจำชั้น</div>
+    <div class="signs" style="grid-template-columns:repeat(${Math.min(4, Math.max(1, d.homeroom_teachers.length) + 2)},1fr);gap:4mm;margin-top:6mm;font-size:${d.homeroom_teachers.length > 1 ? 13 : 14}pt">
+      ${(d.homeroom_teachers.length ? d.homeroom_teachers : [""]).map((t) => `<div class="sign"><div class="line" style="margin:0 2mm 1mm"></div>(${esc(t || "..........................................")})<br>ครูประจำชั้น</div>`).join("")}
       <div class="sign"><div class="line" style="margin:0 2mm 1mm"></div>(${esc(s.director_name || "..........................................")})<br>ผู้อำนวยการโรงเรียน</div>
       <div class="sign"><div class="line" style="margin:0 2mm 1mm"></div>(..........................................)<br>ผู้ปกครอง</div>
     </div>

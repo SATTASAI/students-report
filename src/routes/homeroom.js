@@ -27,18 +27,19 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     const { year, grade, room } = await roomContext(env, user, url);
     const roster = await roomRoster(env, year.id, grade, room);
     const ids = roster.map((s) => s.id);
-    const [assessments, grades, absences, comments, body, bank] = await Promise.all([
+    const [assessments, grades, absences, comments, body, bank, hrTeachers] = await Promise.all([
       assessmentsFor(env, year.id, ids),
       yearResultsForStudents(env, year.id, grade, ids),
       listAbsences(env, year.id, ids),
       commentsFor(env, year.id, ids),
       bodyFor(env, year.id, ids),
       env.DB.prepare("SELECT id, field, body FROM gr_comment_bank WHERE user_id = ? ORDER BY field, id").bind(user.id).all().then((r) => r.results),
+      homeroomNames(env, year.id, grade, room),
     ]);
     return json({
       year, grade, room,
       students: roster.map((s) => ({ id: s.id, number: s.number, student_code: s.student_code, name: studentName(s), enrollment_status: s.enrollment_status, gender: s.gender, birth_date: s.birth_date, transfer_in_term: s.transfer_in_term || null })),
-      assessments, grades, absences, comments, body, comment_bank: bank,
+      assessments, grades, absences, comments, body, comment_bank: bank, teachers: hrTeachers,
     });
   }
 
