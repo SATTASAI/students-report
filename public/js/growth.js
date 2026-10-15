@@ -1,6 +1,7 @@
 // ภาวะโภชนาการตามเกณฑ์ของกรมอนามัย
 // - อายุไม่เกิน 5 ปี: มาตรฐาน WHO 2006 (กรมอนามัยใช้สำหรับเด็ก 0–5 ปี) — ตารางใน growth-who2006.js
-// - อายุ 6–19 ปี: เกณฑ์อ้างอิงการเจริญเติบโตของเด็กอายุ 6–19 ปี กรมอนามัย (พ.ศ. 2564) — ตารางใน growth-doh619.js (ถ้ามี)
+// - อายุ 6–19 ปี: เกณฑ์อ้างอิงการเจริญเติบโตของเด็กอายุ 6–19 ปี กรมอนามัย (พ.ศ. 2564) — ตารางใน growth-doh619.js
+//   (จากโปรแกรมกชกร v2; อายุ 5 ปี 1 เดือน–5 ปี 11 เดือนใช้ค่าคำนวณเชื่อมช่วงของโปรแกรมเดียวกัน)
 // แปลผล 3 ด้าน: น้ำหนักตามเกณฑ์ส่วนสูง (รูปร่าง) · ส่วนสูงตามเกณฑ์อายุ · น้ำหนักตามเกณฑ์อายุ + "สูงดีสมส่วน"
 // คิดตามค่าจริง ไม่ปัดเศษ
 
@@ -101,7 +102,13 @@ export function analyzeBody(student, rec, atIso) {
   if (!under6 || (doh && months != null && months >= 60 && !out.hfa)) {
     if (!doh) out.why = "รอตารางเกณฑ์กรมอนามัย 6–19 ปี";
     else {
-      if (w && h && !out.wfh) { const lv = lineLevel(lineRow(doh.wfh?.[sex], h), w, true); if (lv != null) out.wfh = { label: WFH_LEVELS[lv] }; }
+      if (w && h && !out.wfh) {
+        const t = doh.wfh?.[sex];
+        if (t && h < t.from) { // ตารางกรมอนามัยเริ่ม 120 ซม. — เด็กโตที่ตัวเตี้ยกว่านั้นใช้ WHO 2006 (แบบเดียวกับโปรแกรมกชกร)
+          const r = who.wfh[sex].rows[Math.round((h - who.wfh[sex].from) * 10)];
+          if (r) { const z = zWeight(w, ...r); out.wfh = { z, label: WFH_LEVELS[zLevel(z, true)] }; }
+        } else { const lv = lineLevel(lineRow(t, h), w, true); if (lv != null) out.wfh = { label: WFH_LEVELS[lv] }; }
+      }
       if (months != null) {
         const m = Math.floor(months); // อายุเต็มเดือน (ตามที่กรมอนามัยใช้: นับเดือนเต็ม ไม่ปัดขึ้น)
         if (h) { const lv = lineLevel(lineRow(doh.hfa?.[sex], m), h, false); if (lv != null) out.hfa = { label: HFA_LEVELS[lv] }; }

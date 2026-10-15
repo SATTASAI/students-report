@@ -122,4 +122,21 @@ test("ภาวะโภชนาการตามเกณฑ์กรมอ�
   assert.equal(a.hfa, null); // อายุ 125 เดือน อยู่นอกตารางตัวอย่าง
   assert.equal(g.sexOf({ name: "เด็กหญิงบี" }), "ญ");
   assert.equal(g.ageText(g.ageMonths("2020-01-15", "2026-06-01")), "6 ปี 4 เดือน");
+  // ตารางจริง กรมอนามัย 6–19 ปี (จากโปรแกรมกชกร v2)
+  const doh = (await import("../public/js/growth-doh619.js")).default;
+  g.setGrowthRefs({ who, doh });
+  for (const s of ["ช", "ญ"]) { assert.equal(doh.hfa[s].from, 60); assert.equal(doh.hfa[s].rows.length, 169); assert.equal(doh.wfh[s].from, 120); }
+  // ชาย อายุ 125 เดือน (ค่าจากชีต age ของกชกร: รหัส 1125)
+  assert.deepEqual(doh.hfa["ช"].rows[125 - 60], [126, 129, 138.5, 147.9, 151.2]);
+  const boy = { gender: "ช", birth_date: "2016-01-01" }, at = "2026-06-01"; // อายุเต็ม 124 เดือน
+  assert.equal(Math.floor(g.ageMonths(boy.birth_date, at)), 124);
+  const hr = doh.hfa["ช"].rows[124 - 60];
+  a = g.analyzeBody(boy, { weight: 32, height: hr[2] }, at);
+  assert.equal(a.hfa.label, "ตามเกณฑ์"); assert.equal(a.wfh.label, "สมส่วน"); assert.equal(a.good, true); assert.equal(a.why, null);
+  assert.equal(g.analyzeBody(boy, { weight: 32, height: hr[0] - 0.1 }, at).hfa.label, "เตี้ย");
+  assert.equal(g.analyzeBody(boy, { weight: 32, height: hr[0] }, at).hfa.label, "ค่อนข้างเตี้ย"); // เท่ากับเส้น −2SD พอดี
+  // เด็กโตตัวเตี้ยกว่า 120 ซม. → รูปร่างใช้ WHO · อายุ 5 ปีกว่า → ส่วนสูง/น้ำหนักตามอายุมีผล
+  assert.ok(g.analyzeBody({ gender: "ช", birth_date: "2019-01-01" }, { weight: 20, height: 115 }, "2026-06-01").wfh.z != null);
+  a = g.analyzeBody({ gender: "ญ", birth_date: "2020-10-01" }, { weight: 19, height: 111 }, "2026-06-01");
+  assert.ok(a.hfa && a.wfa && a.wfh && a.why == null);
 });

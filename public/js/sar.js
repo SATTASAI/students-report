@@ -20,13 +20,17 @@ export const METRICS = {
   lunch: "ร้อยละการรับประทานอาหารกลางวัน (ครั้งที่รับประทาน ÷ วันที่มาเรียน)",
   duty: "ร้อยละการทำเขตรับผิดชอบ (ครั้งที่ทำ ÷ วันที่มาเรียน)",
   health_clean: "ร้อยละผลตรวจสุขภาพ เล็บ ฟัน ผม มือ ที่สะอาด",
+  nut_shape: "ร้อยละนักเรียนที่มีรูปร่างสมส่วน (น้ำหนักตามเกณฑ์ส่วนสูง เกณฑ์กรมอนามัย) จากการชั่งวัดครั้งล่าสุด",
+  nut_height: "ร้อยละนักเรียนที่มีส่วนสูงตามเกณฑ์อายุขึ้นไป (เกณฑ์กรมอนามัย) จากการชั่งวัดครั้งล่าสุด",
+  nut_good: "ร้อยละนักเรียนสูงดีสมส่วน (เกณฑ์กรมอนามัย) จากการชั่งวัดครั้งล่าสุด",
 };
 export const areaMetric = (area) => `area:${area}`;
 export const CORE_AREAS = ["ภาษาไทย", "คณิตศาสตร์", "ภาษาต่างประเทศ"];
 export const LEARNING_AREAS = ["ภาษาไทย", "คณิตศาสตร์", "วิทยาศาสตร์และเทคโนโลยี", "สังคมศึกษา ศาสนาและวัฒนธรรม",
   "สุขศึกษาและพลศึกษา", "ศิลปะ", "การงานอาชีพ", "ภาษาต่างประเทศ"];
 export const metricLabel = (key) => METRICS[key] || (key.startsWith("area:") ? `ร้อยละของผลการเรียนกลุ่มสาระ${key.slice(5)} ที่ได้ระดับ 3 ขึ้นไป` : key);
-const HEALTH_SUBS = ["att80", "act_pass", "milk", "brush", "lunch", "health_clean"];
+const HEALTH_SUBS = ["att80", "act_pass", "milk", "brush", "lunch", "health_clean", "nut_good"];
+const NUT_SUBS = ["nut_shape", "nut_height"]; // แสดงประกอบ ไม่นำมาเฉลี่ย (สูงดีสมส่วนรวมสองค่านี้แล้ว)
 
 // ประเด็นพิจารณา: main = ตัวชี้วัดหลัก (null = ครูกรอกเอง) · subs = ตัวชี้วัดประกอบ (แสดงเป็นข้อมูลสนับสนุน)
 // main: "avg:<subs>" = ค่าเฉลี่ยของตัวชี้วัดประกอบที่มีข้อมูล
@@ -46,7 +50,7 @@ export const SAR_STAGES = [
         { key: "1.2.1", title: "การมีคุณลักษณะและค่านิยมที่ดีตามที่สถานศึกษากำหนด", main: "trait_good", subs: [] },
         { key: "1.2.2", title: "ความภูมิใจในท้องถิ่นและความเป็นไทย", main: "trait_7", subs: [] },
         { key: "1.2.3", title: "การยอมรับที่จะอยู่ร่วมกันบนความแตกต่างและหลากหลาย", main: "comp_4", subs: [] },
-        { key: "1.2.4", title: "สุขภาวะทางร่างกาย และจิตสังคม", main: `avg:${HEALTH_SUBS.join(",")}`, subs: HEALTH_SUBS },
+        { key: "1.2.4", title: "สุขภาวะทางร่างกาย และจิตสังคม", main: `avg:${HEALTH_SUBS.join(",")}`, subs: [...HEALTH_SUBS, ...NUT_SUBS] },
       ] },
     ],
   },
@@ -54,7 +58,7 @@ export const SAR_STAGES = [
     key: "kinder", title: "ระดับการศึกษาปฐมวัย", standard: "มาตรฐานที่ 1 คุณภาพของเด็ก",
     groups: [
       { key: "k1", title: "พัฒนาการของเด็ก", items: [
-        { key: "k1.1", title: "มีพัฒนาการด้านร่างกาย แข็งแรง มีสุขนิสัยที่ดี และดูแลความปลอดภัยของตนเองได้", main: "avg:att80,milk,brush,lunch,health_clean", subs: ["att80", "milk", "brush", "lunch", "health_clean"] },
+        { key: "k1.1", title: "มีพัฒนาการด้านร่างกาย แข็งแรง มีสุขนิสัยที่ดี และดูแลความปลอดภัยของตนเองได้", main: "avg:att80,milk,brush,lunch,health_clean,nut_good", subs: ["att80", "milk", "brush", "lunch", "health_clean", "nut_good", ...NUT_SUBS] },
         { key: "k1.2", title: "มีพัฒนาการด้านอารมณ์ จิตใจ ควบคุมและแสดงออกทางอารมณ์ได้", main: null, subs: [] },
         { key: "k1.3", title: "มีพัฒนาการด้านสังคม ช่วยเหลือตนเองและเป็นสมาชิกที่ดีของสังคม", main: null, subs: ["duty"] },
         { key: "k1.4", title: "มีพัฒนาการด้านสติปัญญา สื่อสารได้ มีทักษะการคิดพื้นฐาน และแสวงหาความรู้ได้", main: null, subs: [] },

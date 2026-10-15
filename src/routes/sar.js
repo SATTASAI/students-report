@@ -9,6 +9,10 @@ import {
 import { ASSESSMENT_GROUPS, summarizeGroup, clean } from "../../public/js/grading.js";
 import { SAR_ITEM_KEYS, CORE_AREAS, DEFAULT_LEVELS } from "../../public/js/sar.js";
 import { LEARNING_AREAS } from "./admin.js";
+import { analyzeBody, setGrowthRefs, HFA_LEVELS } from "../../public/js/growth.js";
+import WHO2006 from "../../public/js/growth-who2006.js";
+import DOH619 from "../../public/js/growth-doh619.js";
+setGrowthRefs({ who: WHO2006, doh: DOH619 });
 // กลุ่มสาระเรียงตามหลักสูตรแกนกลาง (ภาษาไทย คณิต วิทย์ …) กลุ่มอื่นของ ป.1–3 ต่อท้าย
 const areaRank = (a) => { const i = LEARNING_AREAS.indexOf(a); return i < 0 ? 99 : i; };
 
@@ -69,6 +73,7 @@ export async function sarData(env, year) {
     if (!ids.length) continue;
     coverage[stage].rooms++; coverage[stage].students += ids.length;
     stageIds[stage].push(...ids);
+    await roomNutrition(env, year.id, roster, m);
     await roomLogs(env, year.id, ids, logs[stage]);
     const [att, ass, res] = await Promise.all([
       attendanceRates(env, year.id, ids),
@@ -145,5 +150,24 @@ async function roomLogs(env, yearId, ids, acc) {
     const den = Math.max(r.n, ids.length - (absent[r.log_date] || 0));
     const x = (acc[r.log_type] ||= { num: 0, den: 0 });
     x.num += Math.min(r.n, den); x.den += den;
+  }
+}
+
+// ภาวะโภชนาการ (เกณฑ์กรมอนามัย) จากการชั่งวัดครั้งล่าสุดของแต่ละคนในปีการศึกษา — อายุคิดถึงวันที่บันทึกครั้งนั้น
+// นับเฉพาะคนที่ประเมินได้ (มีน้ำหนัก+ส่วนสูง และรู้เพศ; ส่วนสูงตามอายุต้องมีวันเกิดด้วย)
+async function roomNutrition(env, yearId, roster, m) {
+  const ids = roster.map((s) => s.id);
+  const { results } = await env.DB.prepare(`SELECT student_id, round, weight, height, substr(updated_at, 1, 10) AS d FROM gr_body
+    WHERE academic_year_id = ? AND weight IS NOT NULL AND height IS NOT NULL AND student_id IN (${ids.map(() => "?").join(",")}) ORDER BY round`).bind(yearId, ...ids).all();
+  const last = {};
+  for (const r of results) last[r.student_id] = r; // round มากสุดชนะ
+  for (const st of roster) {
+    const r = last[st.id];
+    if (!r) continue;
+    const a = analyzeBody(st, r, r.d);
+    if (!a) continue;
+    if (a.wfh) add(m, "nut_shape", a.wfh.label === "สมส่วน");
+    if (a.hfa) add(m, "nut_height", HFA_LEVELS.indexOf(a.hfa.label) >= 2);
+    if (a.good != null) add(m, "nut_good", a.good);
   }
 }

@@ -63,6 +63,11 @@ test("SAR จากข้อมูลจริง: ผลการเรีย�
     { student_id: b.id, type: "h_nail", date: "2026-11-w1", value: "ok" }, { student_id: b.id, type: "h_hand", date: "2026-11-w1", value: "no" },
   ] }, { expect: 200 });
 
+  // น้ำหนักส่วนสูง (อายุ ~9 ปี): a สมส่วน ส่วนสูงตามเกณฑ์ → สูงดีสมส่วน · b อ้วน · ครั้งที่ 2 ของ a ใช้แทนครั้งที่ 1
+  await call("t1", "PUT", `/api/homeroom/body?${Q}`, { changes: [
+    { student_id: a.id, round: 1, weight: 45, height: 135 }, { student_id: a.id, round: 2, weight: 30.4, height: 135 },
+    { student_id: b.id, round: 1, weight: 60, height: 135 },
+  ] }, { expect: 200 });
   await call("t1", "GET", "/api/sar", null, { expect: 403 });
   const d = (await call("admin", "GET", "/api/sar", null, { expect: 200 })).data;
   const m = d.metrics.basic;
@@ -72,6 +77,9 @@ test("SAR จากข้อมูลจริง: ผลการเรีย�
   assert.equal(m.trait_7.den, 2);
   assert.deepEqual(m.health_clean, { num: 3, den: 4 });
   assert.deepEqual(m.milk, { num: 2, den: kids.length }); // เฉพาะวันที่ห้องนี้บันทึกจริง (1 วัน) × นักเรียนที่มาเรียน — ไม่ใช่ทั้งปีทุกห้อง
+  assert.deepEqual(m.nut_shape, { num: 1, den: 2 });
+  assert.deepEqual(m.nut_height, { num: 2, den: 2 });
+  assert.deepEqual(m.nut_good, { num: 1, den: 2 });
   assert.equal(m.brush, undefined); // ยังไม่มีใครบันทึกแปรงฟัน → ไม่คิด
   assert.equal(m.att80, undefined); // ยังไม่มีใครบันทึกขาด/ลา → ไม่คิด (ไม่ใช่ 100% ปลอม)
   assert.ok(d.grade_area.some((g) => g.grade_level === "ป.4" && g.learning_area === "ภาษาไทย" && g.den === 2));

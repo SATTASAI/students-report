@@ -43,7 +43,7 @@ function draw() {
         <td><b>${esc(it.key.replace(/^k/, ""))}</b> ${esc(it.title)}
           <details class="sar-more"><summary class="small">ที่มาของข้อมูล${r.note ? " · มีหมายเหตุ" : ""}</summary>
             <ul class="small">${it.main && !it.main.startsWith("avg:") ? `<li><b>หลัก:</b> ${esc(metricLabel(it.main))} — ${metricText(it.main, metrics)}</li>` : it.main ? `<li><b>หลัก:</b> ค่าเฉลี่ยของตัวชี้วัดด้านล่างที่มีข้อมูล</li>` : "<li>ระบบยังไม่มีข้อมูลสำหรับประเด็นนี้ — กรอกผลเองในช่อง \"กรอกเอง\"</li>"}
-              ${it.subs.map((k) => `<li>${esc(metricLabel(k))} — ${metricText(k, metrics)}</li>`).join("")}</ul>
+              ${it.subs.map((k) => `<li>${esc(metricLabel(k))} — ${metricText(k, metrics)}${it.main?.startsWith("avg:") && !it.main.slice(4).split(",").includes(k) ? ' <span class="muted">(ข้อมูลประกอบ ไม่นำมาเฉลี่ย)</span>' : ""}</li>`).join("")}</ul>
             <label class="field small">หมายเหตุ / หลักฐานอ้างอิง (ไปใน Word)<textarea data-f="note" rows="2" maxlength="2000" ${CAN_EDIT ? "" : "disabled"}>${esc(r.note)}</textarea></label>
           </details></td>
         <td class="num">${r.auto == null ? '<span class="muted small">–</span>' : `${fmt(r.auto)}%`}</td>
