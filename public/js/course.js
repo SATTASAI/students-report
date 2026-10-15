@@ -9,6 +9,12 @@ let data;              // ข้อมูลจาก /api/courses/:id
 let bankCache = null;  // คลังตัวชี้วัดของรายวิชานี้ [{id, code, title, kind}]
 let builder = null;    // หน้าสร้างโครงสร้างรายวิชาที่เปิดอยู่ {term, units, loose, finals, dirty}
 let tab = sessionStorage.getItem(`sr-tab-${courseId}`) || "t1";
+// ร่างโครงสร้างรายวิชาในเบราว์เซอร์ (ประกาศก่อนแสดงผลครั้งแรก)
+const draftKey = (term) => `sr-draft-${courseId}-${term}`;
+const openKey = `sr-building-${courseId}`;
+const draftNote = () => (builder?.dirty ? "ยังไม่บันทึก · ร่างเก็บไว้ในเบราว์เซอร์นี้แล้ว (รีเฟรชไม่หาย)" : "");
+const whenText = (ms) => new Date(ms).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+let targetsCache = null;
 const pending = new Map(); // "itemId:studentId" → score|null รอบันทึก
 let saving = false;
 let saveTimer;
@@ -555,10 +561,10 @@ function renderSetup() {
   };
   const termEmpty = (t) => !data.items.some((i) => i.term_number === t);
   const tplPanel = (c.has_template || data.is_admin) ? `<div class="panel"><div class="panel-head"><h2>แม่แบบโครงสร้างของวิชา ${esc(c.code)} ${esc(c.grade_level)}</h2></div>
-      ${c.has_template ? `<p class="muted small" style="margin-top:0">ฝ่ายวิชาการตั้งแม่แบบไว้แล้ว${c.template_updated_at ? ` (ปรับล่าสุด ${esc(c.template_updated_at.slice(0, 10))})` : ""} ใช้กับภาคที่ยังไม่มีช่องคะแนนได้ แล้วปรับคะแนนเต็มต่อได้อิสระ</p>
+      ${c.has_template ? `<p class="muted small" style="margin-top:0">${c.template_inherited ? "ใช้แม่แบบจากปีการศึกษาก่อน (ฝ่ายวิชาการตั้งไว้ ยังไม่ได้ตั้งใหม่ปีนี้)" : `ฝ่ายวิชาการตั้งแม่แบบไว้แล้ว${c.template_updated_at ? ` (ปรับล่าสุด ${esc(c.template_updated_at.slice(0, 10))})` : ""}`} ใช้กับภาคที่ยังไม่มีช่องคะแนนได้ แล้วปรับคะแนนเต็มต่อได้อิสระ</p>
         ${can ? `<div class="actions">${[1, 2].map((t) => `<button class="btn ${termEmpty(t) ? "primary" : ""}" data-tpl="${t}" ${termEmpty(t) ? "" : "disabled title=\"ภาคนี้มีช่องคะแนนแล้ว\""}>ใช้แม่แบบ ภาค ${t}</button>`).join("")}</div>` : ""}`
         : `<p class="muted small" style="margin-top:0">ยังไม่มีแม่แบบ</p>`}
-      ${data.is_admin ? `<div class="actions" style="margin-top:10px"><button class="btn" id="tplSave" ${data.items.length ? "" : "disabled"}>บันทึกโครงสร้างนี้เป็นแม่แบบของวิชา</button>${c.has_template ? '<button class="btn danger" id="tplDel">ลบแม่แบบ</button>' : ""}</div>
+      ${data.is_admin ? `<div class="actions" style="margin-top:10px"><button class="btn" id="tplSave" ${data.items.length ? "" : "disabled"}>บันทึกโครงสร้างนี้เป็นแม่แบบของวิชา</button>${c.has_template && !c.template_inherited ? '<button class="btn danger" id="tplDel">ลบแม่แบบ</button>' : ""}</div>
         <p class="muted small">เฉพาะฝ่ายวิชาการ/ทีมวัดผล — ครูทุกห้องของวิชานี้จะกดใช้แม่แบบได้ ห้องที่ใช้ไปแล้วไม่เปลี่ยนตาม</p>` : ""}</div>` : "";
   view.innerHTML = `
     <div class="panel">
@@ -569,19 +575,26 @@ function renderSetup() {
       ${issues.length ? `<p class="note warn" style="margin-top:8px">${issues.map(esc).join("<br>")}<br>แก้ให้ตรงก่อนยืนยันผล</p>` : ""}
     </div>
     ${[1, 2].map((t) => `<div class="panel">
+      ${can && readDraft(t) ? `<div class="note warn" style="margin:0 0 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">มีร่างโครงสร้างภาคเรียนที่ ${t} ที่ยังไม่บันทึก (${esc(whenText(readDraft(t).at))})
+        <button class="btn small primary" data-resume="${t}">เปิดร่างทำต่อ</button><button class="btn small" data-dropdraft="${t}">ทิ้งร่าง</button></div>` : ""}
       <div class="panel-head"><h2>ภาคเรียนที่ ${t} ${termLine(t)}</h2>${can ? `<div class="actions">
         <button class="btn ${termEmpty(t) ? "primary" : ""}" data-build="${t}">${termEmpty(t) && !(data.units || []).some((u) => u.term_number === t) ? "สร้างโครงสร้างรายวิชา" : "แก้ไขโครงสร้างรายวิชา"}</button></div>` : ""}</div>
       ${list(t)}</div>`).join("")}
     ${tplPanel}
-    ${can ? `<div class="panel"><div class="panel-head"><h2>ใช้โครงสร้างจากห้องอื่น</h2></div>
-      <p class="muted small">คัดลอก${W}และคะแนนเต็มจากวิชาเดียวกันของห้องอื่นหรือปีก่อน (คัดลอกเฉพาะโครงสร้าง ไม่คัดลอกคะแนนนักเรียน)</p>
-      <div id="siblings" class="muted small">กำลังค้นหา…</div></div>` : ""}`;
+    ${can ? `<div class="panel"><div class="panel-head"><h2>ใช้โครงสร้างจากห้องอื่น / ปีการศึกษาก่อน</h2></div>
+      <p class="muted small">ดึงหน่วยการเรียนรู้ ภาระงาน ${W} และคะแนนเต็มของวิชาเดียวกัน (รหัสวิชาและชั้นเดียวกัน) มาเป็นร่าง ปรับได้ก่อนกดบันทึก — ไม่คัดลอกคะแนนนักเรียน</p>
+      <div id="siblings" class="muted small">กำลังค้นหา…</div></div>
+    <div class="panel" id="pushPanel" hidden><div class="panel-head"><h2>นำโครงสร้างนี้ไปใช้กับห้องอื่นที่สอน</h2>
+      <button class="btn" id="pushBtn" ${data.items.length ? "" : "disabled"}>${ICONS.copy} เลือกห้อง</button></div>
+      <p class="muted small" id="pushInfo" style="margin:0"></p></div>` : ""}`;
   for (const b of view.querySelectorAll("[data-build]")) b.onclick = () => openBuilder(Number(b.dataset.build));
   for (const b of view.querySelectorAll("[data-tpl]")) b.onclick = () => applyTemplate(Number(b.dataset.tpl));
   const ts = document.getElementById("tplSave"), td = document.getElementById("tplDel");
   if (ts) ts.onclick = saveTemplate;
   if (td) td.onclick = deleteTemplate;
-  if (can) loadSiblings();
+  if (can) { loadSiblings(); loadPushPanel(); }
+  for (const b of view.querySelectorAll("[data-resume]")) b.onclick = () => openBuilder(Number(b.dataset.resume), { resume: true });
+  for (const b of view.querySelectorAll("[data-dropdraft]")) b.onclick = async () => { if (await confirmBox("ทิ้งร่าง", "ร่างที่ยังไม่บันทึกจะหายไป", "ทิ้งร่าง", true)) { clearDraft(Number(b.dataset.dropdraft)); renderSetup(); } };
   if (!bankCache) loadBank().then(() => { if (tab === "setup" && !builder) renderSetup(); }).catch(() => {});
 }
 
@@ -632,17 +645,26 @@ async function loadSiblings() {
   const box = document.getElementById("siblings");
   try {
     const { courses } = await api(`/api/courses/${courseId}/siblings`);
-    if (!courses.length) { box.textContent = "ยังไม่มีห้องอื่นที่ตั้งโครงสร้างวิชานี้ไว้"; return; }
-    box.innerHTML = courses.map((s) => `<div class="actions" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line-soft)">
-      <span>${esc(s.grade_level)}/${esc(s.classroom)} ปี ${s.year_be} — ${s.item_count} ช่องคะแนน</span>
-      <button class="btn small" data-copy="${s.id}">${ICONS.copy} คัดลอกโครงสร้าง</button></div>`).join("");
-    for (const b of box.querySelectorAll("[data-copy]")) b.onclick = async () => {
-      const ok = await confirmBox("คัดลอกโครงสร้างคะแนน", data.items.length ? "รายการที่คัดลอกจะเพิ่มต่อท้ายช่องคะแนนเดิม (ช่องเดิมยังอยู่)" : `คัดลอก${W}และคะแนนเต็มทั้ง 2 ภาคเรียน`, "คัดลอก");
-      if (!ok) return;
-      try { data = await api(`/api/courses/${courseId}/copy-items`, { method: "POST", body: { source_course_id: Number(b.dataset.copy) } }); toast("คัดลอกแล้ว"); render(); }
-      catch (err) { showError(err); }
-    };
+    if (!courses.length) { box.textContent = "ยังไม่มีห้องอื่นหรือปีก่อนที่ตั้งโครงสร้างวิชานี้ไว้"; return; }
+    const Y = data.course.year_be;
+    const group = (label, list) => list.length ? `<div style="margin-top:6px"><b class="small">${label}</b>${list.map((s) => `<div class="actions" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line-soft)">
+      <span>${esc(s.grade_level)}/${esc(s.classroom)} ปีการศึกษา ${s.year_be} — ${s.item_count} ช่องคะแนน</span>
+      <span class="actions">${[1, 2].map((t) => `<button class="btn small" data-pull="${s.id}:${t}" ${s[`t${t}_items`] ? "" : "disabled"}>${ICONS.copy} ใช้ภาค ${t}</button>`).join("")}</span></div>`).join("")}</div>` : "";
+    box.innerHTML = group("ปีการศึกษานี้ (ห้องอื่น)", courses.filter((s) => s.year_be === Y)) + group("ปีการศึกษาก่อน ๆ", courses.filter((s) => s.year_be !== Y));
+    for (const b of box.querySelectorAll("[data-pull]")) b.onclick = () => { const [sid, t] = b.dataset.pull.split(":").map(Number); pullStructure(sid, t); };
   } catch (err) { box.textContent = err.message; }
+}
+
+async function loadPushPanel() {
+  const panel = document.getElementById("pushPanel");
+  if (!panel) return;
+  try {
+    const targets = await loadTargets();
+    if (!targets.length || !document.body.contains(panel)) return;
+    panel.hidden = false;
+    document.getElementById("pushInfo").textContent = `ห้องอื่นของ ${data.course.code || data.course.name} ที่คุณสอน: ${targets.map((c) => `${c.grade_level}/${c.classroom}`).join(", ")}`;
+    document.getElementById("pushBtn").onclick = () => applyToRooms([1, 2].filter((t) => data.items.some((i) => i.term_number === t)));
+  } catch { /* ไม่แสดงแผงนี้ */ }
 }
 
 // ---------------- ส่งผล / ส่งคืน / อนุมัติ ----------------
@@ -724,7 +746,26 @@ function bankKindOf(it) { const b = (bankCache || []).find((x) => itemKey(x) ===
 const KIND_GROUPS = [["ระหว่างทาง", "ตัวชี้วัดระหว่างทาง"], ["ปลายทาง", "ตัวชี้วัดปลายทาง"], ["ผลการเรียนรู้", "ผลการเรียนรู้"], ["ผลลัพธ์การเรียนรู้", "ผลลัพธ์การเรียนรู้"], ["", "อื่น ๆ"]];
 const r2 = (n) => Math.round(n * 100) / 100;
 
-async function openBuilder(term) {
+// ---- ร่างในเบราว์เซอร์: หน้าสร้างโครงสร้างไม่บันทึกอัตโนมัติ แต่เก็บร่างไว้กันเผลอรีเฟรช/ปิดหน้า ----
+function readDraft(term) { try { const d = JSON.parse(localStorage.getItem(draftKey(term)) || "null"); return d && Array.isArray(d.units) ? d : null; } catch { return null; } }
+function clearDraft(term) { try { localStorage.removeItem(draftKey(term)); } catch { /* */ } }
+function saveDraft() {
+  if (!builder?.dirty) return;
+  const { term, units, loose, finals, from } = builder;
+  try { localStorage.setItem(draftKey(term), JSON.stringify({ at: Date.now(), units, loose, finals, from: from || null })); } catch { /* พื้นที่เต็ม/ปิดไว้ — ทำงานต่อได้ */ }
+}
+function markDirty() { if (!builder) return; builder.dirty = true; saveDraft(); const st = document.getElementById("bDraft"); if (st) st.textContent = draftNote(); }
+// id ในร่างอาจเก่า (มีคนแก้โครงสร้างหลังเก็บร่าง) → id ที่ไม่มีแล้วถือเป็นรายการใหม่
+function sanitizeDraft(d, term) {
+  const uIds = new Set((data.units || []).filter((u) => u.term_number === term).map((u) => u.id));
+  const iIds = new Set(data.items.filter((i) => i.term_number === term).map((i) => i.id));
+  const seen = new Set();
+  const fixI = (it) => { const id = iIds.has(it.id) && !seen.has(it.id) ? it.id : null; if (id) seen.add(id); return { ...it, id }; };
+  return { units: d.units.map((u) => ({ ...u, id: uIds.has(u.id) ? u.id : null, items: (u.items || []).map(fixI) })), loose: (d.loose || []).map(fixI),
+    finals: (d.finals || []).map((f) => ({ ...fixI(f), inds: f.inds || [] })), from: d.from || null };
+}
+
+async function openBuilder(term, { resume = false } = {}) {
   try { if (!bankCache) await loadBank(); } catch (err) { showError(err); bankCache = []; }
   const toB = (i) => ({ id: i.id, code: i.code || "", title: i.title, max: i.max_score });
   const items = data.items.filter((i) => i.term_number === term);
@@ -736,8 +777,83 @@ async function openBuilder(term) {
   if (!units.length) units.push({ id: null, title: "", hours: "", task: "", items: [] });
   if (!finals.length) finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${term}`, max: fT, inds: [] });
   builder = { term, units, loose, finals, dirty: false };
+  const draft = readDraft(term);
+  if (draft) {
+    const use = resume || (await dialog({ title: "พบร่างที่ยังไม่บันทึก", okText: "ใช้ร่างต่อ", cancelText: "เปิดฉบับที่บันทึกไว้",
+      body: `<p>มีร่างโครงสร้างภาคเรียนที่ ${term} ที่แก้ค้างไว้เมื่อ ${esc(whenText(draft.at))} แต่ยังไม่ได้กดบันทึก${draft.from ? ` (ดึงมาจาก ${esc(draft.from)})` : ""}</p>
+        <p class="muted small">ถ้าเปิดฉบับที่บันทึกไว้ ร่างนี้จะยังอยู่จนกว่าจะเริ่มแก้ใหม่</p>` })).ok;
+    if (use) builder = { term, ...sanitizeDraft(draft, term), dirty: true };
+  }
+  try { sessionStorage.setItem(openKey, String(term)); } catch { /* */ }
   tab = "setup"; renderTabs(); drawBuilder();
   window.scrollTo({ top: 0 });
+}
+function closeBuilder(discard) {
+  if (discard && builder) clearDraft(builder.term);
+  builder = null;
+  try { sessionStorage.removeItem(openKey); } catch { /* */ }
+}
+
+// ดึงโครงสร้างของห้องอื่น/ปีก่อนมาเป็นร่างในหน้าสร้างโครงสร้าง (ยังไม่บันทึกจนกว่าครูจะกดบันทึก)
+async function pullStructure(sourceId, term) {
+  let src;
+  try { src = await api(`/api/courses/${courseId}/source-structure?source=${sourceId}`); } catch (err) { showError(err); return; }
+  const from = `${src.source.grade_level}/${src.source.classroom} ปีการศึกษา ${src.source.year_be}`;
+  const sItems = src.items.filter((i) => i.term_number === term);
+  if (!sItems.length) { toast(`${from} ไม่มีโครงสร้างภาคเรียนที่ ${term}`, "bad"); return; }
+  if (builder && builder.term !== term && builder.dirty && !(await confirmBox("ปิดร่างที่เปิดอยู่", `ร่างภาคเรียนที่ ${builder.term} ยังเก็บไว้ในเบราว์เซอร์ เปิดต่อได้ภายหลัง`, "ต่อไป"))) return;
+  const hasNow = data.items.some((i) => i.term_number === term) || readDraft(term);
+  if (hasNow && !(await confirmBox(`ใช้โครงสร้างจาก ${from}`, `แทนที่โครงสร้างภาคเรียนที่ ${term} ในหน้าสร้างโครงสร้าง — ยังไม่บันทึกจนกว่าจะกด "บันทึกโครงสร้าง" ช่องที่ชื่อตรงกันคงคะแนนนักเรียนไว้`, "ดึงมาแก้ไข"))) return;
+  try { if (!bankCache) await loadBank(); } catch { bankCache = []; }
+  // ช่องที่มีอยู่แล้ว (ประเภท รหัส ชื่อตรงกัน) ใช้ id เดิม → คะแนนที่กรอกไว้ไม่หาย
+  const old = data.items.filter((i) => i.term_number === term), used = new Set();
+  const idOf = (it) => { const m = old.find((o) => !used.has(o.id) && o.kind === it.kind && (o.code || "") === (it.code || "") && o.title === it.title); if (m) used.add(m.id); return m?.id ?? null; };
+  const oldU = (data.units || []).filter((u) => u.term_number === term), usedU = new Set();
+  const toB = (i) => ({ id: idOf(i), code: i.code || "", title: i.title, max: i.max_score });
+  const sUnits = src.units.filter((u) => u.term_number === term).sort((a, b) => a.unit_no - b.unit_no), keys = new Set(sUnits.map((u) => u.key));
+  const units = sUnits.map((u) => { const m = oldU.find((o) => !usedU.has(o.id) && o.title === u.title); if (m) usedU.add(m.id);
+    return { id: m?.id ?? null, title: u.title, hours: u.hours ?? "", task: u.task || "", items: sItems.filter((i) => i.kind !== "final" && i.unit_key === u.key).map(toB) }; });
+  if (!units.length) units.push({ id: null, title: "", hours: "", task: "", items: [] });
+  builder = { term, units, loose: sItems.filter((i) => i.kind !== "final" && !keys.has(i.unit_key)).map(toB),
+    finals: sItems.filter((i) => i.kind === "final").map((i) => ({ ...toB(i), inds: (i.indicators || []).map((x) => ({ code: x.code || "", title: x.title })) })), dirty: false, from };
+  markDirty();
+  try { sessionStorage.setItem(openKey, String(term)); } catch { /* */ }
+  tab = "setup"; renderTabs(); drawBuilder(); window.scrollTo({ top: 0 });
+  toast(`ดึงโครงสร้างจาก ${from} แล้ว — ตรวจ/แก้ แล้วกดบันทึก`);
+}
+
+// นำโครงสร้างของห้องนี้ไปใช้กับห้องอื่นของวิชาเดียวกันที่ครูคนเดียวกันสอน
+async function loadTargets() { if (!targetsCache) targetsCache = (await api(`/api/courses/${courseId}/apply-targets`)).courses; return targetsCache; }
+async function applyToRooms(defaultTerms = [1, 2], { afterSave = false } = {}) {
+  let targets;
+  try { targets = await loadTargets(); } catch (err) { showError(err); return; }
+  if (!targets.length) { if (!afterSave) toast("ไม่มีห้องอื่นของวิชานี้ที่คุณสอน", "bad"); return; }
+  const has = (t) => data.items.some((i) => i.term_number === t);
+  const terms = [1, 2].filter(has);
+  if (!terms.length) { toast("ห้องนี้ยังไม่มีโครงสร้าง", "bad"); return; }
+  const st = (c, t) => c.terms[t].scores ? `<span class="tag warn">มีคะแนนแล้ว</span>` : c.terms[t].items ? `<span class="tag">มีโครงสร้างแล้ว</span>` : `<span class="tag ok">ยังว่าง</span>`;
+  const res = await dialog({
+    title: afterSave ? "ใช้โครงสร้างนี้กับห้องอื่นด้วยไหม" : "นำโครงสร้างไปใช้กับห้องอื่น", okText: "นำไปใช้", cancelText: afterSave ? "ไม่ใช้" : "ยกเลิก", wide: true,
+    body: `<p class="muted small" style="margin-top:0">คัดลอกหน่วยการเรียนรู้ ภาระงาน ${W} คะแนนเต็ม และสอบปลายภาคของ ${esc(data.course.grade_level)}/${esc(data.course.classroom)} ไปแทนที่ของห้องที่เลือก
+        · ช่องที่ชื่อตรงกันคงคะแนนนักเรียนไว้ · คะแนนนักเรียนไม่ถูกคัดลอก</p>
+      <div class="actions" style="margin-bottom:8px">${terms.map((t) => `<label class="check"><input type="checkbox" name="term${t}" ${defaultTerms.includes(t) ? "checked" : ""}> ภาคเรียนที่ ${t}</label>`).join("")}</div>
+      <div style="display:grid;gap:6px">${targets.map((c) => `<label class="check pick-row"><input type="checkbox" name="c${c.id}" ${c.locked ? "disabled" : ""} ${!c.locked && !c.terms[1].scores && !c.terms[2].scores ? "checked" : ""}>
+        <span><b>${esc(c.grade_level)}/${esc(c.classroom)}</b> ${c.locked ? '<span class="tag">ส่งผลแล้ว แก้ไม่ได้</span>' : terms.map((t) => `ภาค ${t} ${st(c, t)}`).join(" ")}</span></label>`).join("")}</div>`,
+  });
+  if (!res.ok) return;
+  const body = { terms: terms.filter((t) => res.data[`term${t}`]), target_ids: targets.filter((c) => res.data[`c${c.id}`]).map((c) => c.id) };
+  if (!body.terms.length || !body.target_ids.length) { toast("เลือกภาคเรียนและห้องก่อน", "bad"); return; }
+  let r;
+  try { r = await api(`/api/courses/${courseId}/apply-to`, { method: "POST", body }); }
+  catch (err) {
+    if (!err.data?.needs_confirm) { showError(err); return; }
+    const list = err.data.blocked.map((x) => `<li>${esc(x.room)} ภาค ${x.term}: ${esc(x.items.join(", "))}</li>`).join("");
+    if (!(await confirmBox("มีคะแนนนักเรียนในช่องที่จะถูกแทนที่", `ช่องต่อไปนี้ไม่มีในโครงสร้างใหม่ ถ้านำไปใช้ คะแนนของช่องเหล่านี้จะถูกลบถาวร<ul>${list}</ul>`, "นำไปใช้และลบคะแนน", true))) return;
+    try { r = await api(`/api/courses/${courseId}/apply-to`, { method: "POST", body: { ...body, confirm: true } }); } catch (e2) { showError(e2); return; }
+  }
+  targetsCache = null;
+  toast(`นำโครงสร้างไปใช้กับ ${r.applied.join(", ")} แล้ว`);
+  if (!builder && tab === "setup") renderSetup();
 }
 
 function builderTotals() {
@@ -755,6 +871,7 @@ function drawBuilder() {
   view.innerHTML = `
     <div class="panel builder">
       <div class="panel-head"><h2>สร้างโครงสร้างรายวิชา — ภาคเรียนที่ ${B.term}</h2><button class="btn small" id="bBack">← กลับ</button></div>
+      ${B.from ? `<p class="note" style="margin:0 0 8px">ดึงโครงสร้างมาจาก ${esc(B.from)} — ตรวจและปรับให้เหมาะกับห้องนี้ แล้วกด "บันทึกโครงสร้าง"</p>` : ""}
       <p class="muted small" style="margin-top:0">${esc(c.code || "")} ${esc(c.name)} ${esc(c.grade_level)}/${esc(c.classroom)} ·
         1) พิมพ์ชื่อหน่วยการเรียนรู้ ชั่วโมง และภาระงาน/ชิ้นงาน 2) กด "เลือก${W}" ของแต่ละหน่วย 3) ใส่คะแนนเต็ม — คะแนนเก็บรวม ${fmt(cT)} · สอบปลายภาค ${fmt(fT)}</p>
       ${bankCache.length ? "" : `<p class="note warn">ยังไม่มี${W}ของวิชานี้ในคลัง — พิมพ์${W}เองได้ในหน้าต่างเลือก${W} หรือแจ้งฝ่ายวัดผลให้นำเข้าคลัง</p>`}
@@ -783,7 +900,7 @@ function drawBuilder() {
         <div class="f-inds"><span class="muted small">${W}${finalKindLabel()}ที่สอบ:</span>
           ${(it.inds || []).map((x, xi) => `<span class="chip" title="${esc(x.title)}">${esc(x.code || x.title.slice(0, 24))}<button type="button" data-frm="${ii}:${xi}" aria-label="เอาออก">✕</button></span>`).join("") || `<span class="tag warn">ยังไม่ได้เลือก</span>`}
           <button type="button" class="btn small primary" data-fpick="${ii}">${ICONS.plus} เลือก${W}${finalKindLabel()}</button></div>`).join("") || '<p class="muted small" style="margin:0">ไม่มีการสอบปลายภาค</p>'}</div></div>
-    <div class="b-foot"><span id="bTotals"></span><span class="actions">
+    <div class="b-foot"><span><span id="bTotals"></span><span class="muted small" id="bDraft" style="display:block;margin-top:2px">${draftNote()}</span></span><span class="actions">
       <button type="button" class="btn" id="bSplit" title="แบ่งคะแนนเก็บ ${fmt(cT)} คะแนนให้ทุก${W}เท่า ๆ กัน">แบ่งคะแนนเก็บเท่ากัน</button>
       <button type="button" class="btn primary" id="bSave">บันทึกโครงสร้าง</button></span></div>`;
   const totals = () => {
@@ -796,32 +913,36 @@ function drawBuilder() {
   view.oninput = (e) => {
     if (!builder) return;
     const el = e.target;
-    if (el.dataset.uf) { const [ui, f] = el.dataset.uf.split(":"); B.units[ui][f] = el.value; B.dirty = true; }
-    else if (el.dataset.max) { const [list, i] = at(el.dataset.max); list[i].max = el.value.trim(); B.dirty = true; totals(); }
-    else if (el.dataset.ft) { B.finals[Number(el.dataset.ft)].title = el.value; B.dirty = true; }
+    if (el.dataset.uf) { const [ui, f] = el.dataset.uf.split(":"); B.units[ui][f] = el.value; markDirty(); }
+    else if (el.dataset.max) { const [list, i] = at(el.dataset.max); list[i].max = el.value.trim(); markDirty(); totals(); }
+    else if (el.dataset.ft) { B.finals[Number(el.dataset.ft)].title = el.value; markDirty(); }
   };
-  for (const b of view.querySelectorAll("[data-rm]")) b.onclick = () => { const [list, i] = at(b.dataset.rm); list.splice(i, 1); B.dirty = true; drawBuilder(); };
+  for (const b of view.querySelectorAll("[data-rm]")) b.onclick = () => { const [list, i] = at(b.dataset.rm); list.splice(i, 1); markDirty(); drawBuilder(); };
   for (const b of view.querySelectorAll("[data-udel]")) b.onclick = async () => {
     const u = B.units[Number(b.dataset.udel)];
     if ((u.title || u.items.length) && !(await confirmBox("ลบหน่วยการเรียนรู้", u.items.length ? `${W}ในหน่วยนี้ ${u.items.length} ข้อจะย้ายไปอยู่กลุ่ม "ยังไม่อยู่ในหน่วยใด"` : "ลบหน่วยนี้", "ลบหน่วย", true))) return;
-    B.loose.push(...u.items); B.units.splice(Number(b.dataset.udel), 1); B.dirty = true; drawBuilder();
+    B.loose.push(...u.items); B.units.splice(Number(b.dataset.udel), 1); markDirty(); drawBuilder();
   };
-  for (const b of view.querySelectorAll("[data-mv]")) b.onclick = () => { const [ui, d] = b.dataset.mv.split(":").map(Number); const [u] = B.units.splice(ui, 1); B.units.splice(ui + d, 0, u); B.dirty = true; drawBuilder(); };
+  for (const b of view.querySelectorAll("[data-mv]")) b.onclick = () => { const [ui, d] = b.dataset.mv.split(":").map(Number); const [u] = B.units.splice(ui, 1); B.units.splice(ui + d, 0, u); markDirty(); drawBuilder(); };
   for (const b of view.querySelectorAll("[data-pick]")) b.onclick = () => pickIndicators(Number(b.dataset.pick));
-  document.getElementById("bAddUnit").onclick = () => { B.units.push({ id: null, title: "", hours: "", task: "", items: [] }); B.dirty = true; drawBuilder(); view.querySelectorAll(".b-unit")[B.units.length - 1]?.scrollIntoView({ block: "center" }); };
-  document.getElementById("bAddFinal").onclick = () => { B.finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${B.term}`, max: "", inds: [] }); B.dirty = true; drawBuilder(); };
+  document.getElementById("bAddUnit").onclick = () => { B.units.push({ id: null, title: "", hours: "", task: "", items: [] }); markDirty(); drawBuilder(); view.querySelectorAll(".b-unit")[B.units.length - 1]?.scrollIntoView({ block: "center" }); };
+  document.getElementById("bAddFinal").onclick = () => { B.finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${B.term}`, max: "", inds: [] }); markDirty(); drawBuilder(); };
   for (const b of view.querySelectorAll("[data-fpick]")) b.onclick = () => pickFinalIndicators(Number(b.dataset.fpick));
-  for (const b of view.querySelectorAll("[data-frm]")) b.onclick = () => { const [fi, i] = b.dataset.frm.split(":").map(Number); B.finals[fi].inds.splice(i, 1); B.dirty = true; drawBuilder(); };
+  for (const b of view.querySelectorAll("[data-frm]")) b.onclick = () => { const [fi, i] = b.dataset.frm.split(":").map(Number); B.finals[fi].inds.splice(i, 1); markDirty(); drawBuilder(); };
   document.getElementById("bSplit").onclick = () => {
     const all = [...B.units.flatMap((u) => u.items), ...B.loose];
     if (!all.length) { toast(`ยังไม่ได้เลือก${W}`, "bad"); return; }
     const each = Math.floor((cT / all.length) * 100) / 100;
     all.forEach((it, i) => { it.max = String(i === all.length - 1 ? r2(cT - each * (all.length - 1)) : each); });
-    B.dirty = true; drawBuilder();
+    markDirty(); drawBuilder();
   };
   document.getElementById("bBack").onclick = async () => {
-    if (B.dirty && !(await confirmBox("ออกโดยไม่บันทึก", "สิ่งที่แก้ในหน้านี้จะไม่ถูกบันทึก", "ออก", true))) return;
-    builder = null; render();
+    if (B.dirty) {
+      const r = await dialog({ title: "ยังไม่ได้บันทึกโครงสร้าง", okText: "ทิ้งร่าง", okClass: "danger", cancelText: "เก็บร่างไว้ก่อน",
+        body: `<p>สิ่งที่แก้ยังไม่ถูกบันทึกเข้าระบบ</p><p class="muted small">"เก็บร่างไว้ก่อน" = ออกจากหน้านี้ ร่างยังอยู่ในเบราว์เซอร์นี้ กดแก้ไขโครงสร้างภาค ${B.term} เพื่อทำต่อได้</p>` });
+      closeBuilder(r.ok);
+    } else closeBuilder(false);
+    render();
   };
   document.getElementById("bSave").onclick = () => saveBuilder();
 }
@@ -858,7 +979,7 @@ async function pickIndicators(ui) {
   u.items = chosen.map((b) => old.get(itemKey(b)) || { id: null, code: b.code || "", title: b.title, max: "" });
   B.loose = B.loose.filter((it) => !keepKeys.has(itemKey(it)));
   for (const r of parseIndicatorLines(res.data.typed || "")) if (!u.items.some((x) => itemKey(x) === itemKey(r))) u.items.push({ id: null, code: r.code || "", title: r.title, max: "" });
-  B.dirty = true; drawBuilder();
+  markDirty(); drawBuilder();
 }
 
 // ป.4–6 มีตัวชี้วัดปลายทาง → สอบปลายภาควัดเฉพาะปลายทาง · ป.1–3 (ผลการเรียนรู้/ผลลัพธ์) ไม่แบ่งประเภท
@@ -892,7 +1013,7 @@ async function pickFinalIndicators(fi) {
   });
   if (!res.ok) return;
   f.inds = list.filter((b, i) => res.data[`f${i}`]).map((b) => ({ code: b.code, title: b.title }));
-  B.dirty = true; drawBuilder();
+  markDirty(); drawBuilder();
 }
 
 async function saveBuilder(confirm = false) {
@@ -916,5 +1037,12 @@ async function saveBuilder(confirm = false) {
     }
     showError(err); return;
   }
-  builder = null; toast("บันทึกโครงสร้างรายวิชาแล้ว"); render();
+  const savedTerm = B.term;
+  closeBuilder(true); targetsCache = null; toast("บันทึกโครงสร้างรายวิชาแล้ว"); render();
+  // มีห้องอื่นของวิชาเดียวกันที่สอน → ถามว่าจะใช้โครงสร้างนี้ด้วยไหม
+  try { if ((await loadTargets()).some((c) => !c.locked)) applyToRooms([savedTerm], { afterSave: true }); } catch { /* */ }
 }
+
+// รีเฟรชระหว่างอยู่ในหน้าสร้างโครงสร้าง → เปิดร่างเดิมต่อทันที
+{ let t = null; try { t = Number(sessionStorage.getItem(openKey)) || null; } catch { /* */ }
+  if (t && editable() && readDraft(t)) openBuilder(t, { resume: true }); }

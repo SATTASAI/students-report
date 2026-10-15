@@ -195,3 +195,68 @@ test("หน้าสร้างโครงสร้างรายวิช�
   await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body([{ id: 999999, title: "x", items: [] }]), { expect: 400 });
   await call("t2", "PUT", `/api/courses/${c1.id}/structure`, body([{ title: "x", items: [] }]), { expect: 403 });
 });
+
+test("นำโครงสร้างไปใช้กับห้องอื่นที่ครูคนเดียวกันสอน: เฉพาะห้องของตัวเอง คงคะแนนช่องที่ชื่อตรงกัน และต้องยืนยันก่อนลบคะแนน", async () => {
+  const { call, c1, c2 } = await setup();
+  const mk = (units, finals) => ({ term: 1, units, finals });
+  const U = [{ title: "พยัญชนะไทย", hours: 10, task: "ใบงาน", items: [{ code: "ท 1.1 ป.1/1", title: "อ่านออกเสียง", max_score: 15 }, { code: "ท 2.1 ป.1/1", title: "คัดลายมือ", max_score: 20 }] }];
+  const F = [{ title: "สอบปลายภาค", max_score: 15, indicators: [{ code: "ท 1.1 ป.1/1", title: "อ่านออกเสียง" }] }];
+  await call("t1", "PUT", `/api/courses/${c1.id}/structure`, mk(U, F), { expect: 200 });
+  // t1 ไม่ได้สอน ป.1/2 → ไม่มีห้องให้เลือก และส่งตรงก็ไม่ได้
+  assert.deepEqual((await call("t1", "GET", `/api/courses/${c1.id}/apply-targets`, null, { expect: 200 })).data.courses, []);
+  await call("t1", "POST", `/api/courses/${c1.id}/apply-to`, { target_ids: [c2.id], terms: [1] }, { expect: 403 });
+  // ให้ t1 สอนห้อง 2 ด้วย; ห้อง 2 มีโครงสร้างเดิมและคะแนนแล้ว
+  await call("admin", "PUT", `/api/admin/courses/${c2.id}/teachers`, { user_ids: [2, 3] }, { expect: 200 });
+  let d2 = (await call("t1", "PUT", `/api/courses/${c2.id}/structure`, mk([{ title: "เดิม", items: [{ code: "ท 1.1 ป.1/1", title: "อ่านออกเสียง", max_score: 15 }, { title: "งานเก่า", max_score: 20 }] }], [{ title: "สอบปลายภาค", max_score: 15, indicators: [{ title: "x" }] }]), { expect: 200 })).data;
+  const sid = d2.students.find((s) => s.enrollment_status === "enrolled").id;
+  const keepId = d2.items.find((i) => i.title === "อ่านออกเสียง").id, oldId = d2.items.find((i) => i.title === "งานเก่า").id;
+  await call("t1", "PUT", `/api/courses/${c2.id}/scores`, { changes: [{ item_id: keepId, student_id: sid, score: 12 }, { item_id: oldId, student_id: sid, score: 9 }] }, { expect: 200 });
+  const tg = (await call("t1", "GET", `/api/courses/${c1.id}/apply-targets`, null, { expect: 200 })).data.courses;
+  assert.deepEqual(tg.map((c) => c.id), [c2.id]);
+  assert.equal(tg[0].terms[1].scores, 2);
+  await call("t1", "POST", `/api/courses/${c1.id}/apply-to`, { target_ids: [c2.id], terms: [2] }, { expect: 400 }); // ภาค 2 ยังไม่มีโครงสร้าง
+  const r = await call("t1", "POST", `/api/courses/${c1.id}/apply-to`, { target_ids: [c2.id], terms: [1] }, { expect: 409 });
+  assert.equal(r.data.needs_confirm, true);
+  assert.deepEqual(r.data.blocked[0].items, ["งานเก่า"]);
+  const ok = (await call("t1", "POST", `/api/courses/${c1.id}/apply-to`, { target_ids: [c2.id], terms: [1], confirm: true }, { expect: 200 })).data;
+  assert.deepEqual(ok.applied, ["ป.1/2"]);
+  d2 = (await call("t1", "GET", `/api/courses/${c2.id}`, null, { expect: 200 })).data;
+  assert.deepEqual(d2.units.map((u) => [u.title, u.task]), [["พยัญชนะไทย", "ใบงาน"]]);
+  assert.equal(d2.items.length, 3);
+  assert.equal(d2.items.find((i) => i.title === "อ่านออกเสียง").id, keepId); // ช่องชื่อตรงกันใช้ id เดิม
+  assert.equal(d2.scores[sid][keepId], 12); // คะแนนที่กรอกไว้ยังอยู่
+  assert.equal(d2.scores[sid][oldId], undefined);
+  assert.equal(d2.items.find((i) => i.kind === "final").indicators.length, 1);
+  assert.ok(!d2.items.some((i) => i.id === oldId));
+});
+
+test("ใช้โครงสร้างข้ามปีการศึกษา: ดึงจากปีก่อนเป็นร่าง และแม่แบบของวิชาจากปีก่อนใช้ต่อได้", async () => {
+  const { env, call, c1 } = await setup();
+  // ปีก่อน 2568: วิชา ท11101 ป.1 ห้อง 1 มีโครงสร้างและแม่แบบ
+  await env.DB.prepare("INSERT INTO academic_years (id, year_be, label, start_date, end_date, status) VALUES (9, 2568, 'ปีการศึกษา 2568', '2025-05-01', '2026-03-31', 'closed')").run();
+  const tpl = { units: [{ key: 1, term_number: 1, unit_no: 1, title: "หน่วยปีก่อน", hours: 5, task: "ชิ้นงาน" }], items: [{ term_number: 1, kind: "indicator", code: "ท 1.1 ป.1/1", title: "อ่าน", max_score: 35, unit_key: 1, indicators: [] }, { term_number: 1, kind: "final", code: null, title: "สอบ", max_score: 15, unit_key: null, indicators: [] }] };
+  const sub = await env.DB.prepare("INSERT INTO gr_subjects (academic_year_id, grade_level, code, name, learning_area, subject_type, hours_per_year, collect_ratio, sort_order, template, template_updated_at) VALUES (9,'ป.1','ท11101','ภาษาไทย','ภาษาไทย','basic',200,70,10,?, '2025-06-01')").bind(JSON.stringify(tpl)).run();
+  const old = await env.DB.prepare("INSERT INTO gr_courses (subject_id, classroom) VALUES (?, '1')").bind(sub.meta.last_row_id).run();
+  const oc = old.meta.last_row_id;
+  const u = await env.DB.prepare("INSERT INTO gr_units (course_id, term_number, unit_no, title, hours, task) VALUES (?,1,1,'หน่วยปีก่อน',5,'ชิ้นงาน')").bind(oc).run();
+  await env.DB.prepare("INSERT INTO gr_items (course_id, term_number, kind, code, title, max_score, sort_order, unit_id) VALUES (?,1,'indicator','ท 1.1 ป.1/1','อ่าน',35,10,?)").bind(oc, u.meta.last_row_id).run();
+  // หน้าใช้โครงสร้างจากห้องอื่น/ปีก่อน เห็นห้องปีก่อน และดึงโครงสร้างได้ (ครูไม่ได้สอนวิชาปีก่อนก็ดึงได้ เพราะรหัสวิชาและชั้นเดียวกัน)
+  const sib = (await call("t1", "GET", `/api/courses/${c1.id}/siblings`, null, { expect: 200 })).data.courses;
+  const s = sib.find((x) => x.id === oc);
+  assert.equal(s.year_be, 2568); assert.equal(s.t1_items, 1); assert.equal(s.t2_items, 0);
+  const st = (await call("t1", "GET", `/api/courses/${c1.id}/source-structure?source=${oc}`, null, { expect: 200 })).data;
+  assert.equal(st.source.year_be, 2568);
+  assert.equal(st.units[0].task, "ชิ้นงาน");
+  assert.equal(st.items[0].unit_key, st.units[0].key);
+  // วิชาอื่นดึงไม่ได้
+  const { courses } = (await call("admin", "GET", "/api/admin/courses", null, { expect: 200 })).data;
+  const math = courses.find((c) => c.code === "ค11101" && c.classroom === "1");
+  await call("t1", "GET", `/api/courses/${c1.id}/source-structure?source=${math.id}`, null, { expect: 403 });
+  // ปีนี้ยังไม่ตั้งแม่แบบ → ใช้แม่แบบปีก่อน
+  const d = (await call("t1", "GET", `/api/courses/${c1.id}`, null, { expect: 200 })).data;
+  assert.equal(d.course.has_template, 1); assert.equal(d.course.template_inherited, 1);
+  assert.equal((await call("t1", "GET", `/api/courses/${c1.id}/template`, null, { expect: 200 })).data.from_year, 2568);
+  const ap = (await call("t1", "POST", `/api/courses/${c1.id}/apply-template`, { terms: [1] }, { expect: 200 })).data;
+  assert.equal(ap.units[0].title, "หน่วยปีก่อน");
+  assert.equal(ap.items.length, 2);
+});

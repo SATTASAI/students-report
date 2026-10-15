@@ -210,7 +210,10 @@ export async function loadCourse(env, courseId) {
             (SELECT full_name FROM users WHERE id = c.approved_by) AS approved_by_name,
             (SELECT full_name FROM users WHERE id = c.returned_by) AS returned_by_name,
             s.academic_year_id, s.grade_level, s.code, s.name, s.learning_area, s.subject_type,
-            s.hours_per_year, s.collect_ratio, y.year_be, s.template IS NOT NULL AS has_template, s.template_updated_at
+            s.hours_per_year, s.collect_ratio, y.year_be, s.template_updated_at,
+            (s.template IS NOT NULL OR EXISTS (SELECT 1 FROM gr_subjects p JOIN academic_years py ON py.id = p.academic_year_id
+               WHERE p.code = s.code AND p.grade_level = s.grade_level AND p.template IS NOT NULL AND py.year_be < y.year_be)) AS has_template,
+            (s.template IS NULL) AS template_inherited
        FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
        JOIN academic_years y ON y.id = s.academic_year_id
       WHERE c.id = ?`
