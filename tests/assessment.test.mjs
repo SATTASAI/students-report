@@ -167,3 +167,53 @@ test("อนุบาล: ครูประจำชั้นบันทึก
   assert.equal(k.kinder, true);
   assert.equal(k.full, true);
 });
+
+test("อนุบาล: ประเมินพัฒนาการ 4 ด้าน — สิทธิ์ ตรวจค่า บันทึก/ลบ ความคิดเห็น และใช้ได้เฉพาะชั้นอนุบาล", async () => {
+  const { call } = await setup();
+  const KQ = `grade=${encodeURIComponent("อ.3")}&room=1`;
+  await call("t1", "GET", `/api/homeroom/kinder?${KQ}`, null, { expect: 403 });
+  await call("admin", "PUT", "/api/admin/homerooms", { grade_level: "อ.3", classroom: "1", user_ids: [2] }, { expect: 200 });
+  const k = (await call("t1", "GET", `/api/homeroom/kinder?${KQ}`, null, { expect: 200 })).data;
+  assert.equal(k.items.length, 33);
+  assert.equal(new Set(k.items.map((i) => i.domain)).size, 4);
+  assert.ok(k.items.some((i) => i.sub.includes("—") && i.comp));
+  assert.equal(k.students.length, 6);
+  assert.ok(k.teachers.length >= 1);
+  const sid = k.students[0].id, code = k.items[0].code;
+  const S = (changes, expect) => call("t1", "PUT", `/api/homeroom/kinder/scores?${KQ}`, { changes }, { expect });
+  await S([{ student_id: sid, code, term: 1, round: 1, score: 2 }, { student_id: sid, code, term: 1, round: 2, score: 3 }], 200);
+  await S([{ student_id: sid, code, term: 1, round: 1, score: 4 }], 400);
+  await S([{ student_id: sid, code, term: 3, round: 1, score: 1 }], 400);
+  await S([{ student_id: sid, code: "ด้าน 9 ข้อ 9.9", term: 1, round: 1, score: 1 }], 400);
+  await S([{ student_id: 999999, code, term: 1, round: 1, score: 1 }], 400);
+  let g = (await call("t1", "GET", `/api/homeroom/kinder?${KQ}`, null, { expect: 200 })).data;
+  assert.deepEqual(g.scores[sid][code], { "1-1": 2, "1-2": 3 });
+  await S([{ student_id: sid, code, term: 1, round: 2, score: "" }], 200);
+  const C = (body, expect) => call("t1", "PUT", `/api/homeroom/kinder/comments?${KQ}`, body, { expect });
+  await C({ term: 1, changes: [{ student_id: sid, field: "d1", body: "  แข็งแรง  ร่าเริง " }] }, 200);
+  await C({ term: 1, changes: [{ student_id: sid, field: "learn", body: "x" }] }, 400);
+  await C({ term: 1, changes: [{ student_id: sid, field: "d2", body: "ก".repeat(301) }] }, 400);
+  await C({ term: 5, changes: [] }, 400);
+  g = (await call("t1", "GET", `/api/homeroom/kinder?${KQ}`, null, { expect: 200 })).data;
+  assert.deepEqual(g.scores[sid][code], { "1-1": 2 });
+  assert.equal(g.comments[sid][1].d1, "แข็งแรง ร่าเริง");
+  await C({ term: 1, changes: [{ student_id: sid, field: "d1", body: "" }] }, 200);
+  g = (await call("t1", "GET", `/api/homeroom/kinder?${KQ}`, null, { expect: 200 })).data;
+  assert.equal(g.comments[sid]?.[1]?.d1, undefined);
+  // ชั้นประถมใช้ไม่ได้
+  await call("admin", "GET", `/api/homeroom/kinder?grade=${encodeURIComponent("ป.4")}&room=1`, null, { expect: 400 });
+});
+
+test("อนุบาล: คำนวณสรุปผลพัฒนาการ (ครั้งล่าสุดของภาค, ภาค 2 ก่อนภาค 1, ระดับจากค่าเฉลี่ย)", async () => {
+  const { termResult, yearResult, avgToLevel, domainSummary } = await import("../public/js/kinder.js");
+  assert.equal(termResult({ "1-1": 1, "1-2": 3 }, 1), 3);
+  assert.equal(termResult({ "1-1": 1 }, 1), 1);
+  assert.equal(termResult({}, 2), null);
+  assert.equal(yearResult({ "1-1": 1, "2-1": 2 }), 2);
+  assert.equal(yearResult({ "1-2": 3 }), 3);
+  assert.deepEqual([avgToLevel(2.5), avgToLevel(2.49), avgToLevel(1.5), avgToLevel(1.49), avgToLevel(null)], [3, 2, 2, 1, null]);
+  const items = [{ code: "a", domain: "ด้านสุขภาวะทางกาย" }, { code: "b", domain: "ด้านสุขภาวะทางกาย" }, { code: "c", domain: "ด้านสติปัญญา" }];
+  const s = domainSummary(items, { a: { "1-1": 3 }, b: { "1-1": 2 } }, 1);
+  assert.equal(s[0].avg, 2.5); assert.equal(s[0].level, 3); assert.equal(s[0].n, 2);
+  assert.equal(s[3].level, null); assert.equal(s[3].total, 1);
+});

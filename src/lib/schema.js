@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-16";
+export const SCHEMA_VERSION = "gr-17";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -235,6 +235,24 @@ export const SCHEMA_SQL = [
   `CREATE INDEX IF NOT EXISTS idx_gr_absences_year ON gr_absences(academic_year_id, student_id)`,
   `CREATE INDEX IF NOT EXISTS idx_gr_transfers_year ON gr_transfers(academic_year_id, student_id)`,
   `CREATE INDEX IF NOT EXISTS idx_gr_bank_lookup ON gr_indicator_bank(grade_level, learning_area)`,
+  // gr-17: ประเมินพัฒนาการอนุบาล — รายข้อความสามารถผู้เรียน × ภาคเรียน × ครั้งที่ (1–3: ควรส่งเสริม/พอใช้/ดี)
+  `CREATE TABLE IF NOT EXISTS gr_kinder_scores (
+    academic_year_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    item_code TEXT NOT NULL,
+    term_number INTEGER NOT NULL CHECK (term_number IN (1,2)),
+    round INTEGER NOT NULL CHECK (round IN (1,2)),
+    score INTEGER NOT NULL CHECK (score BETWEEN 1 AND 3),
+    updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (academic_year_id, student_id, item_code, term_number, round))`,
+  `CREATE TABLE IF NOT EXISTS gr_kinder_comments (
+    academic_year_id INTEGER NOT NULL,
+    term_number INTEGER NOT NULL CHECK (term_number IN (1,2)),
+    student_id INTEGER NOT NULL,
+    field TEXT NOT NULL CHECK (field IN ('d1','d2','d3','d4','other')),
+    body TEXT NOT NULL,
+    updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (academic_year_id, term_number, student_id, field))`,
 ];
 
 // คอลัมน์ที่เพิ่มหลังเวอร์ชันแรก — เพิ่มเฉพาะที่ยังไม่มี (ALTER TABLE ADD COLUMN ไม่แตะข้อมูลเดิม)

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>รายงานพัฒนาการเด็กปฐมวัย</title>
+<link rel="stylesheet" href="/print/print.css">
+<style>
+  .kd { font-size: 14pt; line-height: 1.12; }
+  .kd h2 { margin: 0; }
+  .kd table.t { margin-top: 2mm; }
+  .kd table.t th, .kd table.t td { padding: 1px 4px; vertical-align: top; }
+  .kd table.t td.c, .kd table.t th.c { text-align: center; vertical-align: middle; }
+  .kd table.t tr { break-inside: avoid; }
+  .kd .dom td { background: #ececec; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .kd .sub td { font-style: italic; }
+  .kd .it { font-size: 12pt; line-height: 1.05; }
+  .kd .it b { font-weight: 600; }
+  .kd .legend { font-size: 12.5pt; margin-top: 1.5mm; }
+  .kd .cm td { height: 9mm; font-size: 13pt; }
+  .kd .signs { grid-template-columns: repeat(3, 1fr); margin-top: 7mm; gap: 5mm 10mm; break-inside: avoid; }
+  .kd .sign .line { height: 8mm; }
+  .kd .keep { break-inside: avoid; }
+  .room table.t th, .room table.t td { text-align: center; padding: 0 3px; height: 6.5mm; }
+  .room table.t td.n { text-align: left; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
+<script type="module">
+import { esc, params, get, toolbar, status, td } from "/print/print.js";
+import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, termResult, domainSummary, overallSummary } from "/js/kinder.js";
+
+const p = params();
+const q = new URLSearchParams({ grade: p.get("grade") || "", room: p.get("room") || "" });
+if (p.get("year")) q.set("year", p.get("year"));
+const mode = p.get("mode") === "room" ? "room" : "child";
+let d;
+try { d = await get(`/api/homeroom/kinder?${q}`); } catch (e) { status(e.message); throw e; }
+const school = d.school || {};
+let students = d.students.filter((s) => s.enrollment_status === "enrolled");
+if (p.get("student")) students = students.filter((s) => String(s.id) === p.get("student"));
+if (!students.length) { status("ไม่มีนักเรียนในห้องนี้"); throw new Error("empty"); }
+if (!d.items.length) { status("ยังไม่มีรายการประเมินพัฒนาการของชั้นนี้"); throw new Error("empty"); }
+const title = mode === "room" ? "สรุปผลการประเมินพัฒนาการ" : "สมุดรายงานพัฒนาการเด็กปฐมวัย";
+toolbar(`${title} ชั้น ${d.grade}/${d.room} ปีการศึกษา ${d.year.year_be}`);
+document.title = `${title} ${d.grade}-${d.room} ${d.year.year_be}`;
+
+const dots = "..........................................";
+const lv = (v) => (v == null ? "" : td(v));
+const lvText = (x) => (x.level ? `${levelLabel(x.level)} (${td(x.avg.toFixed(2))})` : "");
+const teacherSigns = () => (d.teachers.length ? d.teachers : [""]).map((t) => `<div class="sign"><div class="line"></div>(${esc(t || dots)})<br>ครูประจำชั้น</div>`).join("");
+const header = (sub) => `<div style="display:grid;grid-template-columns:18mm 1fr;gap:4mm;align-items:center">
+    <img src="/logo.jpg" alt="" style="width:18mm;height:18mm;border-radius:50%;object-fit:cover">
+    <div><h2>${title}</h2><div>${esc(school.name || "โรงเรียนบ้านป่าเด็ง")} ${esc(school.area || "")}</div><div>${sub}</div></div></div>`;
+
+function childPage(st) {
+  const sc = d.scores[st.id] || {};
+  let lastSub = "";
+  const rows = KINDER_DOMAINS.map((dom, di) => {
+    const items = d.items.filter((i) => i.domain === dom);
+    return `<tr class="dom"><td colspan="4">${td(di + 1)}. ${esc(dom)}</td></tr>` + items.map((it) => {
+      const subHead = it.sub.includes("—") && it.sub !== lastSub ? `<tr class="sub"><td colspan="4">${esc(it.sub.split("—")[1].trim())}</td></tr>` : "";
+      lastSub = it.sub;
+      return `${subHead}<tr><td class="c it">${esc(td(it.code.replace(/^ด้าน\s*[\d.]+\s*ข้อ\s*/, "")))}</td>
+        <td class="it">${it.comp ? `<b>${esc(it.comp)}</b> — ` : ""}${esc(it.title)}</td>
+        <td class="c">${lv(termResult(sc[it.code], 1))}</td><td class="c">${lv(termResult(sc[it.code], 2))}</td></tr>`;
+    }).join("");
+  }).join("");
+  const sum = [1, 2, "year"].map((t) => ({ t, doms: domainSummary(d.items, sc, t), all: overallSummary(d.items, sc, t) }));
+  const cm = (term, f) => d.comments?.[st.id]?.[term]?.[f] || "";
+  return `<section class="sheet kd">
+    ${header(`ชั้น ${esc(d.grade)}/${esc(d.room)} · ปีการศึกษา ${td(d.year.year_be)}`)}
+    <p style="margin:3mm 0 0">ชื่อ–สกุล <b>${esc(st.name)}</b> &nbsp; เลขที่ ${td(st.number ?? "")} &nbsp; เลขประจำตัว ${td(st.student_code ?? "")}</p>
+    <table class="t"><colgroup><col style="width:14mm"><col><col style="width:16mm"><col style="width:16mm"></colgroup>
+      <thead><tr><th class="c">ข้อ</th><th>ความสามารถผู้เรียนเมื่อจบชั้นปี (หลักสูตรการศึกษาปฐมวัย พ.ศ. ๒๕๖๙)</th><th class="c">ภาค ${td(1)}</th><th class="c">ภาค ${td(2)}</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    <div class="legend">ระดับคุณภาพ ${KINDER_LEVELS.map(([n, l]) => `${td(n)} = ${l}`).join(" · ")} · ผลของภาคเรียน = ผลการประเมินครั้งล่าสุดในภาคนั้น</div>
+    <div class="keep"><h3 style="margin:4mm 0 0">สรุปผลพัฒนาการ</h3>
+    <table class="t"><colgroup><col><col style="width:38mm"><col style="width:38mm"><col style="width:38mm"></colgroup>
+      <thead><tr><th>ด้าน</th><th class="c">ภาคเรียนที่ ${td(1)}</th><th class="c">ภาคเรียนที่ ${td(2)}</th><th class="c">สรุปสิ้นปี</th></tr></thead>
+      <tbody>${KINDER_DOMAINS.map((dom, di) => `<tr><td>${esc(dom)}</td>${sum.map((x) => `<td class="c">${lvText(x.doms[di])}</td>`).join("")}</tr>`).join("")}
+        <tr><td><b>รวม ${td(4)} ด้าน</b></td>${sum.map((x) => `<td class="c"><b>${lvText(x.all)}</b></td>`).join("")}</tr></tbody></table>
+    <div class="legend">ค่าเฉลี่ย ${td("2.50–3.00")} = ดี · ${td("1.50–2.49")} = พอใช้ · ต่ำกว่า ${td("1.50")} = ควรส่งเสริม</div></div>
+    <div class="keep"><h3 style="margin:4mm 0 0">ความคิดเห็นของครู</h3>
+    <table class="t cm"><colgroup><col style="width:52mm"><col><col></colgroup>
+      <thead><tr><th>ด้าน</th><th>ภาคเรียนที่ ${td(1)}</th><th>ภาคเรียนที่ ${td(2)}</th></tr></thead>
+      <tbody>${KINDER_COMMENT_FIELDS.map(([f, l]) => `<tr><td>${esc(l)}</td><td>${esc(cm(1, f))}</td><td>${esc(cm(2, f))}</td></tr>`).join("")}</tbody></table></div>
+    <div class="signs">${teacherSigns()}
+      <div class="sign"><div class="line"></div>(${esc(school.director || dots)})<br>ผู้อำนวยการโรงเรียน</div>
+      <div class="sign"><div class="line"></div>(${dots})<br>ผู้ปกครอง</div></div>
+  </section>`;
+}
+
+function roomPage() {
+  const terms = [[1, "ภาคเรียนที่ 1"], [2, "ภาคเรียนที่ 2"], ["year", "สรุปสิ้นปี"]];
+  const short = ["กาย", "อารมณ์ฯ", "พลเมืองฯ", "สติปัญญา", "รวม"];
+  const rows = students.map((st) => ({ st, x: terms.map(([t]) => { const sc = d.scores[st.id] || {}; return [...domainSummary(d.items, sc, t), overallSummary(d.items, sc, t)]; }) }));
+  const cell = (x) => `<td>${x.level ? td(x.level) : ""}</td>`;
+  const count = (ti, k, lvl) => rows.filter((r) => r.x[ti][k].level === lvl).length;
+  return `<section class="sheet land kd room">
+    ${header(`ชั้น ${esc(d.grade)}/${esc(d.room)} · ปีการศึกษา ${td(d.year.year_be)} · นักเรียน ${td(students.length)} คน`)}
+    <table class="t"><thead>
+      <tr><th rowspan="2">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th>${terms.map(([, l]) => `<th colspan="5">${l}</th>`).join("")}</tr>
+      <tr>${terms.map(() => short.map((s) => `<th>${s}</th>`).join("")).join("")}</tr></thead>
+      <tbody>${rows.map(({ st, x }) => `<tr><td>${td(st.number ?? "")}</td><td class="n">${esc(st.name)}</td>${x.map((arr) => arr.map(cell).join("")).join("")}</tr>`).join("")}</tbody>
+      <tfoot>${KINDER_LEVELS.map(([n, l]) => `<tr><td></td><td class="n">${td(n)} ${l} (คน)</td>${terms.map((_, ti) => [0, 1, 2, 3, 4].map((k) => `<td>${count(ti, k, n) ? td(count(ti, k, n)) : ""}</td>`).join("")).join("")}</tr>`).join("")}</tfoot>
+    </table>
+    <div class="legend">ระดับคุณภาพ ${KINDER_LEVELS.map(([n, l]) => `${td(n)} = ${l}`).join(" · ")} — ระดับรายด้านจากค่าเฉลี่ยของข้อในด้านนั้น (${td("2.50")} ขึ้นไป = ดี · ${td("1.50–2.49")} = พอใช้ · ต่ำกว่านั้น = ควรส่งเสริม)
+      · ด้าน: กาย = สุขภาวะทางกาย · อารมณ์ฯ = อารมณ์ จิตใจ และสังคม · พลเมืองฯ = ความเป็นพลเมืองและความเป็นไทย</div>
+    <div class="signs">${teacherSigns()}<div class="sign"><div class="line"></div>(${esc(school.director || dots)})<br>ผู้อำนวยการโรงเรียน</div></div>
+  </section>`;
+}
+
+document.getElementById("doc").innerHTML = mode === "room" ? roomPage() : students.map(childPage).join("");
+</script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
-import { resolveYear, listRooms, getSettings, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday, mirrorBody, compareRoom, compareSubject, homeroomNames, writableIds, isLeft } from "../lib/data.js";
+import { isKinderGrade, resolveYear, listRooms, getSettings, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday, mirrorBody, compareRoom, compareSubject, homeroomNames, writableIds, isLeft } from "../lib/data.js";
 import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
+import { KINDER_COMMENT_FIELDS } from "../../public/js/kinder.js";
+import KINDER_BANK from "../data/indicator-bank-2569-kinder.js";
 
 export const ATT_CODES = [["ข", "ขาดเรียน"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]];
 // แบบบันทึกประจำวัน (ครูประจำชั้น) — ติ๊กรายวันตามวันเรียน
@@ -184,6 +186,80 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       await audit(env, user, "attendance.update", { grade, room, changes: stmts.length });
       return json({ ok: true, saved: stmts.length });
     }
+  }
+
+  // ---------- ประเมินพัฒนาการอนุบาล (ความสามารถผู้เรียนเมื่อจบชั้นปี หลักสูตรปฐมวัย 2569) ----------
+  // GET  /api/homeroom/kinder?grade&room          → ข้อ (จากคลัง kind=ความสามารถผู้เรียน ของชั้นนั้น) + คะแนน + ความคิดเห็น
+  // PUT  /api/homeroom/kinder/scores   {changes:[{student_id, code, term, round, score}]}  (score ว่าง = ลบ)
+  // PUT  /api/homeroom/kinder/comments {term, changes:[{student_id, field, body}]}
+  if (sub === "kinder") {
+    const { year, grade, room } = await roomContext(env, user, url);
+    if (!isKinderGrade(grade)) fail(400, "ประเมินพัฒนาการใช้กับชั้นอนุบาลเท่านั้น");
+    const roster = await roomRoster(env, year.id, grade, room);
+    const ids = roster.map((s) => s.id), writable = writableIds(roster);
+    const { results: bank } = await env.DB.prepare("SELECT code, title, learning_area FROM gr_indicator_bank WHERE grade_level = ? AND kind = 'ความสามารถผู้เรียน' ORDER BY id").bind(grade).all();
+    const comp = new Map((KINDER_BANK.competencies || []).filter((c) => c.grade === grade).map((c) => [c.code, c]));
+    const items = bank.map((b) => ({ code: b.code, title: b.title, domain: b.learning_area, sub: comp.get(b.code)?.domain || b.learning_area, comp: comp.get(b.code)?.comp || "" }));
+    const codes = new Set(items.map((i) => i.code));
+    if (method === "GET" && !parts[3]) {
+      const scores = {}, comments = {};
+      for (let i = 0; i < ids.length; i += 90) {
+        const chunk = ids.slice(i, i + 90), ph = chunk.map(() => "?").join(",");
+        const [{ results: sc }, { results: cm }] = await Promise.all([
+          env.DB.prepare(`SELECT student_id, item_code, term_number, round, score FROM gr_kinder_scores WHERE academic_year_id = ? AND student_id IN (${ph})`).bind(year.id, ...chunk).all(),
+          env.DB.prepare(`SELECT student_id, term_number, field, body FROM gr_kinder_comments WHERE academic_year_id = ? AND student_id IN (${ph})`).bind(year.id, ...chunk).all(),
+        ]);
+        for (const r of sc) ((scores[r.student_id] ||= {})[r.item_code] ||= {})[`${r.term_number}-${r.round}`] = r.score;
+        for (const r of cm) (((comments[r.student_id] ||= {})[r.term_number] ||= {})[r.field] = r.body);
+      }
+      const [teachers, st] = await Promise.all([homeroomNames(env, year.id, grade, room), getSettings(env, year.id)]);
+      return json({
+        year, grade, room, items, scores, comments, teachers,
+        students: roster.map((s) => ({ id: s.id, number: s.number, student_code: s.student_code, name: studentName(s), enrollment_status: s.enrollment_status, gender: s.gender, birth_date: s.birth_date })),
+        school: { name: st.school_name, area: st.school_area, director: st.director_name },
+      });
+    }
+    if (method === "PUT" && parts[3] === "scores") {
+      const b = await readJson(request);
+      const stmts = [];
+      for (const c of (Array.isArray(b.changes) ? b.changes : []).slice(0, 5000)) {
+        const sid = Number(c.student_id), term = Number(c.term), round = Number(c.round), code = String(c.code || "");
+        if (!ids.includes(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
+        if (!writable.has(sid)) continue;
+        if (!codes.has(code)) fail(400, `ไม่รู้จักข้อ ${code}`);
+        if (![1, 2].includes(term) || ![1, 2].includes(round)) fail(400, "ภาคเรียน/ครั้งที่ไม่ถูกต้อง");
+        const v = c.score === "" || c.score == null ? null : Number(c.score);
+        if (v != null && ![1, 2, 3].includes(v)) fail(400, "ผลการประเมินต้องเป็น 1–3");
+        stmts.push(v == null
+          ? env.DB.prepare("DELETE FROM gr_kinder_scores WHERE academic_year_id = ? AND student_id = ? AND item_code = ? AND term_number = ? AND round = ?").bind(year.id, sid, code, term, round)
+          : env.DB.prepare(`INSERT INTO gr_kinder_scores (academic_year_id, student_id, item_code, term_number, round, score, updated_by, updated_at) VALUES (?,?,?,?,?,?,?,datetime('now'))
+              ON CONFLICT(academic_year_id, student_id, item_code, term_number, round) DO UPDATE SET score = excluded.score, updated_by = excluded.updated_by, updated_at = datetime('now')`).bind(year.id, sid, code, term, round, v, user.id));
+      }
+      await batchAll(env, stmts);
+      await audit(env, user, "kinder.scores", { grade, room, changes: stmts.length });
+      return json({ ok: true, saved: stmts.length });
+    }
+    if (method === "PUT" && parts[3] === "comments") {
+      const b = await readJson(request);
+      const term = Number(b.term);
+      if (![1, 2].includes(term)) fail(400, "ภาคเรียนไม่ถูกต้อง");
+      const stmts = [];
+      for (const c of (Array.isArray(b.changes) ? b.changes : []).slice(0, 1000)) {
+        const sid = Number(c.student_id);
+        if (!ids.includes(sid)) fail(400, "นักเรียนไม่อยู่ในห้องนี้");
+        if (!writable.has(sid)) continue;
+        if (!KINDER_COMMENT_FIELDS.some(([f]) => f === c.field)) fail(400, "หัวข้อความคิดเห็นไม่ถูกต้อง");
+        const body = String(c.body ?? "").replace(/\s+/g, " ").trim();
+        if (body.length > 300) fail(400, "ความคิดเห็นยาวได้ไม่เกิน 300 ตัวอักษร");
+        stmts.push(body
+          ? env.DB.prepare(`INSERT INTO gr_kinder_comments (academic_year_id, term_number, student_id, field, body, updated_by, updated_at) VALUES (?,?,?,?,?,?,datetime('now'))
+              ON CONFLICT(academic_year_id, term_number, student_id, field) DO UPDATE SET body = excluded.body, updated_by = excluded.updated_by, updated_at = datetime('now')`).bind(year.id, term, sid, c.field, body, user.id)
+          : env.DB.prepare("DELETE FROM gr_kinder_comments WHERE academic_year_id = ? AND term_number = ? AND student_id = ? AND field = ?").bind(year.id, term, sid, c.field));
+      }
+      await batchAll(env, stmts);
+      return json({ ok: true, saved: stmts.length });
+    }
+    fail(405, "ไม่รองรับ");
   }
 
   // ---------- แบบบันทึกประจำวัน: ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ + ตรวจสุขภาพรายสัปดาห์ ----------

@@ -35,7 +35,8 @@ view.innerHTML = `
       ${r.full ? '' : '<span class="tag">เฉพาะวิชาที่สอน</span>'}</div>
     <div class="doc-grid">${r.kinder ? `
       <div class="doc-item"><b>หนังสือแจ้งผู้ปกครอง (บค.)</b><span class="muted small">เฉพาะนักเรียนที่ครูประจำชั้นบันทึกวันขาด</span><button class="btn small" data-letters="${i}">แสดงรายชื่อ</button><div class="letters" id="letters-${i}"></div></div>
-      <div class="doc-item"><b>รายงานพัฒนาการ (อนุบาล)</b><span class="muted small">อยู่ระหว่างพัฒนา — ประเมินพัฒนาการ 4 ด้าน</span></div>` : `
+      <div class="doc-item"><b>สมุดรายงานพัฒนาการเด็กปฐมวัย</b><span class="muted small">รายคน · ผลประเมินพัฒนาการ 4 ด้าน ภาค 1–2 ความคิดเห็นครู และสรุปสิ้นปี</span>
+        <div class="actions">${link(`/print/kinder.html?${roomQ(r)}`, "รายงานพัฒนาการทั้งห้อง", "primary")}${link(`/print/kinder.html?${roomQ(r)}&mode=room`, "สรุปผลทั้งห้อง")}</div></div>` : `
       <div class="doc-item wide"><b>ปพ.5 แบบบันทึกผลการพัฒนาคุณภาพผู้เรียน</b>
         <span class="muted small">ปก → โครงสร้างรายวิชา → เวลาเรียน → อ่านคิดฯ → คุณลักษณะ → ตัวชี้วัด → สรุปผล · ยังไม่อนุมัติ = มีลายน้ำฉบับร่าง</span>
         <div class="actions">${r.full && r.courses.some((c) => c.item_count) ? link(`/print/pp5.html?${roomQ(r)}`, "ทุกวิชาของห้อง (ไฟล์เดียว)", "primary") : ""}

@@ -1,5 +1,6 @@
 import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear } from "/js/app.js";
 import { ASSESSMENT_GROUPS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
+import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, domainSummary, overallSummary, shortCode } from "/js/kinder.js";
 
 await shell("home");
 const p = params();
@@ -14,6 +15,9 @@ const pending = new Map();      // การประเมิน "sid|key" → 
 const pendingC = new Map();     // ความคิดเห็น "term|sid|field" → body
 const pendingB = new Map();     // น้ำหนักส่วนสูง "sid|round" → {weight,height}
 const pendingA = new Map();     // การมาเรียน "sid|date" → "" | ข | ล | ป | มส
+const pendingK = new Map();     // พัฒนาการอนุบาล "term|round|sid|code" → "" | 1 | 2 | 3
+const pendingKC = new Map();    // ความคิดเห็นอนุบาล "term|sid|field" → body
+const anyPending = () => pending.size || pendingC.size || pendingB.size || pendingA.size || pendingK.size || pendingKC.size;
 let saving = false, timer;
 
 try { data = await api(`/api/homeroom?${q}`); }
@@ -33,8 +37,8 @@ pp6.innerHTML = `${ICONS.print} ${/^อ\./.test(grade) ? "เอกสารข�
 pp6.href = `/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}`;
 
 const hasMovers = data.students.some((s) => s.transfer_in_term > 1);
-const KINDER = /^อ\./.test(grade); // อนุบาล: ใช้เฉพาะบันทึกการมาเรียนและน้ำหนักส่วนสูง (การประเมินพัฒนาการ 4 ด้านจะตามมา)
-const TABS = KINDER ? [["attend", "บันทึกการมาเรียน"], ["body", "น้ำหนัก ส่วนสูง"]] : [...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"],
+const KINDER = /^อ\./.test(grade); // อนุบาล: ประเมินพัฒนาการ 4 ด้าน (หลักสูตรปฐมวัย 2569) + การมาเรียน + น้ำหนักส่วนสูง
+const TABS = KINDER ? [["dev", "ประเมินพัฒนาการ"], ["devsum", "สรุปผลพัฒนาการ"], ["kcomments", "ความคิดเห็นครู"], ["attend", "บันทึกการมาเรียน"], ["body", "น้ำหนัก ส่วนสูง"]] : [...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"],
   ...(hasMovers ? [["carry", "คะแนนยกมา (ย้ายเข้า)"]] : []), ["grades", "ผลการเรียนรวม"], ["attend", "บันทึกการมาเรียน"]];
 if (location.hash === "#carry" && hasMovers) tab = "carry";
 const tabs = document.getElementById("tabs");
@@ -49,7 +53,7 @@ function renderTabs() {
     b.onclick = async () => { await flush(); tab = b.dataset.tab; sessionStorage.setItem("sr-hr-tab", tab); renderTabs(); render(); };
   }
 }
-window.addEventListener("beforeunload", (e) => { if (pending.size || pendingC.size || pendingB.size || pendingA.size || saving) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (anyPending() || saving) { e.preventDefault(); e.returnValue = ""; } });
 
 function render() {
   const group = ASSESSMENT_GROUPS.find((g) => g.key === tab);
@@ -59,6 +63,7 @@ function render() {
   else if (tab === "body") renderBody();
   else if (tab === "carry") renderCarry().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
   else if (tab === "grades") renderGrades();
+  else if (tab === "dev" || tab === "devsum" || tab === "kcomments") renderKinder().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
   else renderAttendance().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
 }
 
@@ -317,14 +322,165 @@ function renderBody() {
   showState();
 }
 
+// ---------- อนุบาล: ประเมินพัฒนาการ 4 ด้าน (ความสามารถผู้เรียนเมื่อจบชั้นปี หลักสูตรปฐมวัย 2569) ----------
+// ภาคเรียนละ 2 ครั้ง · 3 ดี · 2 พอใช้ · 1 ควรส่งเสริม · ผลของภาค = ครั้งล่าสุด · ผลสิ้นปี = ภาค 2 (ไม่มีใช้ภาค 1)
+let kd = null;
+const kst = (() => { try { return JSON.parse(sessionStorage.getItem("sr-hr-k") || "{}"); } catch { return {}; } })();
+let kterm = [1, 2].includes(kst.term) ? kst.term : 1, kround = [1, 2].includes(kst.round) ? kst.round : 1, kdom = Math.min(3, Math.max(0, Number(kst.dom) || 0));
+let ksumTerm = kst.sum ?? "year";
+const saveK = () => { try { sessionStorage.setItem("sr-hr-k", JSON.stringify({ term: kterm, round: kround, dom: kdom, sum: ksumTerm })); } catch { /* */ } };
+const kOptions = (v, blank = "–") => [["", blank], ...KINDER_LEVELS.map(([n, l]) => [String(n), `${n} ${l}`])]
+  .map(([val, label]) => `<option value="${val}" ${String(v ?? "") === val ? "selected" : ""}>${label}</option>`).join("");
+const kScore = (sid, code, t = kterm, r = kround) => kd.scores[sid]?.[code]?.[`${t}-${r}`] ?? "";
+const kLevelText = (lv, avg) => (lv ? `${levelLabel(lv)}${avg != null ? ` (${avg.toFixed(2)})` : ""}` : "–");
+const btnRow = (list, cur, attr) => list.map(([v, l]) => `<button class="btn small ${String(v) === String(cur) ? "primary" : ""}" data-${attr}="${v}">${l}</button>`).join("");
+
+async function renderKinder() {
+  if (!kd) { view.innerHTML = `<p class="muted">กำลังโหลด…</p>`; kd = await api(`/api/homeroom/kinder?${q}`); }
+  if (!kd.items.length) { view.innerHTML = `<div class="panel empty"><strong>ยังไม่มีรายการประเมินของชั้น ${esc(grade)}</strong>ระบบจะเพิ่มความสามารถผู้เรียนตามหลักสูตรปฐมวัย 2569 ให้อัตโนมัติ ลองโหลดหน้านี้ใหม่อีกครั้ง</div>`; return; }
+  if (tab === "dev") renderDev();
+  else if (tab === "devsum") renderDevSum();
+  else renderKComments();
+}
+
+function renderDev() {
+  const domain = KINDER_DOMAINS[kdom];
+  const items = kd.items.filter((i) => i.domain === domain);
+  const avgCell = (sid) => {
+    const v = items.map((i) => kScore(sid, i.code)).filter((x) => x !== "");
+    if (!v.length) return "–";
+    const avg = v.reduce((a, b) => a + Number(b), 0) / v.length;
+    return `${avg.toFixed(2)} <span class="small muted">${v.length}/${items.length}</span>`;
+  };
+  let lastSub = "";
+  view.innerHTML = `
+    <div class="sheet-tools">
+      <span class="actions">${btnRow([[1, "ภาคเรียนที่ 1"], [2, "ภาคเรียนที่ 2"]], kterm, "kt")}<span class="muted small" style="margin:0 4px">·</span>${btnRow([[1, "ครั้งที่ 1"], [2, "ครั้งที่ 2"]], kround, "kr")}</span>
+      <span class="save-state" id="saveState">บันทึกแล้ว</span>
+    </div>
+    <div class="actions" style="margin:0 0 10px">${btnRow(KINDER_DOMAINS.map((d, i) => [i, `${i + 1}. ${d.replace(/^ด้าน/, "")}`]), kdom, "kd")}</div>
+    <p class="muted small" style="margin:0 0 8px">3 ดี · 2 พอใช้ · 1 ควรส่งเสริม — วางเมาส์/แตะหัวคอลัมน์เพื่ออ่านพฤติกรรมที่ประเมิน · "ทั้งห้อง" เติมเฉพาะช่องที่ยังว่าง · บันทึกอัตโนมัติ
+      ${kround === 2 ? `· <button class="btn small" id="kCopy">คัดลอกผลครั้งที่ 1 มาเติมช่องว่าง</button>` : ""}</p>
+    <div class="sheet-wrap"><table class="sheet" id="sheet">
+      <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
+        ${items.map((it) => { const head = it.sub !== lastSub ? (lastSub = it.sub) : ""; return `<th class="col-head" style="min-width:104px">
+          ${head && head.includes("—") ? `<span class="max">${esc(head.split("—")[1].trim())}</span>` : ""}
+          <button type="button" class="tip-btn" data-tip="${esc(`${it.code}: ${it.comp ? `${it.comp} — ` : ""}${it.title}`)}" aria-label="${esc(it.code)} ประเมินอะไร">${esc(shortCode(it.code))} <i class="i" aria-hidden="true">i</i></button>
+          <select class="level-select fill" data-fill="${esc(it.code)}" aria-label="กรอกทั้งห้อง ${esc(it.code)}">${kOptions("", "ทั้งห้อง…")}</select></th>`; }).join("")}
+        <th class="col-head">ทุกข้อ</th><th class="col-head">เฉลี่ยด้านนี้</th></tr></thead>
+      <tbody>${data.students.map((s) => `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}">
+        <td class="stick no">${s.number ?? ""}</td><td class="stick name">${esc(s.name)}</td>
+        ${items.map((it) => { const v = kScore(s.id, it.code); return `<td><select class="level-select kv${v}" data-code="${esc(it.code)}" aria-label="${esc(s.name)} ${esc(it.code)}">${kOptions(v)}</select></td>`; }).join("")}
+        <td><select class="level-select fill" data-row aria-label="ทุกข้อของ ${esc(s.name)}">${kOptions("", "ทุกข้อ…")}</select></td>
+        <td class="calc" data-avg>${avgCell(s.id)}</td></tr>`).join("")}</tbody>
+    </table></div>
+    <details class="small muted" style="margin-top:10px"><summary>พฤติกรรมที่ประเมิน — ${esc(domain)} (${items.length} ข้อ)</summary>
+      <ol style="margin:6px 0 0;padding-left:22px">${items.map((it) => `<li><b>${esc(it.code)}</b> ${it.comp ? `<i>${esc(it.comp)}</i> — ` : ""}${esc(it.title)}</li>`).join("")}</ol></details>`;
+  for (const b of view.querySelectorAll("[data-kt]")) b.onclick = () => { kterm = Number(b.dataset.kt); saveK(); renderDev(); };
+  for (const b of view.querySelectorAll("[data-kr]")) b.onclick = () => { kround = Number(b.dataset.kr); saveK(); renderDev(); };
+  for (const b of view.querySelectorAll("[data-kd]")) b.onclick = () => { kdom = Number(b.dataset.kd); saveK(); renderDev(); };
+  const table = document.getElementById("sheet");
+  const setK = (sid, code, v, sel) => {
+    const m = (((kd.scores[sid] ||= {})[code]) ||= {});
+    if (v === "") delete m[`${kterm}-${kround}`]; else m[`${kterm}-${kround}`] = Number(v);
+    if (sel) { sel.value = v; sel.className = `level-select kv${v}`; }
+    const avg = table.querySelector(`tr[data-sid="${sid}"] [data-avg]`);
+    if (avg) avg.innerHTML = avgCell(sid);
+    pendingK.set(`${kterm}|${kround}|${sid}|${code}`, v === "" ? "" : Number(v));
+    schedule();
+  };
+  const copy = document.getElementById("kCopy");
+  if (copy) copy.onclick = () => {
+    let n = 0;
+    for (const s of active()) for (const it of items) {
+      const prev = kScore(s.id, it.code, kterm, 1);
+      if (prev === "" || kScore(s.id, it.code) !== "") continue;
+      setK(s.id, it.code, String(prev), table.querySelector(`tr[data-sid="${s.id}"] select[data-code="${CSS.escape(it.code)}"]`)); n++;
+    }
+    toast(n ? `เติมจากครั้งที่ 1 แล้ว ${n} ช่อง` : "ไม่มีช่องว่างที่เติมได้");
+  };
+  table.addEventListener("change", (e) => {
+    const sel = e.target;
+    if (sel.dataset.fill) {
+      const v = sel.value; sel.value = "";
+      if (!v) return;
+      let n = 0;
+      for (const s of active()) {
+        const cell = table.querySelector(`tr[data-sid="${s.id}"] select[data-code="${CSS.escape(sel.dataset.fill)}"]`);
+        if (cell && !cell.value) { setK(s.id, sel.dataset.fill, v, cell); n++; }
+      }
+      toast(n ? `กรอกให้ ${n} คนที่ยังว่าง` : "ทุกคนมีค่าแล้ว (ไม่เขียนทับ)");
+      return;
+    }
+    if ("row" in sel.dataset) {
+      const v = sel.value; sel.value = "";
+      if (!v) return;
+      const tr = sel.closest("tr"), sid = Number(tr.dataset.sid);
+      for (const cell of tr.querySelectorAll("select[data-code]")) setK(sid, cell.dataset.code, v, cell);
+      return;
+    }
+    if (sel.dataset.code) setK(Number(sel.closest("tr").dataset.sid), sel.dataset.code, sel.value, sel);
+  });
+  showState();
+}
+
+function renderDevSum() {
+  const t = ksumTerm === "year" ? "year" : Number(ksumTerm);
+  const rows = data.students.map((s) => ({ s, doms: domainSummary(kd.items, kd.scores[s.id], t), all: overallSummary(kd.items, kd.scores[s.id], t) }));
+  const count = (di, lv) => rows.filter((r) => r.s.enrollment_status === "enrolled" && (di < 0 ? r.all.level : r.doms[di].level) === lv).length;
+  const lvCell = (x) => `<td class="calc ${x.level === 1 ? "warn-text" : ""}">${kLevelText(x.level, x.avg)}${x.n && x.n < x.total ? ` <span class="small muted">${x.n}/${x.total}</span>` : ""}</td>`;
+  const pq = `grade=${encodeURIComponent(grade)}&room=${encodeURIComponent(room)}${yearQ}`;
+  view.innerHTML = `
+    <div class="sheet-tools">
+      <span class="actions">${btnRow([[1, "ภาคเรียนที่ 1"], [2, "ภาคเรียนที่ 2"], ["year", "สรุปสิ้นปี"]], ksumTerm, "ks")}</span>
+      <span class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/kinder.html?${pq}">${ICONS.print} สมุดรายงานพัฒนาการรายคน</a>
+        <a class="btn small" target="_blank" rel="noopener" href="/print/kinder.html?${pq}&mode=room">${ICONS.print} สรุปผลทั้งห้อง</a></span>
+    </div>
+    <div class="sheet-wrap"><table class="sheet">
+      <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
+        ${KINDER_DOMAINS.map((d) => `<th class="col-head"><span class="t">${esc(d)}</span></th>`).join("")}<th class="col-head">รวม 4 ด้าน</th></tr></thead>
+      <tbody>${rows.map(({ s, doms, all }) => `<tr class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}"><td class="stick no">${s.number ?? ""}</td><td class="stick name">${esc(s.name)}</td>
+        ${doms.map(lvCell).join("")}${lvCell(all)}</tr>`).join("")}</tbody>
+      <tfoot>${KINDER_LEVELS.map(([lv, l]) => `<tr><td class="stick no"></td><td class="stick name">${l} (คน)</td>${[0, 1, 2, 3, -1].map((di) => `<td class="calc">${count(di, lv) || ""}</td>`).join("")}</tr>`).join("")}</tfoot>
+    </table></div>
+    <p class="muted small" style="margin-top:10px">ผลแต่ละข้อของภาคเรียน = ผลการประเมินครั้งล่าสุดของภาคนั้น · สรุปสิ้นปีใช้ผลภาคเรียนที่ 2 (ข้อที่ยังไม่ประเมินในภาค 2 ใช้ภาค 1)
+      · ระดับรายด้าน = ค่าเฉลี่ย 2.50–3.00 ดี · 1.50–2.49 พอใช้ · ต่ำกว่า 1.50 ควรส่งเสริม · ตัวเลข n/N = ประเมินแล้ว n จาก N ข้อ</p>`;
+  for (const b of view.querySelectorAll("[data-ks]")) b.onclick = () => { ksumTerm = b.dataset.ks === "year" ? "year" : Number(b.dataset.ks); saveK(); renderDevSum(); };
+}
+
+const kCommentOf = (sid, f) => kd.comments?.[sid]?.[kterm]?.[f] ?? "";
+function renderKComments() {
+  view.innerHTML = `
+    <div class="sheet-tools">
+      <span class="actions">${btnRow([[1, "ภาคเรียนที่ 1"], [2, "ภาคเรียนที่ 2"]], kterm, "kt")}</span>
+      <span class="save-state" id="saveState">บันทึกแล้ว</span>
+    </div>
+    <p class="muted small" style="margin:0 0 8px">ความคิดเห็นของครูรายด้าน (ไม่เกิน 300 ตัวอักษรต่อช่อง) ขึ้นในสมุดรายงานพัฒนาการรายคน · บันทึกอัตโนมัติ</p>
+    <div class="cm-head k5">${["นักเรียน", ...KINDER_COMMENT_FIELDS.map(([, l]) => l)].map((l) => `<span>${esc(l)}</span>`).join("")}</div>
+    <div id="cmList">${data.students.map((s) => `<div class="cm-row k5 ${s.enrollment_status !== "enrolled" ? "inactive" : ""}" data-sid="${s.id}">
+      <span class="cm-name"><b>${s.number ?? ""}</b> ${esc(s.name)}</span>
+      ${KINDER_COMMENT_FIELDS.map(([f, l]) => `<label class="cm-field"><span class="cm-label">${esc(l)}</span><textarea rows="2" maxlength="300" data-f="${f}" aria-label="${esc(s.name)} ${esc(l)}">${esc(kCommentOf(s.id, f))}</textarea></label>`).join("")}
+    </div>`).join("")}</div>`;
+  for (const b of view.querySelectorAll("[data-kt]")) b.onclick = async () => { await flush(); kterm = Number(b.dataset.kt); saveK(); renderKComments(); };
+  document.getElementById("cmList").addEventListener("input", (e) => {
+    const f = e.target.dataset.f;
+    if (!f) return;
+    const sid = Number(e.target.closest(".cm-row").dataset.sid);
+    (((kd.comments ||= {})[sid] ||= {})[kterm] ||= {})[f] = e.target.value;
+    pendingKC.set(`${kterm}|${sid}|${f}`, e.target.value);
+    schedule();
+  });
+  showState();
+}
+
 // ---------- บันทึกอัตโนมัติ (ทุกแท็บ) ----------
 function schedule() { showState(); clearTimeout(timer); timer = setTimeout(flush, 700); }
 
 async function flush() {
-  if (saving || (!pending.size && !pendingC.size && !pendingB.size && !pendingA.size)) return;
+  if (saving || !anyPending()) return;
   saving = true;
-  const a = [...pending.entries()], c = [...pendingC.entries()], b = [...pendingB.entries()], at = [...pendingA.entries()];
-  pending.clear(); pendingC.clear(); pendingB.clear(); pendingA.clear();
+  const a = [...pending.entries()], c = [...pendingC.entries()], b = [...pendingB.entries()], at = [...pendingA.entries()], k = [...pendingK.entries()], kc = [...pendingKC.entries()];
+  pending.clear(); pendingC.clear(); pendingB.clear(); pendingA.clear(); pendingK.clear(); pendingKC.clear();
   showState();
   // ส่งแยกทีละหมวด: หมวดหนึ่งผิด (400) ไม่ทำให้หมวดอื่นค้าง · เครือข่ายขัดข้อง → เก็บไว้ลองใหม่
   const jobs = [
@@ -333,6 +489,9 @@ async function flush() {
       (l) => api(`/api/homeroom/comments?${q}`, { method: "PUT", body: { term: t, changes: l.map(([k, body]) => { const [, sid, field] = k.split("|"); return { student_id: Number(sid), field, body }; }) } }), `ความคิดเห็นภาค ${t}`]),
     [b, pendingB, (l) => api(`/api/homeroom/body?${q}`, { method: "PUT", body: { changes: l.map(([k, v]) => { const [sid, round] = k.split("|").map(Number); return { student_id: sid, round, weight: v.weight, height: v.height }; }) } }), "น้ำหนักส่วนสูง"],
     [at, pendingA, (l) => api(`/api/homeroom/attendance?${q}`, { method: "PUT", body: { changes: l.map(([k, code]) => { const [sid, date] = k.split("|"); return { student_id: Number(sid), date, code }; }) } }), "การมาเรียน"],
+    [k, pendingK, (l) => api(`/api/homeroom/kinder/scores?${q}`, { method: "PUT", body: { changes: l.map(([key, score]) => { const [term, round, sid, code] = key.split("|"); return { term: Number(term), round: Number(round), student_id: Number(sid), code, score }; }) } }), "ผลประเมินพัฒนาการ"],
+    ...[1, 2].map((t) => [kc.filter(([key]) => key.startsWith(`${t}|`)), pendingKC,
+      (l) => api(`/api/homeroom/kinder/comments?${q}`, { method: "PUT", body: { term: t, changes: l.map(([key, body]) => { const [, sid, field] = key.split("|"); return { student_id: Number(sid), field, body }; }) } }), `ความคิดเห็นภาค ${t}`]),
   ];
   let netErr = null, rejected = 0;
   for (const [list, map, send, label] of jobs) {
@@ -358,14 +517,14 @@ async function flush() {
   saving = false;
   if (netErr) { showState(netErr); showError(netErr); return; }
   showState();
-  if (pending.size || pendingC.size || pendingB.size || pendingA.size) flush();
+  if (anyPending()) flush();
 }
 let reloadTimer;
 function reloadSoon() {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(async () => {
-    if (pending.size || pendingC.size || pendingB.size || pendingA.size || saving) return reloadSoon();
-    try { data = await api(`/api/homeroom?${q}`); render(); } catch { /* ลองครั้งหน้า */ }
+    if (anyPending() || saving) return reloadSoon();
+    try { data = await api(`/api/homeroom?${q}`); kd = null; render(); } catch { /* ลองครั้งหน้า */ }
   }, 1500);
 }
 
@@ -374,7 +533,7 @@ function showState(err) {
   if (!el) return;
   el.className = "save-state";
   if (err) { el.classList.add("error"); el.innerHTML = `บันทึกไม่สำเร็จ <button class="btn small" id="retry">ลองอีกครั้ง</button>`; document.getElementById("retry").onclick = flush; }
-  else if (saving || pending.size || pendingC.size || pendingB.size || pendingA.size) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
+  else if (saving || anyPending()) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
   else el.textContent = "บันทึกแล้ว";
 }
 
