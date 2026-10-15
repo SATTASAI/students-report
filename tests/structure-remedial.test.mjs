@@ -147,3 +147,43 @@ test("บันทึกคะแนนแก้ตัวผ่าน API: เ�
   assert.equal(d.remedials[s[0].id], undefined);
   assert.equal(d.computed[s[0].id].term_scores[1].total, 29);
 });
+
+test("หน้าสร้างโครงสร้างรายวิชา: บันทึกทั้งภาคครั้งเดียว เรียงหน่วยใหม่ ย้าย/เอาออก และกันคะแนนหาย", async () => {
+  const { call, c1 } = await setup();
+  const body = (units, finals = [{ title: "สอบปลายภาค", max_score: 15 }], extra = {}) => ({ term: 1, units, finals, ...extra });
+  let d = (await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body([
+    { title: "พยัญชนะไทย", hours: 10, task: "ใบงานคัดพยัญชนะ", items: [{ code: "ท 1.1 ป.1/1", title: "อ่านออกเสียง", max_score: 15 }] },
+    { title: "สระไทย", hours: "", task: "", items: [{ code: "ท 2.1 ป.1/1", title: "คัดลายมือ", max_score: 20 }] },
+  ]), { expect: 200 })).data;
+  assert.equal(d.units.length, 2);
+  assert.deepEqual(d.units.map((u) => [u.unit_no, u.title, u.task]), [[1, "พยัญชนะไทย", "ใบงานคัดพยัญชนะ"], [2, "สระไทย", null]]);
+  assert.equal(d.items.length, 3);
+  assert.deepEqual(d.structure_issues.filter((x) => x.startsWith("ภาค 1")), []);
+  const [u1, u2] = d.units;
+  const a = d.items.find((i) => i.title === "อ่านออกเสียง"), b = d.items.find((i) => i.title === "คัดลายมือ"), f = d.items.find((i) => i.kind === "final");
+  assert.equal(a.unit_id, u1.id);
+  // สลับลำดับหน่วย + ย้ายตัวชี้วัด a ไปหน่วยสระ (id เดิม ไม่สร้างใหม่)
+  d = (await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body([
+    { id: u2.id, title: "สระไทย", items: [{ id: b.id, code: b.code, title: b.title, max_score: 20 }, { id: a.id, code: a.code, title: a.title, max_score: 15 }] },
+    { id: u1.id, title: "พยัญชนะไทย", items: [] },
+  ], [{ id: f.id, title: "สอบปลายภาค", max_score: 15 }]), { expect: 200 })).data;
+  assert.equal(d.units.find((u) => u.id === u2.id).unit_no, 1);
+  assert.equal(d.items.find((i) => i.id === a.id).unit_id, u2.id);
+  assert.equal(d.items.length, 3);
+  // กรอกคะแนนแล้ว: ลดคะแนนเต็มต่ำกว่าคะแนนไม่ได้ · เอาช่องออกต้องยืนยัน
+  const s = d.students.filter((x) => x.enrollment_status === "enrolled");
+  await call("t1", "PUT", `/api/courses/${c1.id}/scores`, { changes: [{ item_id: a.id, student_id: s[0].id, score: 12 }] }, { expect: 200 });
+  const keep = (max) => [{ id: u2.id, title: "สระไทย", items: [{ id: b.id, code: b.code, title: b.title, max_score: 20 }, { id: a.id, code: a.code, title: a.title, max_score: max }] }];
+  await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body(keep(10), [{ id: f.id, title: "สอบปลายภาค", max_score: 15 }]), { expect: 409 });
+  const without = [{ id: u2.id, title: "สระไทย", items: [{ id: b.id, code: b.code, title: b.title, max_score: 35 }] }];
+  const r = await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body(without, [{ id: f.id, title: "สอบปลายภาค", max_score: 15 }]), { expect: 409 });
+  assert.equal(r.data.needs_confirm, true);
+  d = (await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body(without, [{ id: f.id, title: "สอบปลายภาค", max_score: 15 }], { confirm: true }), { expect: 200 })).data;
+  assert.equal(d.items.length, 2);
+  assert.equal(d.units.length, 1); // หน่วยที่ไม่ส่งมา = ลบ
+  // ตรวจข้อมูล: ไม่มีชื่อหน่วย / คะแนนเต็มผิด / id ของรายวิชาอื่น
+  await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body([{ title: "", items: [] }]), { expect: 400 });
+  await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body([{ title: "x", items: [{ title: "y", max_score: 0 }] }]), { expect: 400 });
+  await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body([{ id: 999999, title: "x", items: [] }]), { expect: 400 });
+  await call("t2", "PUT", `/api/courses/${c1.id}/structure`, body([{ title: "x", items: [] }]), { expect: 403 });
+});

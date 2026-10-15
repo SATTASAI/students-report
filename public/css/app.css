@@ -496,3 +496,22 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-มส inpu
 .sar-lv.lv2 { background: var(--warn-bg); color: var(--warn); }
 .sar-lv.lv1 { background: var(--bad-bg); color: var(--bad); }
 details.panel > summary { cursor: pointer; }
+
+/* หน้าสร้างโครงสร้างรายวิชา */
+.b-grid { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 10px; }
+.b-items { display: grid; gap: 6px; margin-top: 10px; }
+.b-item { display: grid; grid-template-columns: 110px minmax(0, 1fr) 120px 36px; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: #fff; }
+.b-item .code { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.b-max { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.b-max input { width: 70px; text-align: right; }
+.b-foot { position: sticky; bottom: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 14px; margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: 0 -6px 18px rgba(20, 30, 80, .08); }
+.pick-group { border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 10px 12px; margin-bottom: 10px; }
+.pick-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.pick-head .btn { margin-left: auto; }
+.pick-group summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 640px) {
+  .b-grid { grid-template-columns: 1fr; }
+  .b-item { grid-template-columns: minmax(0, 1fr) auto; }
+  .b-item .code, .b-item > span:nth-child(2), .b-item > input { grid-column: 1 / -1; }
+}

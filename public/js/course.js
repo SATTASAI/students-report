@@ -6,6 +6,8 @@ const me = await shell("home");
 const courseId = params().get("id");
 const view = document.getElementById("view");
 let data;              // ข้อมูลจาก /api/courses/:id
+let bankCache = null;  // คลังตัวชี้วัดของรายวิชานี้ [{id, code, title, kind}]
+let builder = null;    // หน้าสร้างโครงสร้างรายวิชาที่เปิดอยู่ {term, units, loose, finals, dirty}
 let tab = sessionStorage.getItem(`sr-tab-${courseId}`) || "t1";
 const pending = new Map(); // "itemId:studentId" → score|null รอบันทึก
 let saving = false;
@@ -108,6 +110,7 @@ function render() {
   if (tab === "t1" || tab === "t2") renderSheet(tab === "t1" ? 1 : 2);
   else if (tab === "sum") renderSummary();
   else if (tab === "rem") renderRemedial();
+  else if (builder) drawBuilder();
   else renderSetup();
 }
 
@@ -517,6 +520,7 @@ function renderRemedial() {
 
 // ---------------- โครงสร้างคะแนน ----------------
 function renderSetup() {
+  view.oninput = null;
   const c = data.course;
   const can = editable();
   const sum = (term, kind) => data.items.filter((i) => (!term || i.term_number === term) && i.kind === kind).reduce((a, i) => a + i.max_score, 0);
@@ -529,24 +533,22 @@ function renderSetup() {
     const ok = !issues.some((x) => x.startsWith(`ภาค ${t}`));
     return `<span class="tag ${ok ? "ok" : "warn"}">${W} ${fmt(ci)}/${fmt(cT)} · ปลายภาค ${fmt(fi)}/${fmt(fT)}</span>`;
   };
-  const itemRow = (it) => `<div class="item ${it.kind}">
+  const itemRow = (it) => { const k = it.kind === "final" ? "" : bankKindOf(it); return `<div class="item ${it.kind}">
         <span class="code">${esc(it.kind === "final" ? "สอบปลายภาค" : it.code || "คะแนนเก็บ")}</span>
-        <span>${esc(it.title)}</span><span class="num">เต็ม ${fmt(it.max_score)}</span>
-        <span class="actions">${can ? `<button class="btn small" data-edit="${it.id}">แก้ไข</button><button class="btn small danger" data-del="${it.id}">ลบ</button>` : ""}</span>
-      </div>`;
+        <span>${esc(it.title)}${k && !k.startsWith("ผล") ? ` <span class="tag ${k === "ปลายทาง" ? "ok" : ""}">${esc(k)}</span>` : ""}</span><span class="num">เต็ม ${fmt(it.max_score)}</span><span></span>
+      </div>`; };
   const list = (term) => {
     const items = data.items.filter((i) => i.term_number === term);
     const units = (data.units || []).filter((u) => u.term_number === term);
-    if (!items.length && !units.length) return `<p class="muted small">ยังไม่มีหน่วยหรือช่องคะแนน</p>`;
+    if (!items.length && !units.length) return `<p class="muted small">ยังไม่มีโครงสร้างรายวิชา${can ? ` — กด "สร้างโครงสร้างรายวิชา" เพื่อพิมพ์หน่วยการเรียนรู้ ภาระงาน และเลือก${W}` : ""}</p>`;
     const inUnit = (u) => items.filter((i) => i.unit_id === u.id);
     const sumMax = (list) => Math.round(list.reduce((a, i) => a + i.max_score, 0) * 100) / 100;
     const loose = items.filter((i) => i.kind !== "final" && !units.some((u) => u.id === i.unit_id));
     const finals = items.filter((i) => i.kind === "final");
     return units.map((u) => `<div class="unit">
         <div class="unit-head"><span><b>หน่วยที่ ${u.unit_no} ${esc(u.title)}</b>
-          <span class="muted small">${u.hours != null ? ` · ${fmt(u.hours, 1)} ชม.` : ""}${u.task ? ` · ${esc(u.task)}` : ""} · ${fmt(sumMax(inUnit(u)))} คะแนน</span></span>
-          ${can ? `<span class="actions"><button class="btn small" data-add="${term}" data-kind="indicator" data-unit="${u.id}">${ICONS.plus} ${W}</button>
-            <button class="btn small" data-uedit="${u.id}">แก้หน่วย</button><button class="btn small danger" data-udel="${u.id}">ลบหน่วย</button></span>` : ""}</div>
+          <span class="muted small">${u.hours != null ? ` · ${fmt(u.hours, 1)} ชม.` : ""} · ${fmt(sumMax(inUnit(u)))} คะแนน</span></span></div>
+        ${u.task ? `<p class="small" style="margin:0 0 8px"><span class="muted">ภาระงาน/ชิ้นงาน:</span> ${esc(u.task)}</p>` : ""}
         <div class="item-list">${inUnit(u).map(itemRow).join("") || `<p class="muted small">ยังไม่มี${W}ในหน่วยนี้</p>`}</div></div>`).join("")
       + (loose.length ? `<div class="unit loose"><div class="unit-head"><span class="muted small">${W}ที่ยังไม่ได้จัดเข้าหน่วย</span></div><div class="item-list">${loose.map(itemRow).join("")}</div></div>` : "")
       + (finals.length ? `<div class="item-list" style="margin-top:10px">${finals.map(itemRow).join("")}</div>` : "");
@@ -568,29 +570,19 @@ function renderSetup() {
     </div>
     ${[1, 2].map((t) => `<div class="panel">
       <div class="panel-head"><h2>ภาคเรียนที่ ${t} ${termLine(t)}</h2>${can ? `<div class="actions">
-        <button class="btn small" data-uadd="${t}">${ICONS.plus} หน่วยการเรียนรู้</button>
-        <button class="btn small" data-add="${t}" data-kind="indicator">${ICONS.plus} ${W}</button>
-        <button class="btn small" data-add="${t}" data-kind="final">${ICONS.plus} สอบปลายภาค</button>
-        <button class="btn small" data-paste="${t}">วางจากหลักสูตร</button>
-        <button class="btn small" data-bank="${t}">เลือกจากคลัง${W}</button></div>` : ""}</div>
+        <button class="btn ${termEmpty(t) ? "primary" : ""}" data-build="${t}">${termEmpty(t) && !(data.units || []).some((u) => u.term_number === t) ? "สร้างโครงสร้างรายวิชา" : "แก้ไขโครงสร้างรายวิชา"}</button></div>` : ""}</div>
       ${list(t)}</div>`).join("")}
     ${tplPanel}
     ${can ? `<div class="panel"><div class="panel-head"><h2>ใช้โครงสร้างจากห้องอื่น</h2></div>
       <p class="muted small">คัดลอก${W}และคะแนนเต็มจากวิชาเดียวกันของห้องอื่นหรือปีก่อน (คัดลอกเฉพาะโครงสร้าง ไม่คัดลอกคะแนนนักเรียน)</p>
       <div id="siblings" class="muted small">กำลังค้นหา…</div></div>` : ""}`;
-  for (const b of view.querySelectorAll("[data-add]")) b.onclick = () => addItem(Number(b.dataset.add), b.dataset.kind, b.dataset.unit ? Number(b.dataset.unit) : null);
-  for (const b of view.querySelectorAll("[data-uadd]")) b.onclick = () => unitDialog(Number(b.dataset.uadd));
-  for (const b of view.querySelectorAll("[data-uedit]")) b.onclick = () => unitDialog(null, Number(b.dataset.uedit));
-  for (const b of view.querySelectorAll("[data-udel]")) b.onclick = () => deleteUnit(Number(b.dataset.udel));
+  for (const b of view.querySelectorAll("[data-build]")) b.onclick = () => openBuilder(Number(b.dataset.build));
   for (const b of view.querySelectorAll("[data-tpl]")) b.onclick = () => applyTemplate(Number(b.dataset.tpl));
   const ts = document.getElementById("tplSave"), td = document.getElementById("tplDel");
   if (ts) ts.onclick = saveTemplate;
   if (td) td.onclick = deleteTemplate;
-  for (const b of view.querySelectorAll("[data-edit]")) b.onclick = () => editItem(Number(b.dataset.edit));
-  for (const b of view.querySelectorAll("[data-del]")) b.onclick = () => deleteItem(Number(b.dataset.del));
-  for (const b of view.querySelectorAll("[data-paste]")) b.onclick = () => pasteItems(Number(b.dataset.paste));
-  for (const b of view.querySelectorAll("[data-bank]")) b.onclick = () => bankItems(Number(b.dataset.bank));
   if (can) loadSiblings();
+  if (!bankCache) loadBank().then(() => { if (tab === "setup" && !builder) renderSetup(); }).catch(() => {});
 }
 
 function itemForm(it = {}) {
@@ -603,38 +595,6 @@ function itemForm(it = {}) {
     ${us.map((u) => `<option value="${u.id}" ${it.unit_id === u.id ? "selected" : ""}>ภาค ${u.term_number} · หน่วยที่ ${u.unit_no} ${esc(u.title)}</option>`).join("")}</select></label>` : ""; })()}
   <label class="field" style="margin-top:12px">รหัส${W} (ถ้ามี)<input name="code" maxlength="60" placeholder="เช่น ท 1.1 ป.1/1" value="${esc(it.code || "")}"></label>
   <label class="field" style="margin-top:12px">ชื่อ${W} / การสอบ<textarea name="title" required maxlength="500" style="min-height:80px">${esc(it.title || "")}</textarea></label>`;
-}
-
-async function addItem(term, kind, unitId = null) {
-  const res = await dialog({ title: kind === "final" ? "เพิ่มการสอบปลายภาค" : `เพิ่ม${W}`, body: itemForm({ term_number: term, kind, unit_id: unitId, title: kind === "final" ? `สอบปลายภาคเรียนที่ ${term}` : "" }), okText: "เพิ่ม" });
-  if (!res.ok) return;
-  try { data = await api(`/api/courses/${courseId}/items`, { method: "POST", body: res.data }); toast("เพิ่มแล้ว"); render(); }
-  catch (err) { showError(err); }
-}
-
-
-async function unitDialog(term, unitId = null) {
-  const u = unitId ? data.units.find((x) => x.id === unitId) : { term_number: term, unit_no: Math.max(0, ...(data.units || []).filter((x) => x.term_number === term).map((x) => x.unit_no)) + 1 };
-  const res = await dialog({
-    title: unitId ? `แก้ไขหน่วยที่ ${u.unit_no}` : `เพิ่มหน่วยการเรียนรู้ — ภาคเรียนที่ ${term}`, okText: unitId ? "บันทึก" : "เพิ่ม",
-    body: `<div class="form-grid">
-      <label class="field">ภาคเรียน<select name="term_number"><option value="1" ${u.term_number === 1 ? "selected" : ""}>1</option><option value="2" ${u.term_number === 2 ? "selected" : ""}>2</option></select></label>
-      <label class="field">หน่วยที่<input name="unit_no" inputmode="numeric" required value="${u.unit_no ?? ""}"></label>
-      <label class="field">จำนวนชั่วโมง<input name="hours" inputmode="decimal" value="${u.hours ?? ""}"></label></div>
-      <label class="field" style="margin-top:12px">ชื่อหน่วยการเรียนรู้<input name="title" required maxlength="300" value="${esc(u.title || "")}"></label>
-      <label class="field" style="margin-top:12px">ภาระงาน / ชิ้นงาน / การประเมิน<input name="task" maxlength="200" placeholder="เช่น ใบงาน, แบบฝึกหัด" value="${esc(u.task || "")}"></label>`,
-  });
-  if (!res.ok) return;
-  try {
-    data = await api(unitId ? `/api/courses/${courseId}/units/${unitId}` : `/api/courses/${courseId}/units`, { method: unitId ? "PUT" : "POST", body: res.data });
-    toast("บันทึกหน่วยแล้ว"); render();
-  } catch (err) { showError(err); }
-}
-
-async function deleteUnit(unitId) {
-  const u = data.units.find((x) => x.id === unitId);
-  if (!(await confirmBox("ลบหน่วยการเรียนรู้", `ลบหน่วยที่ ${u.unit_no} ${esc(u.title)} — ${W}และคะแนนในหน่วยนี้ยังอยู่ครบ แค่ไม่สังกัดหน่วย`, "ลบหน่วย", true))) return;
-  try { data = await api(`/api/courses/${courseId}/units/${unitId}`, { method: "DELETE" }); toast("ลบหน่วยแล้ว"); render(); } catch (err) { showError(err); }
 }
 
 async function applyTemplate(term) {
@@ -666,78 +626,6 @@ async function editItem(id) {
   await flush();
   try { data = await api(`/api/courses/${courseId}/items/${id}`, { method: "PUT", body: res.data }); toast("แก้ไขแล้ว"); render(); }
   catch (err) { showError(err); }
-}
-
-async function deleteItem(id) {
-  const it = data.items.find((i) => i.id === id);
-  if (!(await confirmBox("ลบช่องคะแนน", `ลบ "${esc(it.title)}" ใช่หรือไม่`, "ลบ", true))) return;
-  await flush();
-  try {
-    data = await api(`/api/courses/${courseId}/items/${id}`, { method: "DELETE" });
-  } catch (err) {
-    if (err.data?.needs_confirm) {
-      if (!(await confirmBox("ช่องนี้มีคะแนนแล้ว", `${esc(err.message)} — คะแนนของช่องนี้จะถูกลบถาวร`, "ลบพร้อมคะแนน", true))) return;
-      try { data = await api(`/api/courses/${courseId}/items/${id}?confirm=1`, { method: "DELETE" }); } catch (e2) { showError(e2); return; }
-    } else { showError(err); return; }
-  }
-  toast("ลบแล้ว"); render();
-}
-
-async function pasteItems(term) {
-  const res = await dialog({
-    title: `วาง${W}จากหลักสูตร — ภาคเรียนที่ ${term}`,
-    body: `<p class="muted small">คัดลอกรายการ${W}จากเอกสารหลักสูตร วางบรรทัดละ 1 ${W} ระบบจะแยกรหัส (เช่น ท 1.1 ป.1/1) ออกให้เอง</p>
-      <textarea name="lines" required placeholder="ท 1.1 ป.1/1 ออกเสียงคำ คำคล้องจอง และข้อความสั้น ๆ&#10;ท 1.1 ป.1/2 บอกความหมายของคำ และข้อความที่อ่าน"></textarea>
-      <label class="field" style="margin-top:12px">คะแนนเต็มของแต่ละ${W}<input name="max" inputmode="decimal" value="10" required></label>
-      <div id="preview" class="small muted" style="margin-top:10px"></div>`,
-    okText: "เพิ่มทั้งหมด",
-    onOpen: (d) => {
-      const ta = d.querySelector("textarea"), pv = d.querySelector("#preview");
-      ta.addEventListener("input", () => {
-        const rows = parseIndicatorLines(ta.value);
-        pv.innerHTML = rows.length ? `จะเพิ่ม ${rows.length} รายการ: ` + rows.slice(0, 5).map((r) => `<b>${esc(r.code || "–")}</b> ${esc(r.title.slice(0, 40))}`).join(" · ") + (rows.length > 5 ? " …" : "") : "";
-      });
-    },
-  });
-  if (!res.ok) return;
-  const rows = parseIndicatorLines(res.data.lines);
-  if (!rows.length) return;
-  try {
-    data = await api(`/api/courses/${courseId}/items`, { method: "POST", body: { items: rows.map((r) => ({ term_number: term, kind: "indicator", code: r.code, title: r.title, max_score: res.data.max })) } });
-    toast(`เพิ่ม ${rows.length} ${W}แล้ว`); render();
-  } catch (err) { showError(err); }
-}
-
-async function bankItems(term) {
-  let bank;
-  try { bank = await api(`/api/courses/${courseId}/bank`); } catch (err) { showError(err); return; }
-  if (!bank.indicators.length) {
-    await dialog({ title: `คลัง${W}`, body: `<p>ยังไม่มี${W}ของวิชา ${esc(data.course.code || "")} (กลุ่มสาระ${esc(data.course.learning_area)} ระดับ ${esc(data.course.grade_level)}) ในคลัง</p><p class="muted">ฝ่ายวิชาการนำเข้าคลังได้ที่หน้าตั้งค่ารายวิชา หรือใช้ปุ่ม "วางจากหลักสูตร" แทน</p>`, okText: "", cancelText: "ปิด" });
-    return;
-  }
-  const used = new Set(data.items.map((i) => `${i.code}|${i.title}`));
-  const res = await dialog({
-    title: `เลือกจากคลัง${W} — ภาคเรียนที่ ${term}`, wide: true, okText: "เพิ่มที่เลือก",
-    body: `<label class="field" style="margin-bottom:10px">คะแนนเต็มของแต่ละ${W}<input name="max" inputmode="decimal" value="10" required></label>
-      <div class="actions" style="margin-bottom:8px"><button type="button" class="btn small" data-all>เลือกทั้งหมด</button>
-        ${bank.indicators.some((b) => b.kind === "ปลายทาง") ? '<button type="button" class="btn small" data-kind="ปลายทาง">เฉพาะปลายทาง</button><button type="button" class="btn small" data-kind="ระหว่างทาง">เฉพาะระหว่างทาง</button>' : ""}
-        <button type="button" class="btn small" data-none>ล้าง</button></div>
-      <div style="display:grid;gap:6px">${bank.indicators.map((b) => `<label class="check" style="align-items:flex-start"><input type="checkbox" name="b${b.id}" value="${b.id}" data-k="${esc(b.kind || "")}" ${used.has(`${b.code}|${b.title}`) ? "disabled" : ""}>
-        <span><b>${esc(b.code)}</b> ${esc(b.title)}${b.kind && !b.kind.startsWith("ผล") ? ` <span class="tag ${b.kind === "ปลายทาง" ? "ok" : ""}">${esc(b.kind)}</span>` : ""}${used.has(`${b.code}|${b.title}`) ? ' <span class="tag">มีแล้ว</span>' : ""}</span></label>`).join("")}</div>`,
-    onOpen: (d) => {
-      const boxes = () => [...d.querySelectorAll("input[type=checkbox][data-k]:not(:disabled)")];
-      d.querySelector("[data-all]").onclick = () => boxes().forEach((x) => { x.checked = true; });
-      d.querySelector("[data-none]").onclick = () => boxes().forEach((x) => { x.checked = false; });
-      for (const b of d.querySelectorAll("[data-kind]")) b.onclick = () => boxes().forEach((x) => { x.checked = x.dataset.k === b.dataset.kind; });
-    },
-  });
-  if (!res.ok) return;
-  const chosen = bank.indicators.filter((b) => res.data[`b${b.id}`]);
-  if (!chosen.length) { toast(`ยังไม่ได้เลือก${W}`); return; }
-  try {
-    data = await api(`/api/courses/${courseId}/items`, { method: "POST", body: { items: chosen.map((b) => ({ term_number: term, kind: "indicator", code: b.code, title: b.title, max_score: res.data.max })) } });
-    toast(`เพิ่ม ${chosen.length} ${W}แล้ว`); render();
-  } catch (err) { showError(err); }
 }
 
 async function loadSiblings() {
@@ -826,3 +714,165 @@ renderHeader();
 renderEdits();
 renderTabs();
 render();
+
+
+// ---------- หน้าสร้างโครงสร้างรายวิชา (ทั้งภาคในหน้าเดียว) ----------
+// ครูพิมพ์หน่วยการเรียนรู้ ชั่วโมง ภาระงานเอง · ตัวชี้วัดเลือกจากคลัง แยกระหว่างทาง/ปลายทาง · บันทึกครั้งเดียว
+async function loadBank() { bankCache = (await api(`/api/courses/${courseId}/bank`)).indicators || []; return bankCache; }
+const itemKey = (x) => `${x.code || ""}|${x.title}`;
+function bankKindOf(it) { const b = (bankCache || []).find((x) => itemKey(x) === itemKey(it)); return b?.kind || ""; }
+const KIND_GROUPS = [["ระหว่างทาง", "ตัวชี้วัดระหว่างทาง"], ["ปลายทาง", "ตัวชี้วัดปลายทาง"], ["ผลการเรียนรู้", "ผลการเรียนรู้"], ["ผลลัพธ์การเรียนรู้", "ผลลัพธ์การเรียนรู้"], ["", "อื่น ๆ"]];
+const r2 = (n) => Math.round(n * 100) / 100;
+
+async function openBuilder(term) {
+  try { if (!bankCache) await loadBank(); } catch (err) { showError(err); bankCache = []; }
+  const toB = (i) => ({ id: i.id, code: i.code || "", title: i.title, max: i.max_score });
+  const items = data.items.filter((i) => i.term_number === term);
+  const units = (data.units || []).filter((u) => u.term_number === term).sort((a, b) => a.unit_no - b.unit_no)
+    .map((u) => ({ id: u.id, title: u.title, hours: u.hours ?? "", task: u.task || "", items: items.filter((i) => i.kind !== "final" && i.unit_id === u.id).map(toB) }));
+  const loose = items.filter((i) => i.kind !== "final" && !units.some((u) => u.id === i.unit_id)).map(toB);
+  const finals = items.filter((i) => i.kind === "final").map(toB);
+  const fT = 50 - data.course.collect_ratio / 2;
+  if (!units.length) units.push({ id: null, title: "", hours: "", task: "", items: [] });
+  if (!finals.length) finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${term}`, max: fT });
+  builder = { term, units, loose, finals, dirty: false };
+  tab = "setup"; renderTabs(); drawBuilder();
+  window.scrollTo({ top: 0 });
+}
+
+function builderTotals() {
+  const all = [...builder.units.flatMap((u) => u.items), ...builder.loose];
+  return { collect: r2(all.reduce((a, i) => a + (Number(i.max) || 0), 0)), final: r2(builder.finals.reduce((a, i) => a + (Number(i.max) || 0), 0)), count: all.length };
+}
+
+function drawBuilder() {
+  const B = builder, c = data.course, cT = c.collect_ratio / 2, fT = 50 - cT;
+  const itemRow = (it, where, idx) => { const k = bankKindOf(it); return `<div class="b-item">
+      <span class="code">${esc(it.code || "–")}</span>
+      <span>${esc(it.title)}${k && !k.startsWith("ผล") ? ` <span class="tag ${k === "ปลายทาง" ? "ok" : ""}">${esc(k)}</span>` : ""}</span>
+      <label class="b-max">เต็ม<input inputmode="decimal" data-max="${where}:${idx}" value="${esc(it.max ?? "")}" aria-label="คะแนนเต็ม ${esc(it.code || it.title)}"></label>
+      <button type="button" class="icon-btn" data-rm="${where}:${idx}" aria-label="เอาออก">✕</button></div>`; };
+  view.innerHTML = `
+    <div class="panel builder">
+      <div class="panel-head"><h2>สร้างโครงสร้างรายวิชา — ภาคเรียนที่ ${B.term}</h2><button class="btn small" id="bBack">← กลับ</button></div>
+      <p class="muted small" style="margin-top:0">${esc(c.code || "")} ${esc(c.name)} ${esc(c.grade_level)}/${esc(c.classroom)} ·
+        1) พิมพ์ชื่อหน่วยการเรียนรู้ ชั่วโมง และภาระงาน/ชิ้นงาน 2) กด "เลือก${W}" ของแต่ละหน่วย 3) ใส่คะแนนเต็ม — คะแนนเก็บรวม ${fmt(cT)} · สอบปลายภาค ${fmt(fT)}</p>
+      ${bankCache.length ? "" : `<p class="note warn">ยังไม่มี${W}ของวิชานี้ในคลัง — พิมพ์${W}เองได้ในหน้าต่างเลือก${W} หรือแจ้งฝ่ายวัดผลให้นำเข้าคลัง</p>`}
+    </div>
+    ${B.units.map((u, ui) => `<div class="panel b-unit">
+      <div class="unit-head"><b>หน่วยการเรียนรู้ที่ ${ui + 1}</b><span class="actions">
+        <button type="button" class="btn small" data-mv="${ui}:-1" ${ui ? "" : "disabled"} aria-label="เลื่อนขึ้น">↑</button>
+        <button type="button" class="btn small" data-mv="${ui}:1" ${ui < B.units.length - 1 ? "" : "disabled"} aria-label="เลื่อนลง">↓</button>
+        <button type="button" class="btn small danger" data-udel="${ui}">ลบหน่วย</button></span></div>
+      <div class="b-grid">
+        <label class="field">ชื่อหน่วยการเรียนรู้<input data-uf="${ui}:title" maxlength="300" value="${esc(u.title)}" placeholder="เช่น ภาษาไทยของเรา"></label>
+        <label class="field">จำนวนชั่วโมง<input data-uf="${ui}:hours" inputmode="decimal" value="${esc(u.hours)}"></label>
+      </div>
+      <label class="field" style="margin-top:10px">ภาระงาน / ชิ้นงาน<textarea data-uf="${ui}:task" maxlength="500" placeholder="เช่น ใบงานการอ่านจับใจความ, แผนภาพโครงเรื่อง">${esc(u.task)}</textarea></label>
+      <div class="b-items">${u.items.map((it, ii) => itemRow(it, `u${ui}`, ii)).join("") || `<p class="muted small" style="margin:0">ยังไม่ได้เลือก${W}</p>`}</div>
+      <button type="button" class="btn small primary" data-pick="${ui}" style="margin-top:8px">${ICONS.plus} เลือก${W}</button>
+    </div>`).join("")}
+    ${B.loose.length ? `<div class="panel b-unit"><div class="unit-head"><b>${W}ที่ยังไม่อยู่ในหน่วยใด</b><span class="muted small">เลือกเข้าหน่วยได้จากปุ่ม "เลือก${W}" ของหน่วยนั้น</span></div>
+      <div class="b-items">${B.loose.map((it, ii) => itemRow(it, "loose", ii)).join("")}</div></div>` : ""}
+    <div class="actions" style="margin:4px 0 16px"><button type="button" class="btn" id="bAddUnit">${ICONS.plus} เพิ่มหน่วยการเรียนรู้</button></div>
+    <div class="panel"><div class="panel-head"><h2>สอบปลายภาค</h2><button type="button" class="btn small" id="bAddFinal">${ICONS.plus} เพิ่มการสอบ</button></div>
+      <div class="b-items">${B.finals.map((it, ii) => `<div class="b-item">
+        <span class="code">สอบปลายภาค</span><input data-ft="${ii}" maxlength="500" value="${esc(it.title)}" aria-label="ชื่อการสอบ">
+        <label class="b-max">เต็ม<input inputmode="decimal" data-max="final:${ii}" value="${esc(it.max ?? "")}"></label>
+        <button type="button" class="icon-btn" data-rm="final:${ii}" aria-label="เอาออก">✕</button></div>`).join("") || '<p class="muted small" style="margin:0">ไม่มีการสอบปลายภาค</p>'}</div></div>
+    <div class="b-foot"><span id="bTotals"></span><span class="actions">
+      <button type="button" class="btn" id="bSplit" title="แบ่งคะแนนเก็บ ${fmt(cT)} คะแนนให้ทุก${W}เท่า ๆ กัน">แบ่งคะแนนเก็บเท่ากัน</button>
+      <button type="button" class="btn primary" id="bSave">บันทึกโครงสร้าง</button></span></div>`;
+  const totals = () => {
+    const t = builderTotals(), ok = t.collect === cT && t.final === fT;
+    document.getElementById("bTotals").innerHTML = `<span class="tag ${t.collect === cT ? "ok" : "warn"}">คะแนนเก็บ ${fmt(t.collect)}/${fmt(cT)} (${t.count} ${W})</span>
+      <span class="tag ${t.final === fT ? "ok" : "warn"}">ปลายภาค ${fmt(t.final)}/${fmt(fT)}</span>${ok ? "" : ' <span class="muted small">บันทึกได้ แต่ต้องรวมให้พอดีก่อนส่งผล</span>'}`;
+  };
+  totals();
+  const at = (ref) => { const [w, i] = ref.split(":"); const list = w === "loose" ? B.loose : w === "final" ? B.finals : B.units[Number(w.slice(1))].items; return [list, Number(i)]; };
+  view.oninput = (e) => {
+    if (!builder) return;
+    const el = e.target;
+    if (el.dataset.uf) { const [ui, f] = el.dataset.uf.split(":"); B.units[ui][f] = el.value; B.dirty = true; }
+    else if (el.dataset.max) { const [list, i] = at(el.dataset.max); list[i].max = el.value.trim(); B.dirty = true; totals(); }
+    else if (el.dataset.ft) { B.finals[Number(el.dataset.ft)].title = el.value; B.dirty = true; }
+  };
+  for (const b of view.querySelectorAll("[data-rm]")) b.onclick = () => { const [list, i] = at(b.dataset.rm); list.splice(i, 1); B.dirty = true; drawBuilder(); };
+  for (const b of view.querySelectorAll("[data-udel]")) b.onclick = async () => {
+    const u = B.units[Number(b.dataset.udel)];
+    if ((u.title || u.items.length) && !(await confirmBox("ลบหน่วยการเรียนรู้", u.items.length ? `${W}ในหน่วยนี้ ${u.items.length} ข้อจะย้ายไปอยู่กลุ่ม "ยังไม่อยู่ในหน่วยใด"` : "ลบหน่วยนี้", "ลบหน่วย", true))) return;
+    B.loose.push(...u.items); B.units.splice(Number(b.dataset.udel), 1); B.dirty = true; drawBuilder();
+  };
+  for (const b of view.querySelectorAll("[data-mv]")) b.onclick = () => { const [ui, d] = b.dataset.mv.split(":").map(Number); const [u] = B.units.splice(ui, 1); B.units.splice(ui + d, 0, u); B.dirty = true; drawBuilder(); };
+  for (const b of view.querySelectorAll("[data-pick]")) b.onclick = () => pickIndicators(Number(b.dataset.pick));
+  document.getElementById("bAddUnit").onclick = () => { B.units.push({ id: null, title: "", hours: "", task: "", items: [] }); B.dirty = true; drawBuilder(); view.querySelectorAll(".b-unit")[B.units.length - 1]?.scrollIntoView({ block: "center" }); };
+  document.getElementById("bAddFinal").onclick = () => { B.finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${B.term}`, max: "" }); B.dirty = true; drawBuilder(); };
+  document.getElementById("bSplit").onclick = () => {
+    const all = [...B.units.flatMap((u) => u.items), ...B.loose];
+    if (!all.length) { toast(`ยังไม่ได้เลือก${W}`, "bad"); return; }
+    const each = Math.floor((cT / all.length) * 100) / 100;
+    all.forEach((it, i) => { it.max = String(i === all.length - 1 ? r2(cT - each * (all.length - 1)) : each); });
+    B.dirty = true; drawBuilder();
+  };
+  document.getElementById("bBack").onclick = async () => {
+    if (B.dirty && !(await confirmBox("ออกโดยไม่บันทึก", "สิ่งที่แก้ในหน้านี้จะไม่ถูกบันทึก", "ออก", true))) return;
+    builder = null; render();
+  };
+  document.getElementById("bSave").onclick = () => saveBuilder();
+}
+
+async function pickIndicators(ui) {
+  const B = builder, u = B.units[ui];
+  const where = new Map(); // itemKey → ข้อความบอกว่าอยู่ที่ไหน
+  B.units.forEach((x, i) => { if (i !== ui) for (const it of x.items) where.set(itemKey(it), `หน่วยที่ ${i + 1}`); });
+  const mine = new Set(u.items.map(itemKey)), loose = new Set(B.loose.map(itemKey));
+  // ตัวชี้วัดที่เคยบันทึกในรายวิชาแต่ไม่อยู่ในคลัง ก็ให้เห็นในรายการด้วย
+  const extra = [...u.items, ...B.loose].filter((it) => !bankCache.some((b) => itemKey(b) === itemKey(it))).map((it) => ({ code: it.code, title: it.title, kind: "" }));
+  const list = [...bankCache, ...extra];
+  const groups = KIND_GROUPS.map(([k, label]) => [label, list.filter((b) => (b.kind || "") === k)]).filter(([, l]) => l.length);
+  const row = (b, i) => { const k = itemKey(b), other = where.get(k);
+    return `<label class="check pick-row"><input type="checkbox" name="p${i}" ${mine.has(k) ? "checked" : ""} ${other ? "disabled" : ""}>
+      <span><b>${esc(b.code || "")}</b> ${esc(b.title)}${other ? ` <span class="tag">อยู่ใน${other}</span>` : loose.has(k) ? ' <span class="tag warn">ยังไม่อยู่ในหน่วย</span>' : ""}</span></label>`; };
+  let idx = 0; const flatList = [];
+  const res = await dialog({
+    title: `เลือก${W} — หน่วยที่ ${ui + 1}${u.title ? ` ${u.title}` : ""}`, wide: true, okText: "ใช้ที่เลือก",
+    body: `${groups.length ? groups.map(([label, l]) => `<div class="pick-group"><div class="pick-head"><b>${esc(label)}</b> <span class="muted small">${l.length} ข้อ</span>
+        <button type="button" class="btn small" data-gall>เลือกทั้งกลุ่ม</button></div>
+        <div style="display:grid;gap:6px">${l.map((b) => { flatList.push(b); return row(b, idx++); }).join("")}</div></div>`).join("")
+        : `<p class="muted">ยังไม่มี${W}ของวิชานี้ในคลัง</p>`}
+      <details class="pick-group" ${groups.length ? "" : "open"}><summary>พิมพ์${W}เอง (ไม่มีในคลัง)</summary>
+        <p class="muted small">บรรทัดละ 1 ข้อ เช่น <code>ท 1.1 ป.4/1 อ่านออกเสียงบทร้อยแก้ว…</code></p>
+        <textarea name="typed" placeholder="รหัส ข้อความ"></textarea></details>`,
+    onOpen: (d) => { for (const b of d.querySelectorAll("[data-gall]")) b.onclick = () => { for (const x of b.closest(".pick-group").querySelectorAll("input[type=checkbox]:not(:disabled)")) x.checked = true; }; },
+  });
+  if (!res.ok) return;
+  const chosen = flatList.filter((b, i) => res.data[`p${i}`]);
+  const keepKeys = new Set(chosen.map(itemKey));
+  const old = new Map([...u.items, ...B.loose].map((it) => [itemKey(it), it]));
+  // ตัวชี้วัดที่ติ๊กออกจากหน่วยนี้ → ลบออกจากโครงสร้าง · ที่เลือกจากกลุ่มยังไม่อยู่ในหน่วย → ย้ายเข้าหน่วยนี้ (คงคะแนนเต็มเดิม)
+  u.items = chosen.map((b) => old.get(itemKey(b)) || { id: null, code: b.code || "", title: b.title, max: "" });
+  B.loose = B.loose.filter((it) => !keepKeys.has(itemKey(it)));
+  for (const r of parseIndicatorLines(res.data.typed || "")) if (!u.items.some((x) => itemKey(x) === itemKey(r))) u.items.push({ id: null, code: r.code || "", title: r.title, max: "" });
+  B.dirty = true; drawBuilder();
+}
+
+async function saveBuilder(confirm = false) {
+  const B = builder;
+  const bad = B.units.findIndex((u) => !String(u.title).trim());
+  if (bad >= 0) { toast(`กรุณาพิมพ์ชื่อหน่วยการเรียนรู้ที่ ${bad + 1}`, "bad"); view.querySelector(`[data-uf="${bad}:title"]`)?.focus(); return; }
+  const noMax = [...B.units.flatMap((u) => u.items), ...B.loose, ...B.finals].find((it) => !(Number(it.max) > 0));
+  if (noMax) { toast(`ใส่คะแนนเต็มของ "${(noMax.code || noMax.title).slice(0, 30)}" ก่อน`, "bad"); return; }
+  const it = (x) => ({ id: x.id, code: x.code, title: x.title, max_score: x.max });
+  const body = { term: B.term, confirm, units: B.units.map((u) => ({ id: u.id, title: u.title, hours: u.hours, task: u.task, items: u.items.map(it) })), loose: B.loose.map(it), finals: B.finals.map(it) };
+  await flush();
+  try {
+    data = await api(`/api/courses/${courseId}/structure`, { method: "PUT", body });
+  } catch (err) {
+    if (err.data?.needs_confirm && !confirm) {
+      if (await confirmBox("มีคะแนนนักเรียนในช่องที่เอาออก", esc(err.message), "บันทึกและลบคะแนน", true)) return saveBuilder(true);
+      return;
+    }
+    showError(err); return;
+  }
+  builder = null; toast("บันทึกโครงสร้างรายวิชาแล้ว"); render();
+}

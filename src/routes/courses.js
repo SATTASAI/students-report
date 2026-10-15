@@ -65,7 +65,7 @@ function cleanUnit(raw) {
   if (!title) fail(400, "กรุณาระบุชื่อหน่วยการเรียนรู้");
   const hours = raw.hours === "" || raw.hours == null ? null : Number(raw.hours);
   if (hours != null && (!Number.isFinite(hours) || hours < 0 || hours > 400)) fail(400, "ชั่วโมงต้องเป็น 0–400");
-  return { term, no, title, hours, task: text(raw.task, 200) || null };
+  return { term, no, title, hours, task: text(raw.task, 500) || null };
 }
 
 // สร้างหน่วย + ช่องคะแนนชุดใหม่ในรายวิชา (ใช้ทั้งคัดลอกจากห้องอื่นและใช้แม่แบบ)
@@ -99,7 +99,7 @@ async function readStructure(env, courseId, terms = [1, 2]) {
 // ฝ่ายวัดผลแก้รายวิชาที่ส่งแล้ว: บันทึกประวัติ (ครูเห็นในหน้ารายวิชา) และถ้าอนุมัติแล้วให้กลับไปรอผู้บริหารอนุมัติใหม่
 const EDIT_WHAT = {
   scores: "แก้คะแนน", results: "แก้ผลพิเศษ/ผลแก้ตัว", items: "แก้โครงสร้างคะแนน", "items-order": "จัดลำดับช่องคะแนน",
-  "copy-items": "คัดลอกโครงสร้างคะแนน", units: "แก้หน่วยการเรียนรู้", "apply-template": "ใช้แม่แบบโครงสร้าง",
+  "copy-items": "คัดลอกโครงสร้างคะแนน", units: "แก้หน่วยการเรียนรู้", "apply-template": "ใช้แม่แบบโครงสร้าง", structure: "แก้โครงสร้างรายวิชา",
 };
 export async function handleCourses(request, env, user, parts, method, url) {
   const copy = method !== "GET" ? request.clone() : null;
@@ -234,6 +234,82 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     return json({ indicators: results });
   }
 
+
+  // ---------- สร้าง/แก้โครงสร้างรายวิชาทั้งภาคในครั้งเดียว (หน้าสร้างโครงสร้างรายวิชา) ----------
+  // body: { term, units: [{id?, title, hours, task, items: [{id?, code, title, max_score}]}], loose: [{id, code, title, max_score}],
+  //         finals: [{id?, title, max_score}], confirm }
+  // หน่วยเรียงเลขใหม่ตามลำดับที่ส่งมา · ช่องคะแนนเดิมที่ไม่อยู่ในรายการ = ลบ (ถ้ามีคะแนนแล้วต้อง confirm)
+  if (sub === "structure" && method === "PUT") {
+    const course = await assertCourseAccess(env, user, id, { write: true });
+    const b = await readJson(request);
+    const term = Number(b.term);
+    if (![1, 2].includes(term)) fail(400, "ภาคเรียนต้องเป็น 1 หรือ 2");
+    const [{ results: oldUnits }, { results: oldItems }] = await Promise.all([
+      env.DB.prepare("SELECT * FROM gr_units WHERE course_id = ? AND term_number = ?").bind(course.id, term).all(),
+      env.DB.prepare("SELECT * FROM gr_items WHERE course_id = ? AND term_number = ?").bind(course.id, term).all(),
+    ]);
+    const unitsIn = (Array.isArray(b.units) ? b.units : []).slice(0, MAX_UNITS_PER_COURSE);
+    const units = unitsIn.map((u, i) => {
+      const c = cleanUnit({ ...u, term_number: term, unit_no: i + 1 });
+      const uid = u.id == null || u.id === "" ? null : Number(u.id);
+      if (uid != null && !oldUnits.some((x) => x.id === uid)) fail(400, "หน่วยการเรียนรู้ไม่ใช่ของรายวิชา/ภาคนี้");
+      return { ...c, id: uid, items: (Array.isArray(u.items) ? u.items : []) };
+    });
+    const flat = []; // {id, unitIdx, kind, code, title, max}
+    const pushItem = (raw, unitIdx, kind) => {
+      const it = cleanItem({ ...raw, term_number: term, kind, unit_id: "" }, flat.length);
+      const iid = raw.id == null || raw.id === "" ? null : Number(raw.id);
+      if (iid != null && !oldItems.some((x) => x.id === iid)) fail(400, "ช่องคะแนนไม่ใช่ของรายวิชา/ภาคนี้");
+      if (iid != null && flat.some((x) => x.id === iid)) fail(400, "ช่องคะแนนซ้ำ");
+      flat.push({ id: iid, unitIdx, kind, code: it.code, title: it.title, max: it.max });
+    };
+    units.forEach((u, ui) => u.items.forEach((raw) => pushItem(raw, ui, "indicator")));
+    (Array.isArray(b.loose) ? b.loose : []).forEach((raw) => pushItem(raw, null, "indicator"));
+    (Array.isArray(b.finals) ? b.finals : []).forEach((raw) => pushItem(raw, null, "final"));
+    const otherTerm = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_items WHERE course_id = ? AND term_number <> ?").bind(course.id, term).first();
+    if (otherTerm.n + flat.length > MAX_ITEMS_PER_COURSE) fail(400, `รายวิชาหนึ่งมีช่องคะแนนได้ไม่เกิน ${MAX_ITEMS_PER_COURSE} ช่อง`);
+    const otherUnits = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_units WHERE course_id = ? AND term_number <> ?").bind(course.id, term).first();
+    if (otherUnits.n + units.length > MAX_UNITS_PER_COURSE) fail(400, `รายวิชาหนึ่งมีหน่วยได้ไม่เกิน ${MAX_UNITS_PER_COURSE} หน่วย`);
+    // ลดคะแนนเต็มต่ำกว่าคะแนนที่กรอกแล้วไม่ได้
+    for (const it of flat.filter((x) => x.id != null)) {
+      const old = oldItems.find((x) => x.id === it.id);
+      if (it.max < old.max_score) {
+        const over = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_scores WHERE item_id = ? AND (score > ? OR remedial > ?)").bind(it.id, it.max, it.max).first();
+        if (over.n > 0) fail(409, `ลดคะแนนเต็มของ "${old.title.slice(0, 40)}" เป็น ${it.max} ไม่ได้ — มีนักเรียน ${over.n} คนได้คะแนนเกินแล้ว`);
+      }
+    }
+    const keep = new Set(flat.filter((x) => x.id != null).map((x) => x.id));
+    const removed = oldItems.filter((x) => !keep.has(x.id));
+    if (removed.length) {
+      const { results: filled } = await env.DB.prepare(`SELECT item_id, COUNT(*) AS n FROM gr_scores WHERE score IS NOT NULL AND item_id IN (${removed.map(() => "?").join(",")}) GROUP BY item_id`).bind(...removed.map((x) => x.id)).all();
+      if (filled.length && !b.confirm) {
+        const names = filled.map((f) => removed.find((x) => x.id === f.item_id)).map((x) => x.code || x.title.slice(0, 30));
+        return json({ error: `ช่องคะแนนที่เอาออกมีคะแนนนักเรียนแล้ว: ${names.join(", ")} — ถ้าบันทึก คะแนนของช่องเหล่านี้จะถูกลบถาวร`, needs_confirm: true }, 409);
+      }
+    }
+    // หน่วยใหม่ต้องได้ id ก่อนผูกช่องคะแนน
+    const unitIds = [];
+    for (const u of units) {
+      if (u.id != null) { unitIds.push(u.id); continue; }
+      const r = await env.DB.prepare("INSERT INTO gr_units (course_id, term_number, unit_no, title, hours, task) VALUES (?,?,?,?,?,?)")
+        .bind(course.id, term, u.no, u.title, u.hours, u.task).run();
+      unitIds.push(r.meta.last_row_id);
+    }
+    const stmts = [];
+    units.forEach((u, i) => { if (u.id != null) stmts.push(env.DB.prepare("UPDATE gr_units SET unit_no=?, title=?, hours=?, task=? WHERE id=?").bind(u.no, u.title, u.hours, u.task, u.id)); });
+    for (const x of removed) stmts.push(env.DB.prepare("DELETE FROM gr_scores WHERE item_id = ?").bind(x.id), env.DB.prepare("DELETE FROM gr_items WHERE id = ?").bind(x.id));
+    const keepUnits = new Set(unitIds);
+    for (const u of oldUnits.filter((x) => !keepUnits.has(x.id))) stmts.push(env.DB.prepare("DELETE FROM gr_units WHERE id = ?").bind(u.id));
+    flat.forEach((it, i) => {
+      const unit = it.unitIdx == null ? null : unitIds[it.unitIdx], order = (i + 1) * 10;
+      stmts.push(it.id != null
+        ? env.DB.prepare("UPDATE gr_items SET kind=?, code=?, title=?, max_score=?, unit_id=?, sort_order=? WHERE id=?").bind(it.kind, it.code, it.title, it.max, unit, order, it.id)
+        : env.DB.prepare("INSERT INTO gr_items (course_id, term_number, kind, code, title, max_score, sort_order, unit_id) VALUES (?,?,?,?,?,?,?,?)").bind(course.id, term, it.kind, it.code, it.title, it.max, order, unit));
+    });
+    await batchAll(env, stmts);
+    await audit(env, user, "structure.save", { course: course.id, term, units: units.length, items: flat.length, removed: removed.length });
+    return json(serializeBundle(await courseBundle(env, course), user));
+  }
 
   // ---------- หน่วยการเรียนรู้ ----------
   if (sub === "units" && method === "POST") {
