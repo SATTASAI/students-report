@@ -8,9 +8,10 @@ import { ASSESSMENT_GROUPS, ACTIVITY_PARTS } from "../../public/js/grading.js";
 const GROUP = ASSESSMENT_GROUPS.find((g) => g.type === "activity");
 const KEYS = GROUP.items.flatMap(([k]) => ACTIVITY_PARTS.map(([p]) => `${k}_${p}`));
 
-// ห้องที่ผู้ใช้บันทึกได้: ฝ่ายวิชาการ/ทีมวัดผล = ทุกห้อง (เฉพาะห้องนำร่องถ้าตั้งไว้), ครูประจำชั้น = ห้องของตน
-async function editableRooms(env, user, year) {
-  if (user.can_import) {
+// ห้องที่ผู้ใช้บันทึกได้: ฝ่ายวิชาการ/ทีมวัดผล (เปิดในบทบาทวัดผล) = ทุกห้อง (เฉพาะห้องนำร่องถ้าตั้งไว้)
+// ครูประจำชั้น หรือบัญชีวัดผลที่เปิดในบทบาทครู (scope=teacher) = เฉพาะห้องที่ตนเป็นครูประจำชั้น
+async function editableRooms(env, user, year, teacherScope) {
+  if (user.can_import && !teacherScope) {
     const settings = await getSettings(env, year.id);
     return (await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level))
       .map((r) => ({ grade_level: r.grade_level, classroom: r.classroom, students: r.students }))
@@ -26,7 +27,7 @@ async function editableRooms(env, user, year) {
 export async function handleActivities(request, env, user, parts, method, url) {
   requireUser(user);
   const year = await resolveYear(env, url.searchParams.get("year"));
-  const rooms = await editableRooms(env, user, year);
+  const rooms = await editableRooms(env, user, year, url.searchParams.get("scope") === "teacher");
   const pick = async (grade, room) => {
     grade = text(grade, 10); room = text(room, 10);
     if (!isPrimaryGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");

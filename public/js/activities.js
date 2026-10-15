@@ -5,10 +5,11 @@ const me = await shell("activities");
 const view = document.getElementById("view");
 document.getElementById("main").hidden = false;
 const Y = me.year.id;
+const SCOPE = me.role === "teacher" ? "&scope=teacher" : ""; // บทบาทครู: เห็นเฉพาะห้องที่เป็นครูประจำชั้น
 document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} · ทุกคนผ่านเป็นค่าเริ่มต้น เอาเครื่องหมายออกเฉพาะคนที่ไม่ผ่าน · ผลขึ้นใน ปพ.5.1 และ ปพ.6 อัตโนมัติ`;
 
 let meta;
-try { meta = await api(`/api/activities?year=${Y}`); }
+try { meta = await api(`/api/activities?year=${Y}${SCOPE}`); }
 catch (err) { view.innerHTML = `<div class="panel empty"><strong>เปิดไม่ได้</strong>${esc(err.message)}</div>`; throw err; }
 if (!meta.rooms.length) {
   view.innerHTML = `<div class="panel empty"><strong>ยังไม่มีห้องที่บันทึกได้</strong>หน้านี้สำหรับครูประจำชั้นและฝ่ายวิชาการ</div>`;
@@ -23,7 +24,7 @@ let saving = false, timer, d;
 async function load() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   const [g, r] = room.split("/");
-  d = await api(`/api/activities?year=${Y}&grade=${encodeURIComponent(g)}&room=${encodeURIComponent(r)}`);
+  d = await api(`/api/activities?year=${Y}${SCOPE}&grade=${encodeURIComponent(g)}&room=${encodeURIComponent(r)}`);
   draw();
 }
 
@@ -86,7 +87,7 @@ async function flush() {
   let failed = null;
   for (const [rm, list] of Object.entries(byRoom)) {
     const [g, r] = rm.split("/");
-    try { await api(`/api/activities?year=${Y}`, { method: "PUT", body: { grade: g, room: r, changes: list.map((x) => x.change) } }); }
+    try { await api(`/api/activities?year=${Y}${SCOPE}`, { method: "PUT", body: { grade: g, room: r, changes: list.map((x) => x.change) } }); }
     catch (err) {
       failed = err;
       if (err.status >= 500 || !err.status) for (const x of list) if (!pending.has(x.k)) pending.set(x.k, x.v); // เครือข่าย: เก็บไว้ลองใหม่

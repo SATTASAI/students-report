@@ -132,6 +132,12 @@ test("กิจกรรมพัฒนาผู้เรียน: ครูป
   // ฝ่ายวิชาการแก้ได้ทุกห้อง
   await call("admin", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_t", value: "" }] }, { expect: 200 });
   assert.equal((await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.assessments[sid].act_club_t, undefined);
+  // บัญชีวัดผลที่เปิดในบทบาทครู (scope=teacher) เห็น/บันทึกได้เฉพาะห้องที่ตนเป็นครูประจำชั้น
+  assert.deepEqual((await call("admin", "GET", "/api/activities?scope=teacher", null, { expect: 200 })).data.rooms, []);
+  await call("admin", "GET", `/api/activities?scope=teacher&${Q}`, null, { expect: 403 });
+  await call("admin", "PUT", "/api/activities?scope=teacher", { ...body, changes: [{ student_id: sid, item_key: "act_club_t", value: "มผ" }] }, { expect: 403 });
+  // ครูประจำชั้นเห็นเฉพาะห้องตัวเอง
+  assert.deepEqual(meta.rooms.map((r) => `${r.grade_level}/${r.classroom}`), ["ป.4/1"]);
 });
 
 test("คลังเอกสาร: ครูเห็นเฉพาะห้องที่เป็นครูประจำชั้นและวิชาที่สอน ผู้ดูแลในบทบาทครูก็เหมือนกัน", async () => {
