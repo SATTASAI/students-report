@@ -447,8 +447,8 @@ function attText(sid) {
   const detail = [["ข", "ขาด"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]].filter(([k]) => a[k]).map(([k, l]) => `${l} ${a[k]}`).join(" · ");
   if (!rate || rate.pct == null) return detail ? `<span data-tip="${esc(detail)} (วัน)" tabindex="0">${off}</span>` : "–";
   const low = rate.pct < Number(data.settings.attendance_pass_pct);
-  const tip = `มาเรียน ${rate.days - rate.absent}/${rate.days} วัน (${rate.pct}%) นับถึงวันนี้${detail ? ` · ${detail}` : ""}`;
-  return `<span data-tip="${esc(tip)}" tabindex="0" ${low ? 'style="color:var(--bad);font-weight:700"' : ""}>${fmt(rate.pct)}%</span>`;
+  const tip = `มาเรียน ${rate.days - rate.absent}/${rate.days} วัน (${fmt(rate.pct, 2)}%) นับถึงวันนี้${detail ? ` · ${detail}` : ""}`;
+  return `<span data-tip="${esc(tip)}" tabindex="0" ${low ? 'style="color:var(--bad);font-weight:700"' : ""}>${fmt(rate.pct, 2)}%</span>`;
 }
 
 // ---------------- สรุปผล / ร มส / แก้ตัว ----------------
@@ -582,7 +582,7 @@ function renderSetup() {
   const termLine = (t) => {
     const has = data.items.some((i) => i.term_number === t);
     if (!has) return "";
-    const ci = Math.round(sum(t, "indicator") * 100) / 100, fi = Math.round(sum(t, "final") * 100) / 100;
+    const ci = Number(sum(t, "indicator").toPrecision(12)), fi = Number(sum(t, "final").toPrecision(12));
     const ok = !issues.some((x) => x.startsWith(`ภาค ${t}`));
     return `<span class="tag ${ok ? "ok" : "warn"}">${W} ${fmt(ci)}/${fmt(cT)} · ปลายภาค ${fmt(fi)}/${fmt(fT)}</span>`;
   };
@@ -595,7 +595,7 @@ function renderSetup() {
     const units = (data.units || []).filter((u) => u.term_number === term);
     if (!items.length && !units.length) return `<p class="muted small">ยังไม่มีโครงสร้างรายวิชา${can ? ` — กด "สร้างโครงสร้างรายวิชา" เพื่อพิมพ์หน่วยการเรียนรู้ ภาระงาน และเลือก${W}` : ""}</p>`;
     const inUnit = (u) => items.filter((i) => i.unit_id === u.id);
-    const sumMax = (list) => Math.round(list.reduce((a, i) => a + i.max_score, 0) * 100) / 100;
+    const sumMax = (list) => Number(list.reduce((a, i) => a + i.max_score, 0).toPrecision(12));
     const loose = items.filter((i) => i.kind !== "final" && !units.some((u) => u.id === i.unit_id));
     const finals = items.filter((i) => i.kind === "final");
     return units.map((u) => `<div class="unit">
@@ -791,7 +791,7 @@ async function loadBank() { bankCache = (await api(`/api/courses/${courseId}/ban
 const itemKey = (x) => `${x.code || ""}|${x.title}`;
 function bankKindOf(it) { const b = (bankCache || []).find((x) => itemKey(x) === itemKey(it)); return b?.kind || ""; }
 const KIND_GROUPS = [["ระหว่างทาง", "ตัวชี้วัดระหว่างทาง"], ["ปลายทาง", "ตัวชี้วัดปลายทาง"], ["ผลการเรียนรู้", "ผลการเรียนรู้"], ["ผลลัพธ์การเรียนรู้", "ผลลัพธ์การเรียนรู้"], ["", "อื่น ๆ"]];
-const r2 = (n) => Math.round(n * 100) / 100;
+const r2 = (n) => Number(Number(n).toPrecision(12)); // ลบแค่ความคลาดเคลื่อนของเลขทศนิยมในคอมพิวเตอร์ ไม่ปัด
 
 // ---- ร่างในเบราว์เซอร์: หน้าสร้างโครงสร้างไม่บันทึกอัตโนมัติ แต่เก็บร่างไว้กันเผลอรีเฟรช/ปิดหน้า ----
 function readDraft(term) { try { const d = JSON.parse(localStorage.getItem(draftKey(term)) || "null"); return d && Array.isArray(d.units) ? d : null; } catch { return null; } }

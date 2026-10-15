@@ -1,6 +1,6 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
 import { isKinderGrade, resolveYear, listRooms, getSettings, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday, mirrorBody, compareRoom, compareSubject, homeroomNames, writableIds, isLeft } from "../lib/data.js";
-import { ASSESSMENT_KEYS, validAssessmentValue } from "../../public/js/grading.js";
+import { ASSESSMENT_KEYS, validAssessmentValue, clean } from "../../public/js/grading.js";
 import { KINDER_COMMENT_FIELDS } from "../../public/js/kinder.js";
 import KINDER_BANK from "../data/indicator-bank-2569-kinder.js";
 
@@ -125,7 +125,8 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       const n = decimalOf(v);
       if (n === null) return null;
       if (!Number.isFinite(n) || n <= lo || n >= hi) fail(400, `${label}ต้องอยู่ระหว่าง ${lo}–${hi}`);
-      return Math.round(n * 10) / 10;
+      if (Math.abs(n * 10 - Math.round(n * 10)) > 1e-6) fail(400, `${label}ทศนิยมได้ไม่เกิน 1 ตำแหน่ง`); // ไม่ปัดให้เอง
+      return clean(n);
     };
     const stmts = [];
     for (const c of changes) {
@@ -384,7 +385,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
         const label = `${st.name_prefix || ""}${st.first_name || ""} ${sj.code}`;
         const collect = num(c.collect, `${label} ระหว่างภาค`), final = num(c.final, `${label} ปลายภาค`);
         let total = num(c.total, `${label} รวม`);
-        if (total == null && collect != null && final != null) total = Math.round((collect + final) * 100) / 100;
+        if (total == null && collect != null && final != null) total = clean(collect + final);
         if (collect != null && final != null && Math.abs(collect + final - total) > 1e-6) fail(400, `${label}: ระหว่างภาค + ปลายภาค ต้องเท่ากับคะแนนรวม`);
         if (total == null && (collect != null || final != null)) fail(400, `${label}: กรอกคะแนนรวมของภาค (เต็ม 50)`);
         stmts.push(total == null

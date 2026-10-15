@@ -10,7 +10,7 @@ const Y = me.year.id;
 const CAN_EDIT = !!(me.user.can_import || me.user.role === "executive" || me.user.role === "superadmin");
 let d, ev, stage = sessionStorage.getItem("sr-sar-stage") || "basic";
 const pending = new Map(); // item_key → {target, manual_value, note}
-const fmt = (v) => (v == null ? "–" : Number.isInteger(v) ? String(v) : Number(v).toFixed(2).replace(/0$/, ""));
+const fmt = (v) => (v == null ? "–" : String(Number((Math.trunc(Number((Number(v) * 100).toPrecision(12))) / 100).toPrecision(12)))); // ไม่ปัด
 const LEVEL_CLASS = { "ยอดเยี่ยม": "lv5", "ดีเลิศ": "lv4", "ดี": "lv3", "ปานกลาง": "lv2", "กำลังพัฒนา": "lv1" };
 const levelTag = (l) => (l ? `<span class="sar-lv ${LEVEL_CLASS[l] || ""}">${esc(l)}</span>` : '<span class="muted small">ยังไม่มีข้อมูล</span>');
 const metTag = (m) => (m == null ? "" : m ? '<span class="tag ok">บรรลุ</span>' : '<span class="tag warn">ไม่บรรลุ</span>');

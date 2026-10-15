@@ -1,6 +1,6 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
 import { assertCourseAccess, courseBundle, loadCourse, canViewCourse, studentName, isLeft } from "../lib/data.js";
-import { computeStudentResult, resultWithAttendance, validateRemedial, structureIssues, indicatorWord, indicatorResult, submissionChecks } from "../../public/js/grading.js";
+import { clean, computeStudentResult, resultWithAttendance, validateRemedial, structureIssues, indicatorWord, indicatorResult, submissionChecks } from "../../public/js/grading.js";
 import { gradeSettings, getSettings, assessmentsFor, ITEM_ORDER_SQL, ITEM_ORDER_BY, compareThai } from "../lib/data.js";
 import { ADMIN_ROLES } from "../lib/http.js";
 
@@ -44,7 +44,7 @@ function cleanItem(raw, i = 0) {
   if (max == null || !Number.isFinite(max) || max <= 0 || max > 1000) fail(400, `รายการที่ ${i + 1}: คะแนนเต็มต้องมากกว่า 0 และไม่เกิน 1000`);
   if (!twoDecimals(max)) fail(400, `รายการที่ ${i + 1}: คะแนนเต็มมีทศนิยมได้ไม่เกิน 2 ตำแหน่ง`);
   const unit = raw.unit_id === "" || raw.unit_id == null ? null : Number(raw.unit_id);
-  return { term, kind, code: text(raw.code, 60) || null, title, max: Math.round(max * 100) / 100, unit: kind === "final" ? null : unit };
+  return { term, kind, code: text(raw.code, 60) || null, title, max: clean(max), unit: kind === "final" ? null : unit };
 }
 
 // ตัวชี้วัด (ปลายทาง) ที่สอบปลายภาควัด — เก็บเป็น JSON [{code, title}]
@@ -540,7 +540,7 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
         if (score !== null) {
           const err = num(c.score, item, "คะแนน");
           if (err) { errors.push({ ...where, error: err }); continue; }
-          score = Math.round(score * 100) / 100;
+          score = clean(score); // ผ่านการตรวจทศนิยมไม่เกิน 2 ตำแหน่งแล้ว — ไม่ปัด
         }
         // ลบคะแนนเดิม: ถ้ามีคะแนนแก้ตัวอยู่ เก็บแถวไว้ (score = NULL) เพื่อไม่ให้คะแนนแก้ตัวหายตาม
         if (score == null) stmts.push(
@@ -562,7 +562,7 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
           if (err) { errors.push({ ...where, error: err }); continue; }
         }
         stmts.push(env.DB.prepare("UPDATE gr_scores SET remedial = ?, updated_by = ?, updated_at = datetime('now') WHERE item_id = ? AND student_id = ?")
-          .bind(rem == null ? null : Math.round(rem * 100) / 100, user.id, item.id, sid));
+          .bind(rem == null ? null : clean(rem), user.id, item.id, sid));
       }
     }
     if (errors.length) return json({ error: "มีคะแนนที่ไม่ถูกต้อง ระบบยังไม่ได้บันทึกชุดนี้", errors }, 400);

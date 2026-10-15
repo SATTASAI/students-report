@@ -1,6 +1,6 @@
 import { governmentHolidaysBetween } from "./thai-holidays.js";
 import { fail } from "./http.js";
-import { computeStudentResult, resultWithAttendance } from "../../public/js/grading.js";
+import { computeStudentResult, resultWithAttendance, clean } from "../../public/js/grading.js";
 
 export const DEFAULT_SETTINGS = {
   collect_ratio: 70, indicator_pass_pct: 50, attendance_pass_pct: 80,
@@ -465,7 +465,7 @@ export async function attendanceRates(env, yearId, studentIds, today = thaiToday
     const days = elapsed.filter((d) => d >= from);
     const set = new Set(days);
     const a = (absent[sid] || []).filter((d) => set.has(d)).length;
-    out[sid] = { days: days.length, absent: a, pct: days.length ? Math.floor(((days.length - a) / days.length) * 10000) / 100 : null };
+    out[sid] = { days: days.length, absent: a, pct: days.length ? clean(((days.length - a) * 100) / days.length) : null }; // ร้อยละจริง ไม่ปัด/ไม่ตัด (ใช้เทียบเกณฑ์เวลาเรียน)
   }
   return out;
 }

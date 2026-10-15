@@ -276,7 +276,7 @@ const statusTag = (c) => (c.status === "approved" ? '<span class="tag ok">อน
 // ---------- ครูผู้สอน ----------
 let selRoom = sessionStorage.getItem("sr-admin-room") || "";
 let teachView = sessionStorage.getItem("sr-admin-teachview") || "room"; // room = รายห้อง · teacher = รายครู
-const perWeek = (hours) => Math.round((Number(hours) || 0) / 40 * 10) / 10; // ชั่วโมง/ปี ÷ 40 สัปดาห์ = คาบ/สัปดาห์
+const perWeek = (hours) => Number((Math.trunc(Number(((Number(hours) || 0) / 40 * 10).toPrecision(12))) / 10).toPrecision(12)); // ไม่ปัด // ชั่วโมง/ปี ÷ 40 สัปดาห์ = คาบ/สัปดาห์
 const pendingTag = (t) => (t.pending ? ' <span class="tag warn" data-tip="เพิ่งสมัคร — มอบหมายวิชาแล้วจะได้สิทธิ์ครูอัตโนมัติ">สมัครใหม่</span>' : "");
 async function renderCourses() {
   const [{ courses }, list] = await Promise.all([api(`/api/admin/courses?${yq}`), teachers()]);
@@ -380,7 +380,7 @@ function renderTeacherLoad(courses, list, viewSwitch) {
     } catch (err) { showError(err); render(); }
   };
 }
-const fmtNum = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+const fmtNum = (n) => (Number.isInteger(n) ? String(n) : String(Number((Math.trunc(Number((n * 10).toPrecision(12))) / 10).toPrecision(12)))); // ไม่ปัด
 
 async function renderHomerooms() {
   const [{ rooms }, list] = await Promise.all([api(`/api/admin/homerooms?${yq}`), teachers()]);

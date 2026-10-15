@@ -1,4 +1,4 @@
-import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear } from "/js/app.js";
+import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear, fmt } from "/js/app.js";
 import { ASSESSMENT_GROUPS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
 import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, domainSummary, overallSummary, shortCode } from "/js/kinder.js";
 
@@ -94,7 +94,7 @@ async function renderCarry() {
     if (!inp.dataset.f || inp.dataset.f === "total") return;
     const tr = inp.closest("tr"), t = inp.dataset.t;
     const a = tr.querySelector(`[data-t="${t}"][data-f="collect"]`).value.trim(), b = tr.querySelector(`[data-t="${t}"][data-f="final"]`).value.trim();
-    if (a !== "" && b !== "" && Number.isFinite(+a) && Number.isFinite(+b)) tr.querySelector(`[data-t="${t}"][data-f="total"]`).value = String(Math.round((+a + +b) * 100) / 100);
+    if (a !== "" && b !== "" && Number.isFinite(+a) && Number.isFinite(+b)) tr.querySelector(`[data-t="${t}"][data-f="total"]`).value = fmt(+a + +b);
   });
   for (const b of view.querySelectorAll("[data-save]")) b.onclick = async () => {
     const sid = Number(b.dataset.save), st = c.students.find((x) => x.id === sid), box = view.querySelector(`[data-st="${sid}"]`);
@@ -272,7 +272,7 @@ const bodyOf = (sid, r) => data.body?.[sid]?.[r] || {};
 function bmiText(sid) {
   for (const r of [...ROUNDS].reverse()) {
     const b = bodyOf(sid, r);
-    if (b.weight && b.height) return (b.weight / (b.height / 100) ** 2).toFixed(1);
+    if (b.weight && b.height) return fmt(b.weight / (b.height / 100) ** 2, 1); // ตัดทศนิยมทิ้ง ไม่ปัด
   }
   return "–";
 }
@@ -332,7 +332,7 @@ const saveK = () => { try { sessionStorage.setItem("sr-hr-k", JSON.stringify({ t
 const kOptions = (v, blank = "–") => [["", blank], ...KINDER_LEVELS.map(([n, l]) => [String(n), `${n} ${l}`])]
   .map(([val, label]) => `<option value="${val}" ${String(v ?? "") === val ? "selected" : ""}>${label}</option>`).join("");
 const kScore = (sid, code, t = kterm, r = kround) => kd.scores[sid]?.[code]?.[`${t}-${r}`] ?? "";
-const kLevelText = (lv, avg) => (lv ? `${levelLabel(lv)}${avg != null ? ` (${avg.toFixed(2)})` : ""}` : "–");
+const kLevelText = (lv, avg) => (lv ? `${levelLabel(lv)}${avg != null ? ` (${fmt(avg, 2)})` : ""}` : "–");
 const btnRow = (list, cur, attr) => list.map(([v, l]) => `<button class="btn small ${String(v) === String(cur) ? "primary" : ""}" data-${attr}="${v}">${l}</button>`).join("");
 
 async function renderKinder() {
@@ -350,7 +350,7 @@ function renderDev() {
     const v = items.map((i) => kScore(sid, i.code)).filter((x) => x !== "");
     if (!v.length) return "–";
     const avg = v.reduce((a, b) => a + Number(b), 0) / v.length;
-    return `${avg.toFixed(2)} <span class="small muted">${v.length}/${items.length}</span>`;
+    return `${fmt(avg, 2)} <span class="small muted">${v.length}/${items.length}</span>`;
   };
   let lastSub = "";
   view.innerHTML = `

@@ -5,7 +5,7 @@ import {
 } from "../lib/data.js";
 import { courseOverview } from "./admin.js";
 import { listAbsences, commentsFor } from "./homeroom.js";
-import { weightedGPA, NUMERIC_GRADES } from "../../public/js/grading.js";
+import { weightedGPA, NUMERIC_GRADES, trunc } from "../../public/js/grading.js";
 
 export async function handleMe(request, env, user, url) {
   requireUser(user);
@@ -184,12 +184,12 @@ export async function handleReports(request, env, user, parts, method, url) {
             if (NUMERIC_GRADES.includes(grade)) { row.sum += Number(grade); row.graded++; }
           }
         }
-        byRoom.push({ grade_level: g, classroom: r.classroom, students: ids.length, avg_gpa: gpas.length ? Math.floor((gpas.reduce((a, b) => a + b, 0) / gpas.length) * 100) / 100 : null });
+        byRoom.push({ grade_level: g, classroom: r.classroom, students: ids.length, avg_gpa: gpas.length ? trunc(gpas.reduce((a, b) => a + b, 0) / gpas.length, 2) : null });
       }
     }
     const subjects = Object.values(bySubject).map((r) => ({
-      ...r, mean: r.graded ? Math.floor((r.sum / r.graded) * 100) / 100 : null,
-      good_pct: r.graded && r.n ? Math.round((((r.counts["4"] || 0) + (r.counts["3.5"] || 0) + (r.counts["3"] || 0)) / r.n) * 1000) / 10 : null,
+      ...r, mean: r.graded ? trunc(r.sum / r.graded, 2) : null,
+      good_pct: r.graded && r.n ? (((r.counts["4"] || 0) + (r.counts["3.5"] || 0) + (r.counts["3"] || 0)) / r.n) * 100 : null, // ค่าจริง หน้าพิมพ์ตัดทศนิยมทิ้ง ไม่ปัด
     })).sort((a, b) => compareGrade(a.grade_level, b.grade_level) || compareSubject(a, b));
     return json({ year, settings: await getSettings(env, year.id), subjects, rooms: byRoom });
   }

@@ -66,3 +66,26 @@ test("สรุปการประเมินของครูประจ�
   const act = ASSESSMENT_GROUPS.find((g) => g.key === "act");
   assert.equal(summarizeGroup(act, { act_social_t: "มผ" }), "มผ");
 });
+
+test("ห้ามปัดเศษ: คะแนนรวม ตัดเกรด เกณฑ์แก้ตัว เวลาเรียน และการแสดงผล ใช้ค่าจริง", async () => {
+  const { computeStudentResult, gradeFromTotal, remedialCap, resultWithAttendance, clean, trunc } = await import("../public/js/grading.js");
+  const { fmt } = await import("./_fmt.mjs");
+  assert.equal(gradeFromTotal(79.99), "3.5");
+  assert.equal(gradeFromTotal(79.999), "3.5");
+  assert.equal(gradeFromTotal(80), "4");
+  assert.equal(clean(0.1 + 0.2), 0.3);
+  assert.equal(trunc(66.6666, 2), 66.66);
+  assert.equal(trunc(0.29, 2), 0.29);
+  // เกณฑ์แก้ตัว: ค่าจริง ไม่ปัดขึ้น
+  assert.equal(remedialCap({ max_score: 4.35, term_number: 1 }, { indicator_pass_pct: 55 }), 2.3925);
+  // คะแนนทศนิยมรวมกันตรง ๆ
+  const items = [{ id: 1, kind: "indicator", max_score: 17.5, term_number: 1 }, { id: 2, kind: "indicator", max_score: 17.5, term_number: 1 }, { id: 3, kind: "final", max_score: 15, term_number: 1 }];
+  const r = computeStudentResult(items, { 1: 10.25, 2: 10.35, 3: 12.15 }, {}, { collect_ratio: 70 });
+  assert.equal(r.term_scores[1].total, 32.75);
+  // ร้อยละมาเรียน 12/15 = 80 พอดี → ชั่วโมงไม่ถูกตัดจนไม่ถึงเกณฑ์
+  assert.equal(resultWithAttendance({}, { pct: clean((12 * 100) / 15) }, 200).hours_attended, 160);
+  // การแสดงผล: ไม่ปัด
+  assert.equal(fmt(2.3925), "2.3925");
+  assert.equal(fmt(7.36666, 1), "7.3");
+  assert.equal(fmt(79.999, 2), "79.99");
+});

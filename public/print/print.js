@@ -7,10 +7,17 @@ let thaiDigits = false;
 try { thaiDigits = localStorage.getItem("sr-thai-digits") === "1"; } catch { /* */ }
 export const td = (v) => thaiDigits ? String(v ?? "").replace(/[0-9]/g, (d) => THAI_DIGITS[d]) : String(v ?? "");
 
+// ทศนิยมคงที่ d ตำแหน่งแบบตัดทิ้ง ไม่ปัด เช่น ร้อยละ 66.666… → "66.66"
+export function fixed(n, d = 2) {
+  const k = 10 ** d, v = Math.trunc(Number((Number(n) * k).toPrecision(12))) / k;
+  return td(v.toFixed(d));
+}
+
 export function fmt(n) {
   if (n == null || n === "" || !Number.isFinite(Number(n))) return "";
-  const v = Number(n);
-  return td(Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""));
+  // ไม่ปัดเศษ: แสดงตามจริง (ตัดเฉพาะทศนิยมเกิน 4 ตำแหน่งของค่าที่หารไม่ลงตัว)
+  const v = Math.trunc(Number((Number(n) * 1e4).toPrecision(12))) / 1e4;
+  return td(String(Number(v.toPrecision(12))));
 }
 
 const MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];

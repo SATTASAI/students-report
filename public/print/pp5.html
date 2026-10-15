@@ -14,7 +14,7 @@
 // → 5 คุณลักษณะอันพึงประสงค์ → 6 ผลการประเมินตัวชี้วัด (รายภาค) → 7 สรุปผลการประเมิน (รายภาค + ทั้งปี)
 // ตัวเลขทุกตัวอ่านจากผลที่เซิร์ฟเวอร์คำนวณแล้ว (computed) — ไม่คำนวณคะแนนใหม่ในหน้านี้
 // ?course=ID = 1 วิชา, ?courses=1,2,3 หรือ ?grade=ป.4&room=2&year=ID = ทุกวิชาของห้องเป็นไฟล์เดียว
-import { esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDateUtc } from "/print/print.js";
+import { fixed, esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDateUtc } from "/print/print.js";
 import { indicatorResult, effectiveScore, indicatorWord, ASSESSMENT_GROUPS, summarizeGroup, summaryText, NUMERIC_GRADES } from "/js/grading.js";
 
 const q = params();
@@ -41,7 +41,7 @@ toolbar(title);
 document.title = books.length === 1 ? `ปพ.5 ${first.code} ${first.grade_level}-${first.classroom}` : `ปพ.5 ${first.grade_level}-${first.classroom} ทุกวิชา`;
 
 const statusNote = (x) => x.transfer_in_term ? `ย้ายเข้า` : x.enrollment_status === "transferred" ? "ย้ายออก" : x.enrollment_status === "withdrawn" ? "ออกกลางคัน" : x.enrollment_status === "moved" ? "ย้ายห้อง" : "ปกติ";
-const pctOf = (n, all) => all ? td((Math.round((n / all) * 10000) / 100).toFixed(2)) : td("0.00");
+const pctOf = (n, all) => all ? fixed((n / all) * 100, 2) : td("0.00"); // ร้อยละ ตัดทศนิยมตำแหน่งที่ 3 ทิ้ง ไม่ปัด
 const dots = (name, w = "................................................") => name ? esc(name) : w;
 const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
 // "ท 1.1 ป.4/2" → { std: "ท 1.1", no: "2" }
@@ -69,7 +69,7 @@ function book(d) {
   const good = (count["4"] + count["3.5"] + count["3"]);
   const noResult = active.length - cols.reduce((a, g) => a + count[g], 0); // ยังไม่มีผล — ให้ยอดรวมตรงกับจำนวนนักเรียน
   const failN = count["0"] + count["ร"] + count["มส"];
-  const two = (v) => v == null ? "–" : td((Math.floor(v * 100 + 1e-9) / 100).toFixed(2));
+  const two = (v) => v == null ? "–" : fixed(v, 2);
   const assessCount = (key) => {
     const g = ASSESSMENT_GROUPS.find((x) => x.key === key);
     const out = { 3: 0, 2: 0, 1: 0, 0: 0 };
@@ -179,10 +179,10 @@ function book(d) {
         </thead>
         <tbody>${d.students.map((x) => {
           const k = d.computed[x.id], t = k.term_scores?.[term], sc = d.scores[x.id] || {}, rem = d.remedials?.[x.id] || {};
-          const raw = Math.round(inds.reduce((a, it) => a + (sc[it.id] == null ? 0 : Number(sc[it.id])), 0) * 100) / 100;
+          const raw = Number(inds.reduce((a, it) => a + (sc[it.id] == null ? 0 : Number(sc[it.id])), 0).toPrecision(12));
           const hasRem = inds.some((it) => rem[it.id] != null);
           // คะแนนที่ได้จากการแก้ตัว — เทียบได้เฉพาะเมื่อโครงสร้างตรงสัดส่วน (ไม่ย่อขยาย)
-          const gain = t && t.exact ? Math.max(0, Math.round((t.collect - raw) * 100) / 100) : 0;
+          const gain = t && t.exact ? Math.max(0, Number((t.collect - raw).toPrecision(12))) : 0;
           const blank = !t || !inds.some((it) => sc[it.id] != null);
           const finBlank = !t || !fins.some((it) => sc[it.id] != null);
           if (t?.carried) return `<tr><td class="c">${td(x.number ?? "")}</td><td class="nm">${esc(x.name)}</td>

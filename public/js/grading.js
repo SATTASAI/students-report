@@ -15,22 +15,23 @@ export const GRADE_STEPS = [
 export const NUMERIC_GRADES = ["4", "3.5", "3", "2.5", "2", "1.5", "1", "0"];
 export const SPECIAL_RESULTS = ["ร", "มส"];
 
-// ตัดเกรดจากคะแนนรวม 100 — ไม่ปัดเศษ (ตัดทศนิยมทิ้ง) ตามที่โรงเรียนกำหนด
-// 79.99 → 79 → เกรด 3.5
+// ---------- ระบบนี้ห้ามปัดเศษ ----------
+// clean = ลบเฉพาะความคลาดเคลื่อนของเลขทศนิยมในคอมพิวเตอร์ (เช่น 0.1 + 0.2 = 0.30000000000000004 → 0.3) ค่าจริงไม่เปลี่ยน
+export const clean = (n) => (n == null || !Number.isFinite(Number(n)) ? n : Number(Number(n).toPrecision(12)));
+// trunc = ตัดทศนิยมที่เกิน d ตำแหน่งทิ้ง (ไม่ปัดขึ้น/ลง) ใช้เฉพาะค่าที่หารไม่ลงตัว เช่น ค่าเฉลี่ย ร้อยละ
+export const trunc = (n, d = 2) => { if (n == null || !Number.isFinite(Number(n))) return n; const k = 10 ** d; return clean(Math.trunc(clean(Number(n) * k)) / k); };
+
+// ตัดเกรดจากคะแนนรวม 100 ตามคะแนนจริง ไม่ปัดเศษ: 79.99 ยังไม่ถึง 80 → เกรด 3.5
 export function gradeFromTotal(total) {
   if (total == null || !Number.isFinite(total)) return null;
-  const whole = Math.floor(total + 1e-9);
-  for (const step of GRADE_STEPS) if (whole >= step.min) return step.grade;
+  const t = clean(total);
+  for (const step of GRADE_STEPS) if (t >= step.min) return step.grade;
   return "0";
 }
 
-export function round2(n) {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-
-// ปัดลงเป็นทศนิยม 2 ตำแหน่ง (ใช้แสดงคะแนนรวม ให้สอดคล้องกับการไม่ปัดขึ้น)
+// ตัดทศนิยมตำแหน่งที่ 3 ทิ้ง (ใช้เฉพาะค่าที่หารไม่ลงตัว เช่น ผลการเรียนเฉลี่ย) — ไม่ปัด
 export function floor2(n) {
-  return Math.floor(n * 100 + 1e-7) / 100;
+  return trunc(n, 2);
 }
 
 export function requiredHours(hoursPerYear, attendancePassPct) {
@@ -54,14 +55,13 @@ export function indicatorResult(item, score, settings) {
   return (Number(score) / max) * 100 + 1e-9 >= indicatorPassPct(settings, item.term_number) ? "ผ" : "มผ";
 }
 
-const sum2 = (a, b) => Math.round((a + b) * 100) / 100;
+const sum2 = (a, b) => clean(a + b); // บวกตรง ๆ ไม่ปัด (clean ลบแค่ความคลาดเคลื่อนของเลขทศนิยมในคอมพิวเตอร์)
 
-// คะแนนที่นับได้สูงสุดจากการสอบแก้ตัวของตัวชี้วัด = เกณฑ์ผ่านของภาคนั้น
-// ใช้คะแนนทศนิยม 2 ตำแหน่งที่น้อยที่สุดที่ "ผ่าน" (ปัดขึ้น) เพื่อให้ตรงกับ indicatorResult เสมอ
-// เช่น เต็ม 4.35 เกณฑ์ 55% = 2.3925 → นับได้ 2.40 (ถ้าปัดเป็น 2.39 จะยังขึ้นว่าไม่ผ่าน)
+// คะแนนที่นับได้สูงสุดจากการสอบแก้ตัวของตัวชี้วัด = เกณฑ์ผ่านของภาคนั้น ตามค่าจริง ไม่ปัด
+// เช่น เต็ม 4.35 เกณฑ์ 55% → นับได้ 2.3925
 export function remedialCap(item, settings) {
   const max = Number(item.max_score) || 0;
-  return Math.ceil(Math.round(max * indicatorPassPct(settings, item.term_number) * 1e6) / 1e6 - 1e-9) / 100;
+  return clean(max * indicatorPassPct(settings, item.term_number) / 100);
 }
 
 // คะแนนที่ใช้คิดผล: ถ้ามีคะแนนแก้ตัว นับ max(คะแนนเดิม, min(แก้ตัว, เกณฑ์ผ่าน))
@@ -84,7 +84,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
  * กติกา (ตามที่โรงเรียนตกลง):
  * - คิดรายภาค ภาคละ 50 คะแนน = ระหว่างภาค (collect_ratio / 2) + ปลายภาค ((100 - collect_ratio) / 2) เช่น 35 + 15
  *   ทั้งปี = ภาค 1 + ภาค 2 (เต็ม 100) แล้วตัดเกรดครั้งเดียว
- * - ไม่ปัดเศษอัตโนมัติ: ถ้าคะแนนเต็มของภาคตรงสัดส่วน ใช้คะแนนจริงบวกกันตรง ๆ (ทศนิยม 2 ตำแหน่งตามที่ครูกรอก)
+ * - ห้ามปัดเศษ: ถ้าคะแนนเต็มของภาคตรงสัดส่วน ใช้คะแนนจริงบวกกันตรง ๆ (ทศนิยมตามที่ครูกรอก)
  *   ถ้าไม่ตรง (ระบบจะไม่ให้ยืนยันผล) จึงเทียบสัดส่วนชั่วคราวแล้วตัดทศนิยมตำแหน่งที่ 3 ทิ้ง
  * - ระหว่างปี (ยังไม่ยืนยันผล) ถ้ายังไม่ครบ 2 ภาค หรือคะแนนยังไม่ครบ → ยังไม่มีผลการเรียน ("-")
  *   เมื่อยืนยันผลแล้วคะแนนยังไม่ครบ → ร
@@ -197,7 +197,7 @@ export function computeStudentResult(items, scores, result, settings, remedials,
 // ใช้เฉพาะเมื่อไม่มี hours_attended ที่บันทึกไว้เดิม · rate = { pct } จาก attendanceRates (null = ยังไม่เปิดภาค)
 export function resultWithAttendance(result, rate, hoursPerYear) {
   if (!rate || rate.pct == null || (result && result.hours_attended != null && result.hours_attended !== "")) return result || {};
-  return { ...(result || {}), hours_attended: Math.floor(Number(hoursPerYear || 0) * rate.pct) / 100 };
+  return { ...(result || {}), hours_attended: clean(Number(hoursPerYear || 0) * rate.pct / 100) };
 }
 
 // ตรวจโครงสร้างคะแนนก่อนยืนยันผล: คะแนนเต็มของแต่ละภาคต้องตรงสัดส่วน (เช่น 35 + 15 = 50)

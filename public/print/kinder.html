@@ -28,7 +28,7 @@
 <body>
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
-import { esc, params, get, toolbar, status, td } from "/print/print.js";
+import { fixed, esc, params, get, toolbar, status, td } from "/print/print.js";
 import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, termResult, domainSummary, overallSummary } from "/js/kinder.js";
 
 const p = params();
@@ -48,7 +48,7 @@ document.title = `${title} ${d.grade}-${d.room} ${d.year.year_be}`;
 
 const dots = "..........................................";
 const lv = (v) => (v == null ? "" : td(v));
-const lvText = (x) => (x.level ? `${levelLabel(x.level)} (${td(x.avg.toFixed(2))})` : "");
+const lvText = (x) => (x.level ? `${levelLabel(x.level)} (${fixed(x.avg, 2)})` : "");
 const teacherSigns = () => (d.teachers.length ? d.teachers : [""]).map((t) => `<div class="sign"><div class="line"></div>(${esc(t || dots)})<br>ครูประจำชั้น</div>`).join("");
 const header = (sub) => `<div style="display:grid;grid-template-columns:18mm 1fr;gap:4mm;align-items:center">
     <img src="/logo.jpg" alt="" style="width:18mm;height:18mm;border-radius:50%;object-fit:cover">

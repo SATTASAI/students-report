@@ -73,7 +73,7 @@ export function levelOf(pct, levels = DEFAULT_LEVELS) {
   if (pct == null || !Number.isFinite(Number(pct))) return null;
   return [...levels].sort((a, b) => b.min - a.min).find((l) => Number(pct) >= l.min)?.label ?? null;
 }
-const r2 = (x) => Math.round(x * 100) / 100;
+const r2 = (x) => { const v = Math.trunc(Number((x * 100).toPrecision(12))) / 100; return Number(v.toPrecision(12)); }; // ตัดทศนิยมตำแหน่งที่ 3 ทิ้ง ไม่ปัด
 export const pctOf = (m) => (m && m.den ? r2((m.num / m.den) * 100) : null);
 
 // ค่าของประเด็น: ครูกรอกเอง (manual) มาก่อน ไม่งั้นใช้ตัวชี้วัดหลักที่ระบบคำนวณ

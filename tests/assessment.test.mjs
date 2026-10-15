@@ -96,9 +96,11 @@ test("ครูประจำชั้น: ความคิดเห็น 4 
   // น้ำหนักส่วนสูง
   await call("t1", "PUT", `/api/homeroom/body?${Q}`, { changes: [{ student_id: s[0].id, round: 5, weight: 30 }] }, { expect: 400 });
   await call("t1", "PUT", `/api/homeroom/body?${Q}`, { changes: [{ student_id: s[0].id, round: 1, weight: 300 }] }, { expect: 400 });
-  await call("t1", "PUT", `/api/homeroom/body?${Q}`, { changes: [{ student_id: s[0].id, round: 1, weight: 32.45, height: 135 }, { student_id: s[1].id, round: 2, height: 140 }] }, { expect: 200 });
+  // ระบบไม่ปัดเศษให้เอง: ทศนิยมเกิน 1 ตำแหน่ง = ไม่รับ
+  await call("t1", "PUT", `/api/homeroom/body?${Q}`, { changes: [{ student_id: s[0].id, round: 1, weight: 32.45, height: 135 }] }, { expect: 400 });
+  await call("t1", "PUT", `/api/homeroom/body?${Q}`, { changes: [{ student_id: s[0].id, round: 1, weight: 32.4, height: 135 }, { student_id: s[1].id, round: 2, height: 140 }] }, { expect: 200 });
   d = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data;
-  assert.deepEqual(d.body[s[0].id][1], { weight: 32.5, height: 135 });
+  assert.deepEqual(d.body[s[0].id][1], { weight: 32.4, height: 135 });
   assert.equal(d.body[s[1].id][2].weight, null);
   await call("t1", "PUT", `/api/homeroom/body?${Q}`, { changes: [{ student_id: s[0].id, round: 1, weight: "", height: "" }] }, { expect: 200 });
   d = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data;

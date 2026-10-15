@@ -309,10 +309,11 @@ export function confirmBox(title, message, okText = "ยืนยัน", danger
   return dialog({ title, body: `<p>${message}</p>`, okText, okClass: danger ? "danger" : "primary" }).then((r) => r.ok);
 }
 
-export function fmt(n, digits = 2) {
+// แสดงตัวเลขโดยไม่ปัดเศษ: ทศนิยมที่เกิน digits ตำแหน่งถูกตัดทิ้ง (คะแนนในระบบมีไม่เกิน 4 ตำแหน่ง จึงแสดงครบตามจริง)
+export function fmt(n, digits = 4) {
   if (n == null || n === "" || !Number.isFinite(Number(n))) return "–";
-  const v = Number(n);
-  return Number.isInteger(v) ? String(v) : v.toFixed(digits).replace(/0+$/, "").replace(/\.$/, "");
+  const k = 10 ** digits, v = Math.trunc(Number((Number(n) * k).toPrecision(12))) / k;
+  return String(Number(v.toPrecision(12)));
 }
 
 export function debounce(fn, ms) {

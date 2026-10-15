@@ -6,7 +6,7 @@ import {
   resolveYear, listRooms, roomRoster, yearResultsForStudents, assessmentsFor, attendanceRates,
   isPrimaryGrade, isKinderGrade, compareGrade, getSettings,
 } from "../lib/data.js";
-import { ASSESSMENT_GROUPS, summarizeGroup } from "../../public/js/grading.js";
+import { ASSESSMENT_GROUPS, summarizeGroup, clean } from "../../public/js/grading.js";
 import { SAR_ITEM_KEYS, CORE_AREAS, DEFAULT_LEVELS } from "../../public/js/sar.js";
 import { LEARNING_AREAS } from "./admin.js";
 // กลุ่มสาระเรียงตามหลักสูตรแกนกลาง (ภาษาไทย คณิต วิทย์ …) กลุ่มอื่นของ ป.1–3 ต่อท้าย
@@ -32,7 +32,8 @@ export async function handleSar(request, env, user, parts, method, url) {
         if (x === "" || x == null) return null;
         const n = Number(x);
         if (!Number.isFinite(n) || n < 0 || n > 100) fail(400, `${key}: ${label}ต้องเป็นร้อยละ 0–100`);
-        return Math.round(n * 100) / 100;
+        if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) fail(400, `${key}: ${label}ทศนิยมได้ไม่เกิน 2 ตำแหน่ง`); // ไม่ปัดให้เอง
+        return clean(n);
       };
       stmts.push(env.DB.prepare(`INSERT INTO gr_sar_values (academic_year_id, item_key, target, manual_value, note, updated_by, updated_at) VALUES (?,?,?,?,?,?,datetime('now'))
         ON CONFLICT(academic_year_id, item_key) DO UPDATE SET target = excluded.target, manual_value = excluded.manual_value, note = excluded.note,
