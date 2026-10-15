@@ -188,15 +188,22 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   // ---------- แบบบันทึกประจำวัน: ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ + ตรวจสุขภาพรายสัปดาห์ ----------
   // หน้าละ 1 เดือน วันในตาราง = วันเรียน (จันทร์–ศุกร์ในภาคเรียน ไม่รวมวันหยุดจากปฏิทินวันหยุด)
   if (sub === "logs") {
-    // ไม่ระบุห้อง → รายชื่อห้องที่เปิดได้: ครูประจำชั้นเห็นห้องของตน ฝ่ายวิชาการ/วัดผลเห็นทุกห้อง
+    // สิทธิ์: บันทึกได้เฉพาะครูประจำชั้นของห้องนั้น (ผู้ดูแล/ฝ่ายวัดผลก็บันทึกห้องอื่นไม่ได้)
+    // scope=teacher (เปิดในบทบาทครู) → เห็นเฉพาะห้องที่ตนเป็นครูประจำชั้น · บทบาทวัดผล/ผู้ดูแล → ดูทุกห้องแบบอ่านอย่างเดียว
+    const year = await resolveYear(env, url.searchParams.get("year"));
+    const own = (await env.DB.prepare("SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?").bind(year.id, user.id).all()).results.sort(compareRoom);
+    const isOwn = (g, c) => own.some((r) => r.grade_level === g && r.classroom === c);
+    const viewAll = user.is_admin && url.searchParams.get("scope") !== "teacher";
     if (method === "GET" && !url.searchParams.get("grade")) {
-      const year = await resolveYear(env, url.searchParams.get("year"));
-      const rooms = user.is_admin
-        ? (await listRooms(env, year.id)).filter((r) => isSchoolGrade(r.grade_level)).map((r) => ({ grade_level: r.grade_level, classroom: r.classroom }))
-        : (await env.DB.prepare("SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?").bind(year.id, user.id).all()).results.sort(compareRoom);
+      const rooms = viewAll
+        ? (await listRooms(env, year.id)).filter((r) => isSchoolGrade(r.grade_level)).map((r) => ({ grade_level: r.grade_level, classroom: r.classroom, can_edit: isOwn(r.grade_level, r.classroom) }))
+        : own.map((r) => ({ grade_level: r.grade_level, classroom: r.classroom, can_edit: true }));
       return json({ year, rooms, daily: DAILY_LOGS, health_items: HEALTH_ITEMS });
     }
-    const { year, grade, room } = await roomContext(env, user, url);
+    const grade = text(url.searchParams.get("grade"), 10), room = text(url.searchParams.get("room"), 10);
+    if (!isSchoolGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
+    const canEdit = isOwn(grade, room);
+    if (!canEdit && !(viewAll && method === "GET")) fail(403, method === "GET" ? "ดูได้เฉพาะห้องที่คุณเป็นครูประจำชั้น" : "บันทึกได้เฉพาะครูประจำชั้นของห้องนี้");
     const roster = await roomRoster(env, year.id, grade, room);
     const ids = new Set(roster.map((s) => s.id)), writable = writableIds(roster);
     const cal = await schoolCalendar(env, year.id);
@@ -220,7 +227,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       }
       const [settings, hrTeachers] = await Promise.all([getSettings(env, year.id), homeroomNames(env, year.id, grade, room)]);
       const students = roster.map((s) => ({ id: s.id, number: s.number, name: studentName(s), enrollment_status: s.enrollment_status }));
-      return json({ year, grade, room, type, month, months, days, today, holidays, terms: cal.terms, weeks: weeksOf(days), records, absent, students,
+      return json({ year, grade, room, can_edit: canEdit, type, month, months, days, today, holidays, terms: cal.terms, weeks: weeksOf(days), records, absent, students,
         daily: DAILY_LOGS, health_items: HEALTH_ITEMS,
         school: { name: settings.school_name, director: settings.director_name }, teachers: hrTeachers });
     }

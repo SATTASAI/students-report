@@ -11,7 +11,9 @@ const Y = me.year.id;
 document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} · ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ และตรวจสุขภาพ — วันในตารางตามปฏิทินวันหยุด`;
 
 let meta;
-try { meta = await api(`/api/homeroom/logs?year=${Y}`); }
+// บทบาทครู → เฉพาะห้องที่ตนเป็นครูประจำชั้น · บทบาทวัดผล → ดูทุกห้อง แต่บันทึกได้เฉพาะห้องของตน
+const SCOPE = me.role === "teacher" ? "&scope=teacher" : "";
+try { meta = await api(`/api/homeroom/logs?year=${Y}${SCOPE}`); }
 catch (err) { view.innerHTML = `<div class="panel empty"><strong>เปิดไม่ได้</strong>${esc(err.message)}</div>`; throw err; }
 if (!meta.rooms.length) {
   view.innerHTML = `<div class="panel empty"><strong>ยังไม่มีห้องที่บันทึกได้</strong>หน้านี้สำหรับครูประจำชั้น — ฝ่ายวัดผลกำหนดครูประจำชั้นที่เมนู "ครูประจำชั้น"</div>`;
@@ -19,13 +21,13 @@ if (!meta.rooms.length) {
 }
 const key = (r) => `${r.grade_level}/${r.classroom}`;
 let room = params().get("room") || sessionStorage.getItem("sr-log-room");
-if (!meta.rooms.some((r) => key(r) === room)) room = key(meta.rooms[0]);
+if (!meta.rooms.some((r) => key(r) === room)) room = key(meta.rooms.find((r) => r.can_edit) || meta.rooms[0]);
 let logType = params().get("type") || sessionStorage.getItem("sr-hr-log") || "milk";
 if (!LOG_FORMS.some(([k]) => k === logType)) logType = "milk";
 let month = sessionStorage.getItem("sr-hr-month") || "";
 const pending = new Map(); // "ห้อง|sid|type|date" → "" | 1 | ok | no
 let saving = false, timer, d;
-const roomQ = (r = room) => { const [g, c] = r.split("/"); return `year=${Y}&grade=${encodeURIComponent(g)}&room=${encodeURIComponent(c)}`; };
+const roomQ = (r = room) => { const [g, c] = r.split("/"); return `year=${Y}&grade=${encodeURIComponent(g)}&room=${encodeURIComponent(c)}${SCOPE}`; };
 
 async function load() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
@@ -72,6 +74,7 @@ function showState(err) {
 
 const val = (sid, type, k) => d.records[sid]?.[type]?.[k] || "";
 function set(sid, type, k, v) {
+  if (!d.can_edit) return;
   if (val(sid, type, k) === v) return;
   const r = ((d.records[sid] ||= {})[type] ||= {});
   if (v) r[k] = v; else delete r[k];
@@ -82,7 +85,7 @@ function draw() {
   const idx = d.months.indexOf(d.month);
   view.innerHTML = `
     <div class="sheet-tools">
-      <span class="actions">${meta.rooms.length > 1 ? meta.rooms.map((r) => `<button class="btn small ${key(r) === room ? "primary" : ""}" data-room="${esc(key(r))}">${esc(key(r))}</button>`).join("") : `<b>ชั้น ${esc(room)}</b>`}</span>
+      <span class="actions">${meta.rooms.length > 1 ? meta.rooms.map((r) => `<button class="btn small ${key(r) === room ? "primary" : ""}" data-room="${esc(key(r))}"${r.can_edit ? "" : ' data-tip="ดูอย่างเดียว"'}>${esc(key(r))}${r.can_edit ? "" : " 👁"}</button>`).join("") : `<b>ชั้น ${esc(room)}</b>`}</span>
       <span class="actions">
         <button class="btn small" id="xlsxBtn">ส่งออก Excel</button>
         <button class="btn small" id="pdfBtn">พิมพ์ / PDF</button>
@@ -99,6 +102,7 @@ function draw() {
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
     ${d.holidays?.length ? `<p class="muted small" style="margin:0 0 8px">วันหยุดเดือนนี้ (ไม่แสดงในตาราง): ${d.holidays.map((h) => `${dayNum(h.holiday_date)} ${esc(h.name)}`).join(" · ")}</p>` : ""}
+    ${d.can_edit ? "" : `<p class="note" style="margin:0 0 8px">ดูอย่างเดียว — บันทึกได้เฉพาะครูประจำชั้นของห้อง ${esc(room)}</p>`}
     <div id="logSheet"></div>`;
   const go = async (m) => { await settle(); month = m; sessionStorage.setItem("sr-hr-month", m); load().catch(showError); };
   document.getElementById("mSel").onchange = (e) => go(e.target.value);
@@ -112,6 +116,10 @@ function draw() {
   document.getElementById("xlsxBtn").onclick = () => exportXlsx().catch(showError);
   document.getElementById("pdfBtn").onclick = () => printPdf().catch(showError);
   if (logType === "health") drawHealth(); else drawDaily();
+  if (!d.can_edit) {
+    for (const b of view.querySelectorAll("#logSheet .tick, #logSheet .col-all")) b.disabled = true;
+    document.getElementById("saveState").hidden = true;
+  }
   showState();
 }
 

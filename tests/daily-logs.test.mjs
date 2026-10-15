@@ -125,7 +125,7 @@ test("วันหยุดราชการ: ระบบใส่ให้อ
 test("หน้าบันทึกประจำวัน: รายชื่อห้องตามสิทธิ์ และข้อมูลสำหรับพิมพ์ (ชื่อโรงเรียน ครูประจำชั้น รายชื่อนักเรียน)", async () => {
   const { call } = await setup();
   const t1 = (await call("t1", "GET", "/api/homeroom/logs", null, { expect: 200 })).data;
-  assert.deepEqual(t1.rooms, [{ grade_level: "ป.4", classroom: "1" }]);
+  assert.deepEqual(t1.rooms, [{ grade_level: "ป.4", classroom: "1", can_edit: true }]);
   assert.equal((await call("t2", "GET", "/api/homeroom/logs", null, { expect: 200 })).data.rooms.length, 0);
   const all = (await call("admin", "GET", "/api/homeroom/logs", null, { expect: 200 })).data.rooms;
   assert.ok(all.length > 1 && all.some((r) => r.grade_level.startsWith("อ.")));
@@ -134,4 +134,28 @@ test("หน้าบันทึกประจำวัน: รายชื่
   assert.deepEqual(m.teachers, ["ครูสมใจ ใจดี"]);
   assert.ok(m.school.name);
   assert.ok(m.terms.length >= 1);
+});
+
+test("บันทึกประจำวัน: บันทึกได้เฉพาะครูประจำชั้นของห้องตน — ผู้ดูแลที่เป็นครูประจำชั้นด้วยเห็นเฉพาะห้องตนในบทบาทครู", async () => {
+  const { call } = await setup();
+  const rooms = (await call("admin", "GET", "/api/homeroom/logs", null, { expect: 200 })).data.rooms;
+  const other = rooms.find((r) => r.grade_level !== "ป.4" || r.classroom !== "1");
+  await call("admin", "POST", "/api/admin/import/homerooms", { rows: [{ room: `${other.grade_level}/${other.classroom}`, teachers: "admin@test.local" }] }, { expect: 200 });
+  const sid = (await call("t1", "GET", `/api/homeroom/logs?${Q}&type=milk&month=2026-11`, null, { expect: 200 })).data.students[0].id;
+  const change = { changes: [{ student_id: sid, type: "milk", date: "2026-11-05", value: "1" }] };
+
+  // บทบาทครู: เห็นเฉพาะห้องที่ตนประจำชั้น เปิดห้องอื่นไม่ได้
+  const mine = (await call("admin", "GET", "/api/homeroom/logs?scope=teacher", null, { expect: 200 })).data.rooms;
+  assert.deepEqual(mine, [{ grade_level: other.grade_level, classroom: other.classroom, can_edit: true }]);
+  await call("admin", "GET", `/api/homeroom/logs?${Q}&type=milk&scope=teacher`, null, { expect: 403 });
+
+  // บทบาทวัดผล: ดูทุกห้องได้ แต่ห้องที่ไม่ได้ประจำชั้นเป็นอ่านอย่างเดียว
+  const all = (await call("admin", "GET", "/api/homeroom/logs", null, { expect: 200 })).data.rooms;
+  assert.equal(all.find((r) => r.grade_level === "ป.4" && r.classroom === "1").can_edit, false);
+  assert.equal(all.find((r) => r.grade_level === other.grade_level && r.classroom === other.classroom).can_edit, true);
+  assert.equal((await call("admin", "GET", `/api/homeroom/logs?${Q}&type=milk&month=2026-11`, null, { expect: 200 })).data.can_edit, false);
+  await call("admin", "PUT", `/api/homeroom/logs?${Q}`, change, { expect: 403 });
+  await call("t2", "PUT", `/api/homeroom/logs?${Q}`, change, { expect: 403 });
+  await call("t1", "PUT", `/api/homeroom/logs?${Q}`, change, { expect: 200 });
+  assert.equal((await call("t1", "GET", `/api/homeroom/logs?${Q}&type=milk&month=2026-11`, null, { expect: 200 })).data.can_edit, true);
 });
