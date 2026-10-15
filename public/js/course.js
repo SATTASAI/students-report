@@ -153,7 +153,7 @@ function renderSheet(term) {
   const termMax = items.reduce((a, i) => a + i.max_score, 0);
   view.innerHTML = `
     <div class="sheet-tools">
-      <span class="muted small">${can ? "พิมพ์คะแนนแล้วกด Enter เพื่อลงไปคนถัดไป · คัดลอกช่วงคะแนนจาก Excel มาวางได้ · บันทึกอัตโนมัติ" : "ดูได้อย่างเดียว"}</span>
+      <span class="muted small">${can ? "พิมพ์คะแนนแล้วกด Enter เพื่อลงไปคนถัดไป · คัดลอกคะแนนจาก Excel (หลายแถวหลายคอลัมน์) คลิกช่องแรกแล้ววาง Ctrl+V ได้ทีเดียว — ถ้าคัดลอกติดชื่อหรือเลขประจำตัวมาด้วย ระบบวางให้ตรงคนเอง · บันทึกอัตโนมัติ" : "ดูได้อย่างเดียว"}</span>
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
     <div class="sheet-wrap">
@@ -270,20 +270,67 @@ function bindSheet(items, term) {
     const textData = e.clipboardData.getData("text/plain");
     if (!/[\t\n]/.test(textData.trim())) return; // ค่าเดียว — ให้ช่องจัดการเอง
     e.preventDefault();
-    const rows = textData.replace(/\r/g, "").replace(/\n+$/, "").split("\n").map((r) => r.split("\t"));
+    let rows = textData.replace(/\r/g, "").replace(/\n+$/, "").split("\n").map((r) => r.split("\t").map((x) => x.trim()));
     const all = inputs();
     const start = all.indexOf(t);
     const r0 = Math.floor(start / cols), c0 = start % cols;
-    let count = 0, skipped = 0, bad = 0;
-    rows.forEach((row, dr) => row.forEach((val, dc) => {
-      const target = all[(r0 + dr) * cols + (c0 + dc)];
-      if (!target || c0 + dc >= cols) { skipped++; return; }
+    let count = 0, skipped = 0, bad = 0, unmatched = 0;
+    const put = (target, val) => {
       if (target.readOnly) return; // ภาคที่ใช้คะแนนยกมา
-      target.value = val.trim();
+      target.value = val === "-" ? "" : val;
       if (acceptCell(target, items, term)) count++; else bad++;
-    }));
-    toast(`วางคะแนน ${count} ช่อง${bad ? ` · ไม่ถูกต้อง ${bad} ช่อง (ช่องสีแดง ยังไม่บันทึก)` : ""}${skipped ? ` · ข้อมูลเกินตาราง ${skipped} ช่องไม่ได้วาง` : ""}`, bad ? "bad" : "");
+    };
+    // คัดลอกมาพร้อมเลขที่/เลขประจำตัว/ชื่อ → วางตามตัวนักเรียน (ลำดับใน Excel ไม่ตรงกับระบบก็ได้)
+    const matched = rows.map(matchPastedRow);
+    const filled = rows.filter((r) => r.some((x) => x !== ""));
+    if (filled.length && matched.filter(Boolean).length >= Math.ceil(filled.length * 0.6)) {
+      rows.forEach((row, i) => {
+        const m = matched[i];
+        if (!m) { if (row.some((x) => x !== "" && parseScore(x).ok)) unmatched++; return; }
+        const tr = table.querySelector(`tr[data-sid="${m.sid}"]`);
+        const cells = tr ? [...tr.querySelectorAll("input")] : [];
+        row.slice(m.start).forEach((val, dc) => { if (c0 + dc >= cols) { skipped++; return; } if (cells[c0 + dc]) put(cells[c0 + dc], val); });
+      });
+    } else {
+      // หัวตาราง (แถวแรกไม่มีตัวเลขเลย) ไม่ต้องวาง
+      if (rows.length > 1 && !rows[0].some((x) => x !== "" && parseScore(x).ok)) rows = rows.slice(1);
+      rows.forEach((row, dr) => row.forEach((val, dc) => {
+        const target = all[(r0 + dr) * cols + (c0 + dc)];
+        if (!target || c0 + dc >= cols) { skipped++; return; }
+        put(target, val);
+      }));
+    }
+    toast(`วางคะแนน ${count} ช่อง${bad ? ` · ไม่ถูกต้อง ${bad} ช่อง (ช่องสีแดง ยังไม่บันทึก)` : ""}${unmatched ? ` · ไม่พบชื่อนักเรียน ${unmatched} แถว` : ""}${skipped ? ` · ข้อมูลเกินตาราง ${skipped} ช่องไม่ได้วาง` : ""}`, bad || unmatched ? "bad" : "");
   });
+}
+
+// แถวที่วางจาก Excel ขึ้นต้นด้วยเลขที่ / เลขประจำตัว / ชื่อ–สกุล → {sid, start: คอลัมน์แรกที่เป็นคะแนน}
+const normName = (x) => String(x || "").replace(/^(เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.|นางสาว|นาย|นาง|น\.ส\.)\s*/, "").replace(/\s+/g, "");
+function matchPastedRow(row) {
+  const studs = data.students;
+  const byCell = (cell) => {
+    if (!cell) return null;
+    const n = normName(cell);
+    return studs.find((s) => s.student_code && String(s.student_code) === cell) || (n.length >= 3 ? studs.find((s) => normName(s.name) === n) : null) || null;
+  };
+  for (let i = 0; i < Math.min(3, row.length); i++) {
+    const s = byCell(row[i]);
+    if (!s) continue;
+    // คอลัมน์ก่อนหน้าต้องเป็นเลขที่ของคนเดียวกันหรือว่าง (กันจับผิดคน)
+    if (row.slice(0, i).some((x) => x !== "" && x !== String(s.number ?? "") && !byCell(x))) continue;
+    let end = i + 1;
+    // คอลัมน์ถัดไปที่เป็นเลขประจำตัว/ชื่อ/นามสกุลของคนเดียวกัน ไม่ใช่คะแนน
+    const ownText = (x) => x !== "" && !parseScore(x).ok && normName(x).length >= 2 && normName(s.name).includes(normName(x));
+    while (end < row.length && (byCell(row[end])?.id === s.id || ownText(row[end]))) end++;
+    return { sid: s.id, start: end };
+  }
+  // ชื่อและนามสกุลแยก 2 คอลัมน์
+  for (let i = 0; i < Math.min(3, row.length - 1); i++) {
+    const n = normName(`${row[i]}${row[i + 1]}`);
+    const s = n.length >= 3 && studs.find((x) => normName(x.name) === n);
+    if (s) return { sid: s.id, start: i + 2 };
+  }
+  return null;
 }
 
 function parseScore(raw) {
