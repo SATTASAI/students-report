@@ -206,3 +206,31 @@ test("นำเข้าข้อมูลได้เฉพาะผู้ด�
   env.DB.raw.prepare("UPDATE users SET role = 'superadmin' WHERE id = 1").run();
   await call("admin", "POST", "/api/admin/import/subjects", { rows: [row], dry_run: true }, { expect: 200 });
 });
+
+test("คลังตัวชี้วัดผูกรายวิชา: วิชาเห็นเฉพาะของตน + ของกลาง (ไม่ระบุรหัสวิชา) และบอกประเภทระหว่างทาง/ปลายทาง", async () => {
+  const { env, call } = await setup();
+  await call("admin", "POST", "/api/admin/subjects/template", { grades: ["ป.4"] }, { expect: 200 });
+  await call("admin", "POST", "/api/admin/courses/generate", {}, { expect: 200 });
+  const c = await env.DB.prepare("SELECT c.id, s.code, s.grade_level, s.learning_area FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id WHERE s.grade_level LIKE 'ป.%' ORDER BY c.id LIMIT 1").first();
+  const other = c.code.slice(0, 1) + "99999";
+  const base = { grade_level: c.grade_level, learning_area: c.learning_area };
+  const r = (await call("admin", "POST", "/api/admin/indicator-bank/import", { rows: [
+    { ...base, code: "X 1.1 ป.4/1", title: "ของวิชานี้", subject_code: c.code, kind: "ปลายทาง" },
+    { ...base, code: "X 1.1 ป.4/2", title: "ของวิชาอื่น", subject_code: other, kind: "ระหว่างทาง" },
+    { ...base, code: "X 1.1 ป.4/3", title: "ของกลาง" },
+  ] }, { expect: 200 })).data;
+  assert.equal(r.added, 3);
+  // นำเข้าซ้ำไม่เพิ่ม
+  assert.equal((await call("admin", "POST", "/api/admin/indicator-bank/import", { rows: [{ ...base, code: "X 1.1 ป.4/1", title: "ของวิชานี้", subject_code: c.code, kind: "ปลายทาง" }] }, { expect: 200 })).data.added, 0);
+  await call("admin", "POST", "/api/admin/indicator-bank/import", { rows: [{ ...base, title: "x", kind: "อื่น ๆ" }] }, { expect: 400 });
+  await call("admin", "POST", "/api/admin/indicator-bank/import", { rows: [{ ...base, title: "x", subject_code: "abc" }] }, { expect: 400 });
+  const bank = (await call("admin", "GET", `/api/courses/${c.id}/bank`, null, { expect: 200 })).data.indicators;
+  assert.deepEqual(bank.map((b) => b.title).sort(), ["ของกลาง", "ของวิชานี้"].sort());
+  assert.equal(bank.find((b) => b.title === "ของวิชานี้").kind, "ปลายทาง");
+  const groups = (await call("admin", "GET", "/api/admin/indicator-bank", null, { expect: 200 })).data.groups;
+  assert.equal(groups.find((g) => g.subject_code === c.code).final, 1);
+  const list = (await call("admin", "GET", `/api/admin/indicator-bank/list?grade=${encodeURIComponent(c.grade_level)}&area=${encodeURIComponent(c.learning_area)}&subject=${encodeURIComponent(other)}`, null, { expect: 200 })).data.indicators;
+  assert.equal(list.length, 1);
+  await call("t1", "DELETE", `/api/admin/indicator-bank/${list[0].id}`, null, { expect: 403 });
+  await call("admin", "DELETE", `/api/admin/indicator-bank/${list[0].id}`, null, { expect: 200 });
+});

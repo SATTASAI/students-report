@@ -3,7 +3,7 @@
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-11";
+export const SCHEMA_VERSION = "gr-12";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -255,6 +255,9 @@ export const ADDED_COLUMNS = [
   // gr-8: ครู → ฝ่ายวัดผลตรวจ → ผู้บริหารอนุมัติ
   ["gr_courses", "reviewed_at", "TEXT"],
   ["gr_courses", "reviewed_by", "INTEGER"], // บรรทัดที่อยู่บนปก ปพ.5 เช่น อำเภอแก่งกระจาน จังหวัดเพชรบุรี
+  // gr-12: คลังตัวชี้วัดผูกกับรายวิชา (ว่าง = ใช้ได้ทุกวิชาของกลุ่มสาระ) + ประเภท ระหว่างทาง/ปลายทาง/ผลการเรียนรู้
+  ["gr_indicator_bank", "subject_code", "TEXT"],
+  ["gr_indicator_bank", "kind", "TEXT"],
 ];
 
 async function addMissingColumns(env) {

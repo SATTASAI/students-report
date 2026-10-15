@@ -5,6 +5,7 @@ export const LEARNING_AREAS = [
   "ภาษาไทย", "คณิตศาสตร์", "วิทยาศาสตร์และเทคโนโลยี", "สังคมศึกษา ศาสนาและวัฒนธรรม",
   "สุขศึกษาและพลศึกษา", "ศิลปะ", "การงานอาชีพ", "ภาษาต่างประเทศ",
 ];
+export const BANK_KINDS = ["ระหว่างทาง", "ปลายทาง", "ผลการเรียนรู้"];
 
 // โครงรายวิชาพื้นฐานตามหลักสูตรแกนกลางฯ 2551 (เวลาเรียนต่อปี) — ผู้ดูแลต้องตรวจทานให้ตรงหลักสูตรสถานศึกษา
 const BASIC_TEMPLATE = [
@@ -51,7 +52,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
   const [, , section, idPart, action] = parts; // /api/admin/<section>/<id>/<action>
   const isImport = method === "POST" && (section === "import" || (section === "subjects" && idPart === "copy") ||
     (section === "homerooms" && idPart === "import") || (section === "indicator-bank" && idPart === "import"));
-  if (isImport) requireImporter(user);
+  if (isImport || (section === "indicator-bank" && method === "DELETE")) requireImporter(user);
 
   if (section === "settings") {
     const year = await resolveYear(env, url.searchParams.get("year"));
@@ -577,16 +578,32 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       const clean = [];
       for (const [i, r] of rows.entries()) {
         const grade = text(r.grade_level, 10), area = text(r.learning_area, 80), title = text(r.title, 500), code = text(r.code, 60);
+        const subj = text(r.subject_code, 20).replace(/\s+/g, ""), kind = text(r.kind, 20);
+        if (subj && !/^[ก-ฮ]\d{5}$/.test(subj)) fail(400, `แถว ${i + 1}: รหัสวิชา "${subj}" ไม่ถูกต้อง`);
+        if (kind && !BANK_KINDS.includes(kind)) fail(400, `แถว ${i + 1}: ประเภท "${kind}" ไม่ถูกต้อง`);
         if (!PRIMARY_GRADES.includes(grade)) fail(400, `แถว ${i + 1}: ระดับชั้น "${grade}" ไม่ถูกต้อง`);
         if (!LEARNING_AREAS.includes(area)) fail(400, `แถว ${i + 1}: กลุ่มสาระ "${area}" ไม่ตรงกับรายชื่อในระบบ`);
         if (!title) fail(400, `แถว ${i + 1}: ไม่มีข้อความตัวชี้วัด`);
-        clean.push([area, grade, code, title]);
+        clean.push([area, grade, code, title, subj || null, kind || null]);
       }
       const before = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_indicator_bank").first();
-      await batchAll(env, clean.map((c) => env.DB.prepare("INSERT OR IGNORE INTO gr_indicator_bank (learning_area, grade_level, code, title, created_by) VALUES (?,?,?,?,?)").bind(...c, user.id)));
+      await batchAll(env, clean.map((c) => env.DB.prepare("INSERT OR IGNORE INTO gr_indicator_bank (learning_area, grade_level, code, title, subject_code, kind, created_by) VALUES (?,?,?,?,?,?,?)").bind(...c, user.id)));
       const after = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_indicator_bank").first();
       await audit(env, user, "bank.import", { rows: clean.length, added: after.n - before.n });
       return json({ ok: true, added: after.n - before.n, skipped: clean.length - (after.n - before.n) });
+    }
+    // สรุปสิ่งที่อยู่ในคลัง: ชั้น × กลุ่มสาระ × รายวิชา
+    if (method === "GET" && !idPart) {
+      const { results } = await env.DB.prepare(`SELECT grade_level, learning_area, COALESCE(subject_code, '') AS subject_code,
+          SUM(kind = 'ระหว่างทาง') AS mid, SUM(kind = 'ปลายทาง') AS final, SUM(kind = 'ผลการเรียนรู้') AS outcome, COUNT(*) AS n
+          FROM gr_indicator_bank GROUP BY 1, 2, 3 ORDER BY 1, 3, 2`).all();
+      return json({ groups: results });
+    }
+    // ดูรายการของกลุ่มเดียว (ไว้ตรวจ/ลบ)
+    if (method === "GET" && idPart === "list") {
+      const g = text(url.searchParams.get("grade"), 10), a = text(url.searchParams.get("area"), 80), s = text(url.searchParams.get("subject"), 20);
+      const { results } = await env.DB.prepare(`SELECT id, code, title, kind FROM gr_indicator_bank WHERE grade_level = ? AND learning_area = ? AND COALESCE(subject_code, '') = ? ORDER BY id`).bind(g, a, s).all();
+      return json({ indicators: results });
     }
     if (method === "DELETE" && idPart) {
       await env.DB.prepare("DELETE FROM gr_indicator_bank WHERE id = ?").bind(intParam(idPart)).run();

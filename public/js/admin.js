@@ -630,8 +630,37 @@ async function renderBank() {
     e.preventDefault();
     const rows = parseIndicatorLines(f.lines.value).map((r) => ({ ...r, grade_level: f.grade.value, learning_area: f.area.value }));
     if (!rows.length) return;
-    try { const r = await api("/api/admin/indicator-bank/import", { method: "POST", body: { rows } }); toast(`เพิ่ม ${r.added} ตัวชี้วัด${r.skipped ? ` (ซ้ำ ${r.skipped})` : ""}`); f.lines.value = ""; } catch (err) { showError(err); }
+    try { const r = await api("/api/admin/indicator-bank/import", { method: "POST", body: { rows } }); toast(`เพิ่ม ${r.added} ตัวชี้วัด${r.skipped ? ` (ซ้ำ ${r.skipped})` : ""}`); f.lines.value = ""; drawBankSummary(); } catch (err) { showError(err); }
   };
+  view.insertAdjacentHTML("beforeend", `<div class="panel" style="margin-top:16px"><div class="panel-head"><h2>ตัวชี้วัดในคลัง</h2></div>
+    <p class="muted small">ตัวชี้วัดที่ผูกรหัสวิชาจะแสดงเฉพาะในรายวิชานั้น · ไม่ระบุรหัสวิชา = ทุกวิชาของกลุ่มสาระในชั้นนั้นเห็น</p><div id="bankSummary"><p class="muted">กำลังโหลด…</p></div></div>`);
+  drawBankSummary();
+}
+async function drawBankSummary() {
+  const box = document.getElementById("bankSummary");
+  if (!box) return;
+  const { groups } = await api("/api/admin/indicator-bank");
+  if (!groups.length) { box.innerHTML = `<p class="muted">ยังไม่มีตัวชี้วัดในคลัง</p>`; return; }
+  box.innerHTML = `<div class="table-wrap"><table class="list"><thead><tr><th>ชั้น</th><th>รหัสวิชา</th><th>กลุ่มสาระ</th><th class="num">ระหว่างทาง</th><th class="num">ปลายทาง</th><th class="num">ผลการเรียนรู้</th><th class="num">รวม</th><th></th></tr></thead>
+    <tbody>${groups.map((g, i) => `<tr><td>${esc(g.grade_level)}</td><td>${esc(g.subject_code || "ทุกวิชาในกลุ่มสาระ")}</td><td>${esc(g.learning_area)}</td>
+      <td class="num">${g.mid || ""}</td><td class="num">${g.final || ""}</td><td class="num">${g.outcome || ""}</td><td class="num"><b>${g.n}</b></td>
+      <td><button class="btn small" data-g="${i}">ดูรายการ</button></td></tr>`).join("")}</tbody></table></div>`;
+  for (const b of box.querySelectorAll("[data-g]")) b.onclick = () => showBankGroup(groups[Number(b.dataset.g)]);
+}
+async function showBankGroup(g) {
+  const q = new URLSearchParams({ grade: g.grade_level, area: g.learning_area, subject: g.subject_code || "" });
+  const { indicators } = await api(`/api/admin/indicator-bank/list?${q}`);
+  await dialog({
+    title: `คลังตัวชี้วัด ${g.grade_level} ${g.subject_code || g.learning_area}`, wide: true, okText: "", cancelText: "ปิด",
+    body: `<div style="display:grid;gap:6px" id="bankList">${indicators.map((x) => `<div class="actions" style="justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--line-soft);padding:4px 0" data-row="${x.id}">
+      <span><b>${esc(x.code)}</b> ${esc(x.title)}${x.kind && x.kind !== "ผลการเรียนรู้" ? ` <span class="tag">${esc(x.kind)}</span>` : ""}</span>
+      ${CAN_IMPORT ? `<button class="btn small" data-del="${x.id}">ลบ</button>` : ""}</div>`).join("")}</div>`,
+    onOpen: (d) => {
+      for (const b of d.querySelectorAll("[data-del]")) b.onclick = async () => {
+        try { await api(`/api/admin/indicator-bank/${b.dataset.del}`, { method: "DELETE" }); d.querySelector(`[data-row="${b.dataset.del}"]`).remove(); drawBankSummary(); } catch (err) { showError(err); }
+      };
+    },
+  });
 }
 
 // ---------- เกณฑ์และผู้ลงนาม ----------

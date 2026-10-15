@@ -712,15 +712,24 @@ async function bankItems(term) {
   let bank;
   try { bank = await api(`/api/courses/${courseId}/bank`); } catch (err) { showError(err); return; }
   if (!bank.indicators.length) {
-    await dialog({ title: `คลัง${W}`, body: `<p>ยังไม่มี${W}ของกลุ่มสาระ${esc(data.course.learning_area)} ระดับ ${esc(data.course.grade_level)} ในคลัง</p><p class="muted">ฝ่ายวิชาการนำเข้าคลังได้ที่หน้าตั้งค่ารายวิชา หรือใช้ปุ่ม "วางจากหลักสูตร" แทน</p>`, okText: "", cancelText: "ปิด" });
+    await dialog({ title: `คลัง${W}`, body: `<p>ยังไม่มี${W}ของวิชา ${esc(data.course.code || "")} (กลุ่มสาระ${esc(data.course.learning_area)} ระดับ ${esc(data.course.grade_level)}) ในคลัง</p><p class="muted">ฝ่ายวิชาการนำเข้าคลังได้ที่หน้าตั้งค่ารายวิชา หรือใช้ปุ่ม "วางจากหลักสูตร" แทน</p>`, okText: "", cancelText: "ปิด" });
     return;
   }
   const used = new Set(data.items.map((i) => `${i.code}|${i.title}`));
   const res = await dialog({
     title: `เลือกจากคลัง${W} — ภาคเรียนที่ ${term}`, wide: true, okText: "เพิ่มที่เลือก",
     body: `<label class="field" style="margin-bottom:10px">คะแนนเต็มของแต่ละ${W}<input name="max" inputmode="decimal" value="10" required></label>
-      <div style="display:grid;gap:6px">${bank.indicators.map((b) => `<label class="check" style="align-items:flex-start"><input type="checkbox" name="b${b.id}" value="${b.id}" ${used.has(`${b.code}|${b.title}`) ? "disabled" : ""}>
-        <span><b>${esc(b.code)}</b> ${esc(b.title)}${used.has(`${b.code}|${b.title}`) ? ' <span class="tag">มีแล้ว</span>' : ""}</span></label>`).join("")}</div>`,
+      <div class="actions" style="margin-bottom:8px"><button type="button" class="btn small" data-all>เลือกทั้งหมด</button>
+        ${bank.indicators.some((b) => b.kind === "ปลายทาง") ? '<button type="button" class="btn small" data-kind="ปลายทาง">เฉพาะปลายทาง</button><button type="button" class="btn small" data-kind="ระหว่างทาง">เฉพาะระหว่างทาง</button>' : ""}
+        <button type="button" class="btn small" data-none>ล้าง</button></div>
+      <div style="display:grid;gap:6px">${bank.indicators.map((b) => `<label class="check" style="align-items:flex-start"><input type="checkbox" name="b${b.id}" value="${b.id}" data-k="${esc(b.kind || "")}" ${used.has(`${b.code}|${b.title}`) ? "disabled" : ""}>
+        <span><b>${esc(b.code)}</b> ${esc(b.title)}${b.kind && b.kind !== "ผลการเรียนรู้" ? ` <span class="tag ${b.kind === "ปลายทาง" ? "ok" : ""}">${esc(b.kind)}</span>` : ""}${used.has(`${b.code}|${b.title}`) ? ' <span class="tag">มีแล้ว</span>' : ""}</span></label>`).join("")}</div>`,
+    onOpen: (d) => {
+      const boxes = () => [...d.querySelectorAll("input[type=checkbox][data-k]:not(:disabled)")];
+      d.querySelector("[data-all]").onclick = () => boxes().forEach((x) => { x.checked = true; });
+      d.querySelector("[data-none]").onclick = () => boxes().forEach((x) => { x.checked = false; });
+      for (const b of d.querySelectorAll("[data-kind]")) b.onclick = () => boxes().forEach((x) => { x.checked = x.dataset.k === b.dataset.kind; });
+    },
   });
   if (!res.ok) return;
   const chosen = bank.indicators.filter((b) => res.data[`b${b.id}`]);

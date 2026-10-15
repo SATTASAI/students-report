@@ -226,8 +226,9 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
   if (sub === "bank" && method === "GET") {
     const course = await assertCourseAccess(env, user, id);
     const { results } = await env.DB.prepare(
-      "SELECT id, code, title FROM gr_indicator_bank WHERE grade_level = ? AND learning_area = ? LIMIT 500"
-    ).bind(course.grade_level, course.learning_area).all();
+      `SELECT id, code, title, kind FROM gr_indicator_bank
+        WHERE grade_level = ? AND learning_area = ? AND (subject_code IS NULL OR subject_code = '' OR subject_code = ?) LIMIT 500`
+    ).bind(course.grade_level, course.learning_area, String(course.code || "").replace(/\s+/g, "")).all();
     // เรียงรหัสแบบตัวเลข: ท 1.1 ป.4/2 มาก่อน ท 1.1 ป.4/10 · ตัวชี้วัดที่ไม่มีรหัสไว้ท้าย ตามลำดับที่เพิ่ม
     results.sort((a, b) => (!a.code) - (!b.code) || compareThai(a.code, b.code) || a.id - b.id);
     return json({ indicators: results });
