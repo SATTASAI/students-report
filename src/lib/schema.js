@@ -1,9 +1,10 @@
+import BANK_2569 from "../data/indicator-bank-2569.js";
 // ตารางของระบบรายงานผลการเรียน — ขึ้นต้นด้วย gr_ ทั้งหมด เพื่อไม่ชนกับตารางเดิมของ banpadeng-school-db
 // สร้างอัตโนมัติครั้งแรกที่ Worker ทำงาน (CREATE ... IF NOT EXISTS ไม่แตะข้อมูลเดิม)
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-12";
+export const SCHEMA_VERSION = "gr-13";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -271,6 +272,18 @@ async function addMissingColumns(env) {
   }
 }
 
+// gr-13: ตัวชี้วัด ป.4–6 จากหลักสูตรสถานศึกษา 2569 ใส่คลังครั้งเดียว (มีตัวบอกแยก — ถ้าฝ่ายวัดผลลบบางข้อทีหลัง จะไม่กลับมาอีก)
+export async function seedIndicatorBank(env) {
+  const KEY = "students_report_seed_bank_2569";
+  const done = await env.DB.prepare("SELECT 1 AS ok FROM system_settings WHERE setting_key = ?").bind(KEY).first().catch(() => null);
+  if (done) return;
+  const stmts = BANK_2569.rows.map(([grade, area, code, title, subject, kind]) => env.DB.prepare(
+    "INSERT OR IGNORE INTO gr_indicator_bank (learning_area, grade_level, code, title, subject_code, kind) VALUES (?,?,?,?,?,?)").bind(area, grade, code, title, subject, kind));
+  for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
+  await env.DB.prepare("INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(setting_key) DO NOTHING")
+    .bind(KEY, String(BANK_2569.rows.length)).run();
+}
+
 const ensured = new WeakMap();
 
 export async function ensureSchema(env) {
@@ -281,6 +294,7 @@ export async function ensureSchema(env) {
     if (marker?.setting_value === SCHEMA_VERSION) return;
     await env.DB.batch(SCHEMA_SQL.map((sql) => env.DB.prepare(sql)));
     await addMissingColumns(env);
+    await seedIndicatorBank(env);
     await env.DB.prepare(`INSERT INTO system_settings (setting_key, setting_value, updated_at)
       VALUES ('students_report_schema', ?, datetime('now'))
       ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = datetime('now')`)

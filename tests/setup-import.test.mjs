@@ -225,12 +225,37 @@ test("คลังตัวชี้วัดผูกรายวิชา: ว
   await call("admin", "POST", "/api/admin/indicator-bank/import", { rows: [{ ...base, title: "x", kind: "อื่น ๆ" }] }, { expect: 400 });
   await call("admin", "POST", "/api/admin/indicator-bank/import", { rows: [{ ...base, title: "x", subject_code: "abc" }] }, { expect: 400 });
   const bank = (await call("admin", "GET", `/api/courses/${c.id}/bank`, null, { expect: 200 })).data.indicators;
-  assert.deepEqual(bank.map((b) => b.title).sort(), ["ของกลาง", "ของวิชานี้"].sort());
+  const mine = bank.filter((b) => b.code.startsWith("X "));
+  assert.deepEqual(mine.map((b) => b.title).sort(), ["ของกลาง", "ของวิชานี้"].sort());
+  // ตัวชี้วัดจากหลักสูตรสถานศึกษา 2569 ที่ใส่ไว้ตั้งต้น: เฉพาะของรายวิชานี้เท่านั้น
+  assert.ok(bank.filter((b) => !b.code.startsWith("X ")).every((b) => b.kind));
   assert.equal(bank.find((b) => b.title === "ของวิชานี้").kind, "ปลายทาง");
   const groups = (await call("admin", "GET", "/api/admin/indicator-bank", null, { expect: 200 })).data.groups;
-  assert.equal(groups.find((g) => g.subject_code === c.code).final, 1);
+  assert.ok(groups.find((g) => g.subject_code === c.code).final >= 1);
   const list = (await call("admin", "GET", `/api/admin/indicator-bank/list?grade=${encodeURIComponent(c.grade_level)}&area=${encodeURIComponent(c.learning_area)}&subject=${encodeURIComponent(other)}`, null, { expect: 200 })).data.indicators;
   assert.equal(list.length, 1);
   await call("t1", "DELETE", `/api/admin/indicator-bank/${list[0].id}`, null, { expect: 403 });
   await call("admin", "DELETE", `/api/admin/indicator-bank/${list[0].id}`, null, { expect: 200 });
+});
+
+test("ตัวชี้วัด ป.4–6 จากหลักสูตร 2569 อยู่ในคลังตั้งแต่ติดตั้ง ใส่ครั้งเดียว และแยกตามรายวิชา", async () => {
+  const { env, call } = await setup();
+  const n = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).first()).n;
+  assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code IS NOT NULL"), 673);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code = 'ส14102'"), 8);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code = 'ส14102' AND code NOT LIKE 'ส 4.%'"), 0);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code = 'ท16101'"), 34);
+  // ลบแล้วไม่กลับมาเมื่ออัปเกรดรอบถัดไป
+  const { seedIndicatorBank } = await import("../src/lib/schema.js");
+  await env.DB.prepare("DELETE FROM gr_indicator_bank WHERE subject_code = 'ท16101'").run();
+  await seedIndicatorBank(env);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code = 'ท16101'"), 0);
+  // ประวัติศาสตร์เห็นเฉพาะสาระที่ 4 ไม่เห็นตัวชี้วัดสังคมศึกษา
+  await call("admin", "POST", "/api/admin/subjects/template", { grades: ["ป.4"] }, { expect: 200 });
+  await call("admin", "POST", "/api/admin/courses/generate", {}, { expect: 200 });
+  const hist = await env.DB.prepare("SELECT c.id FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id WHERE s.code = 'ส14102' LIMIT 1").first();
+  assert.ok(hist, "ต้องมีรายวิชา ส14102");
+  const bank = (await call("admin", "GET", `/api/courses/${hist.id}/bank`, null, { expect: 200 })).data.indicators;
+  assert.equal(bank.length, 8);
+  assert.ok(bank.every((b) => b.code.startsWith("ส 4.")));
 });
