@@ -35,6 +35,7 @@ view.innerHTML = `
       ${r.full ? '' : '<span class="tag">เฉพาะวิชาที่สอน</span>'}</div>
     <div class="doc-grid">${r.kinder ? `
       <div class="doc-item"><b>หนังสือแจ้งผู้ปกครอง (บค.)</b><span class="muted small">เฉพาะนักเรียนที่ครูประจำชั้นบันทึกวันขาด</span><button class="btn small" data-letters="${i}">แสดงรายชื่อ</button><div class="letters" id="letters-${i}"></div></div>
+      <div class="doc-item"><b>น้ำหนัก ส่วนสูง และภาวะโภชนาการ</b><span class="muted small">4 ครั้งต่อปี · BMI ตามอายุและเพศ (เกณฑ์ WHO) · สรุปจำนวนและรายชื่อที่ควรติดตาม</span>${link(`/print/body.html?${roomQ(r)}`, "พิมพ์")}</div>
       <div class="doc-item"><b>สมุดรายงานพัฒนาการเด็กปฐมวัย</b><span class="muted small">รายคน · ผลประเมินพัฒนาการ 4 ด้าน ภาค 1–2 ความคิดเห็นครู และสรุปสิ้นปี</span>
         <div class="actions">${link(`/print/kinder.html?${roomQ(r)}`, "รายงานพัฒนาการทั้งห้อง", "primary")}${link(`/print/kinder.html?${roomQ(r)}&mode=room`, "สรุปผลทั้งห้อง")}</div></div>` : `
       <div class="doc-item wide"><b>ปพ.5 แบบบันทึกผลการพัฒนาคุณภาพผู้เรียน</b>
@@ -46,6 +47,7 @@ view.innerHTML = `
       <div class="doc-item"><b>ปพ.6 แบบรายงานผลการพัฒนาคุณภาพผู้เรียน</b><span class="muted small">รายคน เรียงตามเลขที่ ทั้งห้อง</span>${link(`/print/pp6.html?${roomQ(r)}`, "ปพ.6 ทั้งห้อง")}</div>
       ${r.grade_level === "ป.6" ? `<div class="doc-item"><b>ปพ.1 (ฉบับตรวจทาน)</b><span class="muted small">ระเบียนแสดงผลการเรียน ป.6</span>${link(`/print/pp1.html?${roomQ(r)}`, "ปพ.1 ทั้งห้อง")}</div>` : ""}
       <div class="doc-item"><b>หนังสือแจ้งผู้ปกครอง (บค.)</b><span class="muted small">เฉพาะนักเรียนที่ครูประจำชั้นบันทึกวันขาด</span><button class="btn small" data-letters="${i}">แสดงรายชื่อ</button><div class="letters" id="letters-${i}"></div></div>
+      <div class="doc-item"><b>น้ำหนัก ส่วนสูง และภาวะโภชนาการ</b><span class="muted small">4 ครั้งต่อปี · BMI ตามอายุและเพศ (เกณฑ์ WHO) · สรุปจำนวนและรายชื่อที่ควรติดตาม</span>${link(`/print/body.html?${roomQ(r)}`, "พิมพ์")}</div>
       <div class="doc-item"><b>ผลการเรียนของห้อง</b><span class="muted small">Excel ตารางสรุป · CSV 1 แถวต่อ 1 วิชา (สำหรับนำเข้าระบบอื่น)</span>
         <div class="actions"><button class="btn small" data-x="${i}">${ICONS.download} Excel</button><button class="btn small" data-c="${i}">${ICONS.download} CSV</button></div></div>` : ""}`}
     </div></div>`).join("") || `<div class="panel empty"><strong>ยังไม่มีเอกสาร</strong>เมื่อได้รับมอบหมายรายวิชาหรือเป็นครูประจำชั้น เอกสารของห้องจะขึ้นที่นี่</div>`}</div>`;

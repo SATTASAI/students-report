@@ -38,10 +38,19 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       env.DB.prepare("SELECT id, field, body FROM gr_comment_bank WHERE user_id = ? ORDER BY field, id").bind(user.id).all().then((r) => r.results),
       homeroomNames(env, year.id, grade, room),
     ]);
+    // วันที่บันทึกน้ำหนักส่วนสูงแต่ละครั้ง (ใช้คิดอายุตอนวัด สำหรับ BMI ตามอายุ) + ข้อมูลโรงเรียนสำหรับหน้าพิมพ์
+    const bodyDates = {};
+    for (let i = 0; i < ids.length; i += 90) {
+      const chunk = ids.slice(i, i + 90);
+      const { results } = await env.DB.prepare(`SELECT student_id, round, substr(updated_at, 1, 10) AS d FROM gr_body WHERE academic_year_id = ? AND student_id IN (${chunk.map(() => "?").join(",")})`).bind(year.id, ...chunk).all();
+      for (const r of results) (bodyDates[r.student_id] ||= {})[r.round] = r.d;
+    }
+    const st = await getSettings(env, year.id);
     return json({
       year, grade, room,
       students: roster.map((s) => ({ id: s.id, number: s.number, student_code: s.student_code, name: studentName(s), enrollment_status: s.enrollment_status, gender: s.gender, birth_date: s.birth_date, transfer_in_term: s.transfer_in_term || null })),
-      assessments, grades, absences, comments, body, comment_bank: bank, teachers: hrTeachers,
+      assessments, grades, absences, comments, body, body_dates: bodyDates, comment_bank: bank, teachers: hrTeachers,
+      school: { name: st.school_name, area: st.school_area, director: st.director_name },
     });
   }
 

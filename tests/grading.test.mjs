@@ -89,3 +89,17 @@ test("ห้ามปัดเศษ: คะแนนรวม ตัดเก�
   assert.equal(fmt(7.36666, 1), "7.3");
   assert.equal(fmt(79.999, 2), "79.99");
 });
+
+test("ภาวะโภชนาการ: BMI ตามอายุ เกณฑ์ WHO", async () => {
+  const g = await import("../public/js/growth.js");
+  // ค่ามัธยฐาน (M) ของตาราง WHO = z 0
+  assert.ok(Math.abs(g.bmiZ(15.2641, "ช", 61)) < 1e-9);
+  assert.equal(g.analyzeBody({ gender: "ญ", birth_date: "2016-05-01" }, { weight: 45, height: 140 }, "2026-06-01").status, "อ้วน");
+  assert.equal(g.analyzeBody({ name: "เด็กชายเอ", birth_date: "2022-06-04" }, { weight: 15, height: 100 }, "2026-06-01").status, "สมส่วน");
+  assert.equal(g.analyzeBody({ gender: "ช", birth_date: "2016-01-01" }, { weight: 19, height: 140 }, "2026-06-01").status, "ผอมมาก");
+  assert.equal(g.analyzeBody({ gender: "ช" }, { weight: 30, height: 130 }, "2026-06-01").why, "ไม่มีวันเกิด");
+  assert.equal(g.bmiStatus(1.5, 48), "เสี่ยงน้ำหนักเกิน");
+  assert.equal(g.bmiStatus(1.5, 72), "น้ำหนักเกิน");
+  assert.equal(g.sexOf({ name: "เด็กหญิงบี" }), "ญ");
+  assert.equal(g.ageText(g.ageMonths("2020-01-15", "2026-06-01")), "6 ปี 4 เดือน");
+});

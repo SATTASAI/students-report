@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แบบบันทึกน้ำหนัก ส่วนสูง และภาวะโภชนาการ</title>
+<link rel="stylesheet" href="/print/print.css">
+<style>
+  .bd { font-size: 13pt; line-height: 1.05; }
+  .bd h1 { font-size: 18pt; text-align: center; margin: 0; }
+  .bd .sub { text-align: center; margin-top: 1mm; }
+  .bd table.t { margin-top: 2mm; table-layout: fixed; }
+  .bd table.t th, .bd table.t td { padding: 0 2px; height: 6.2mm; text-align: center; }
+  .bd table.t th { font-size: 12pt; line-height: 1; }
+  .bd table.t td.n { text-align: left; padding-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bd table.t td.st { font-size: 11.5pt; white-space: nowrap; }
+  .bd table.t td.flag { background: #ececec; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bd table.t .r { border-left: 2px solid #000; }
+  .bd tr { break-inside: avoid; }
+  .bd .legend { font-size: 12pt; margin-top: 2mm; }
+  .bd .signs { grid-template-columns: repeat(3, 1fr); margin-top: 6mm; gap: 4mm 12mm; break-inside: avoid; }
+  .bd .sign .line { height: 7mm; }
+  .bd .keep { break-inside: avoid; }
+</style>
+</head>
+<body>
+<div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
+<script type="module">
+import { esc, params, get, toolbar, status, td, fmt, thaiDate } from "/print/print.js";
+import { analyzeBody, ageText, ageMonths, sexOf, BMI_LEVELS } from "/js/growth.js";
+
+const p = params();
+const q = new URLSearchParams({ grade: p.get("grade") || "", room: p.get("room") || "" });
+if (p.get("year")) q.set("year", p.get("year"));
+let d;
+try { d = await get(`/api/homeroom?${q}`); } catch (e) { status(e.message); throw e; }
+const students = d.students.filter((s) => s.enrollment_status === "enrolled");
+if (!students.length) { status("ไม่มีนักเรียนในห้องนี้"); throw new Error("empty"); }
+toolbar(`น้ำหนัก ส่วนสูง และภาวะโภชนาการ ชั้น ${d.grade}/${d.room} ปีการศึกษา ${d.year.year_be}`);
+document.title = `น้ำหนักส่วนสูง ${d.grade}-${d.room} ${d.year.year_be}`;
+const school = d.school || {};
+const ROUNDS = [1, 2, 3, 4];
+const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+const trunc1 = (v) => (v == null ? "" : fmt(Math.trunc(Number((v * 10).toPrecision(12))) / 10)); // ตัดทศนิยมทิ้ง ไม่ปัด
+const rows = students.map((s) => ({ s, sex: sexOf(s), r: ROUNDS.map((r) => {
+  const b = d.body?.[s.id]?.[r] || {};
+  return { b, a: analyzeBody(s, b, d.body_dates?.[s.id]?.[r] || today), date: d.body_dates?.[s.id]?.[r] };
+}) }));
+const used = ROUNDS.filter((_, i) => rows.some((x) => x.r[i].b.weight || x.r[i].b.height));
+const dates = (i) => [...new Set(rows.map((x) => x.r[i].date).filter(Boolean))].sort();
+const flag = (st) => st && st !== "สมส่วน";
+const dots = "..........................................";
+const signs = `<div class="signs">${(d.teachers?.length ? d.teachers : [""]).map((t) => `<div class="sign"><div class="line"></div>(${esc(t || dots)})<br>ครูประจำชั้น</div>`).join("")}
+  <div class="sign"><div class="line"></div>(${esc(school.director || dots)})<br>ผู้อำนวยการโรงเรียน</div></div>`;
+
+const main = `<section class="sheet land bd">
+  <h1>แบบบันทึกน้ำหนัก ส่วนสูง และภาวะโภชนาการ</h1>
+  <div class="sub">${esc(school.name || "โรงเรียนบ้านป่าเด็ง")} · ชั้น ${esc(d.grade)}/${esc(d.room)} · ปีการศึกษา ${td(d.year.year_be)} · นักเรียน ${td(students.length)} คน</div>
+  <table class="t"><colgroup><col style="width:9mm"><col style="width:44mm"><col style="width:7mm"><col style="width:19mm">${ROUNDS.map(() => '<col style="width:10mm"><col style="width:10mm"><col style="width:10mm"><col style="width:18mm">').join("")}</colgroup>
+    <thead><tr><th rowspan="2">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th><th rowspan="2">เพศ</th><th rowspan="2">อายุ<br>(ณ วันนี้)</th>
+      ${ROUNDS.map((r, i) => `<th colspan="4" class="r">ครั้งที่ ${td(r)}${dates(i).length ? `<br><span style="font-weight:400;font-size:11pt">${dates(i).length === 1 ? thaiDate(dates(i)[0], true) : `${thaiDate(dates(i)[0], true)} – ${thaiDate(dates(i).at(-1), true)}`}</span>` : ""}</th>`).join("")}</tr>
+      <tr>${ROUNDS.map(() => '<th class="r">นน.<br>(กก.)</th><th>สส.<br>(ซม.)</th><th>BMI</th><th>ภาวะ</th>').join("")}</tr></thead>
+    <tbody>${rows.map(({ s, sex, r }) => `<tr><td>${td(s.number ?? "")}</td><td class="n">${esc(s.name)}</td><td>${sex || ""}</td>
+      <td class="st">${td(ageText(ageMonths(s.birth_date, today)))}</td>
+      ${r.map(({ b, a }) => `<td class="r">${b.weight != null ? fmt(b.weight) : ""}</td><td>${b.height != null ? fmt(b.height) : ""}</td><td>${a ? trunc1(a.bmi) : ""}</td>
+        <td class="st ${flag(a?.status) ? "flag" : ""}">${a ? (a.status || "–") : ""}</td>`).join("")}</tr>`).join("")}</tbody>
+  </table>
+  <div class="legend">BMI = น้ำหนัก (กก.) ÷ ส่วนสูง (ม.)² ตัดทศนิยมทิ้ง ไม่ปัด · ภาวะโภชนาการแปลผลจาก BMI ตามอายุและเพศ เกณฑ์องค์การอนามัยโลก (WHO) อายุคิดจากวันเกิดถึงวันที่บันทึก
+    · ต่ำกว่า −3 SD ผอมมาก · −3 ถึง −2 SD ผอม · อายุ 5 ปีขึ้นไป: เกิน +1 SD น้ำหนักเกิน · เกิน +2 SD อ้วน · ต่ำกว่า 5 ปี: เกิน +1 SD เสี่ยงน้ำหนักเกิน · เกิน +2 SD น้ำหนักเกิน · เกิน +3 SD อ้วน
+    · ช่องสีเทา = ควรติดตาม · "–" = ไม่มีวันเกิด/เพศในทะเบียน</div>
+  ${signs}
+</section>`;
+
+// สรุปจำนวนนักเรียนตามภาวะโภชนาการ รายครั้ง + รายชื่อที่ควรติดตาม (ครั้งล่าสุด)
+const levels = BMI_LEVELS.map(([l]) => l).filter((l) => l !== "เสี่ยงน้ำหนักเกิน" || rows.some((x) => x.r.some((y) => y.a?.status === l)));
+const latest = rows.map((x) => ({ ...x, last: [...x.r].reverse().find((y) => y.a) })).filter((x) => x.last);
+const watch = latest.filter((x) => flag(x.last.a.status));
+const pct = (n, all) => (all ? fmt(Math.trunc(Number((n / all * 10000).toPrecision(12))) / 100) : "");
+const summary = `<section class="sheet bd">
+  <h1>สรุปภาวะโภชนาการ</h1>
+  <div class="sub">${esc(school.name || "โรงเรียนบ้านป่าเด็ง")} · ชั้น ${esc(d.grade)}/${esc(d.room)} · ปีการศึกษา ${td(d.year.year_be)}</div>
+  <table class="t keep"><thead><tr><th style="width:42mm">ภาวะโภชนาการ</th>${used.map((r) => `<th>ครั้งที่ ${td(r)}<br>คน (ร้อยละ)</th>`).join("") || "<th>ยังไม่มีข้อมูล</th>"}</tr></thead>
+    <tbody>${levels.map((l) => `<tr><td class="n">${l}</td>${used.map((r) => { const all = rows.filter((x) => x.r[r - 1].a?.status).length, n = rows.filter((x) => x.r[r - 1].a?.status === l).length;
+      return `<td>${n ? `${td(n)} (${td(pct(n, all))})` : ""}</td>`; }).join("")}</tr>`).join("")}
+      <tr><td class="n"><b>ประเมินได้</b></td>${used.map((r) => `<td><b>${td(rows.filter((x) => x.r[r - 1].a?.status).length)}</b></td>`).join("")}</tr>
+      <tr><td class="n">ประเมินไม่ได้ (ไม่มีวันเกิด/เพศ)</td>${used.map((r) => { const n = rows.filter((x) => x.r[r - 1].a && !x.r[r - 1].a.status).length; return `<td>${n ? td(n) : ""}</td>`; }).join("")}</tr>
+      <tr><td class="n">ยังไม่ได้ชั่ง/วัด</td>${used.map((r) => { const n = rows.filter((x) => !x.r[r - 1].a).length; return `<td>${n ? td(n) : ""}</td>`; }).join("")}</tr></tbody></table>
+  <div class="legend">ร้อยละคิดจากจำนวนนักเรียนที่ประเมินได้ในครั้งนั้น ตัดทศนิยมตำแหน่งที่ 3 ทิ้ง ไม่ปัด</div>
+  <h3 style="margin:5mm 0 0">นักเรียนที่ควรติดตาม (จากการวัดครั้งล่าสุด) ${td(watch.length)} คน</h3>
+  ${watch.length ? `<table class="t keep"><thead><tr><th style="width:12mm">เลขที่</th><th>ชื่อ–สกุล</th><th style="width:30mm">อายุ</th><th style="width:16mm">นน.</th><th style="width:16mm">สส.</th><th style="width:16mm">BMI</th><th style="width:32mm">ภาวะ</th></tr></thead>
+    <tbody>${watch.map(({ s, last }) => `<tr><td>${td(s.number ?? "")}</td><td class="n">${esc(s.name)}</td><td>${td(ageText(last.a.months))}</td><td>${fmt(last.b.weight)}</td><td>${fmt(last.b.height)}</td><td>${trunc1(last.a.bmi)}</td><td class="flag">${last.a.status}</td></tr>`).join("")}</tbody></table>`
+    : `<p>${latest.length ? "ไม่มี — ทุกคนที่ประเมินได้อยู่ในเกณฑ์สมส่วน" : "ยังไม่มีข้อมูลน้ำหนักส่วนสูง"}</p>`}
+  ${signs}
+</section>`;
+
+document.getElementById("doc").innerHTML = main + summary;
+</script>
+</body>
+</html>
