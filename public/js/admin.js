@@ -33,6 +33,10 @@ if (location.hash === "#activity") location.replace("/activities.html"); // ล�
 window.addEventListener("hashchange", () => { tab = hashTab(allowed, "start"); renderTabs(); render(); });
 let teachersCache;
 const teachers = async () => (teachersCache ||= (await api("/api/admin/teachers")).teachers);
+// ชื่อครูในตัวเลือก: ถ้ามีหลายบัญชีชื่อเดียวกัน แสดงอีเมลกำกับ จะได้ไม่มอบหมายผิดบัญชี
+const sameName = (list, t) => list.filter((x) => x.full_name.trim() === t.full_name.trim()).length > 1;
+const teacherLabel = (list, t) => `${esc(t.full_name)}${sameName(list, t) ? ` <span class="tag warn" data-tip="มีหลายบัญชีชื่อนี้">${esc(t.email || `บัญชี #${t.id}`)}</span>` : ""}`;
+const teacherText = (list, t) => `${t.full_name}${sameName(list, t) ? ` (${t.email || `บัญชี #${t.id}`})` : ""}`;
 
 function renderTabs() {
   document.getElementById("pageTitle").textContent = SECTIONS[tab];
@@ -291,7 +295,7 @@ async function renderCourses() {
     <div class="actions" style="margin-bottom:12px"><button class="btn" id="assignAll">ให้ครู 1 คนสอนหลายวิชาในห้อง ${selRoom}</button></div>
     <div class="table-wrap"><table class="list"><thead><tr><th>รหัส</th><th>วิชา</th><th>ครูผู้สอน</th><th>ความคืบหน้า</th><th>สถานะ</th><th></th></tr></thead>
     <tbody>${inRoom.map((c) => `<tr><td>${esc(c.code)}</td><td><a href="/course.html?id=${c.id}&year=${Y}">${esc(c.name)}</a></td>
-      <td>${c.teachers.length ? c.teachers.map((t) => esc(t.full_name)).join(", ") : '<span class="tag warn">ยังไม่กำหนด</span>'}</td>
+      <td>${c.teachers.length ? c.teachers.map((t) => teacherLabel(list, list.find((x) => x.id === t.id) || t)).join(", ") : '<span class="tag warn">ยังไม่กำหนด</span>'}</td>
       <td style="min-width:120px"><span class="small muted">${c.progress}%</span><div class="meter ${c.progress >= 100 ? "done" : ""}"><i style="width:${c.progress}%"></i></div></td>
       <td>${statusTag(c)}</td>
       <td class="actions"><button class="btn small" data-teach="${c.id}">ครูผู้สอน</button></td></tr>`).join("")}</tbody></table></div>
@@ -299,7 +303,7 @@ async function renderCourses() {
   for (const b of view.querySelectorAll("[data-room]")) b.onclick = () => { selRoom = b.dataset.room; sessionStorage.setItem("sr-admin-room", selRoom); render(); };
   bindViewSwitch();
   const teacherChecks = (chosen) => `<input type="search" placeholder="ค้นหาชื่อครู" data-filter style="margin-bottom:10px">
-    <div style="display:grid;gap:4px;max-height:340px;overflow:auto">${list.map((t) => `<label class="check" data-name="${esc(t.full_name)}"><input type="checkbox" name="t${t.id}" ${chosen.includes(t.id) ? "checked" : ""}> ${esc(t.full_name)}${pendingTag(t)}</label>`).join("")}</div>`;
+    <div style="display:grid;gap:4px;max-height:340px;overflow:auto">${list.map((t) => `<label class="check" data-name="${esc(teacherText(list, t))}"><input type="checkbox" name="t${t.id}" ${chosen.includes(t.id) ? "checked" : ""}> ${teacherLabel(list, t)}${pendingTag(t)}</label>`).join("")}</div>`;
   const bindFilter = (d) => { const f = d.querySelector("[data-filter]"); f.oninput = () => { for (const l of d.querySelectorAll("[data-name]")) l.hidden = !l.dataset.name.includes(f.value.trim()); }; };
   for (const b of view.querySelectorAll("[data-teach]")) b.onclick = async () => {
     const c = inRoom.find((x) => x.id === Number(b.dataset.teach));
@@ -311,7 +315,7 @@ async function renderCourses() {
   document.getElementById("assignAll").onclick = async () => {
     const r = await dialog({
       title: `มอบหมายหลายวิชาในห้อง ${selRoom}`,
-      body: `<label class="field">ครูผู้สอน<select name="user_id" required><option value="">เลือกครู</option>${list.map((t) => `<option value="${t.id}">${esc(t.full_name)}${t.pending ? " (สมัครใหม่)" : ""}</option>`).join("")}</select></label>
+      body: `<label class="field">ครูผู้สอน<select name="user_id" required><option value="">เลือกครู</option>${list.map((t) => `<option value="${t.id}">${esc(teacherText(list, t))}${t.pending ? " (สมัครใหม่)" : ""}</option>`).join("")}</select></label>
         <p class="muted small" style="margin:12px 0 6px">วิชาที่ให้สอน (เพิ่มเป็นครูผู้สอนร่วม ไม่ลบครูเดิม)</p>
         <div style="display:grid;gap:4px">${inRoom.map((c) => `<label class="check"><input type="checkbox" name="c${c.id}" ${c.teachers.length ? "" : "checked"}> ${esc(c.code)} ${esc(c.name)}</label>`).join("")}</div>`,
     });
@@ -385,14 +389,14 @@ async function renderHomerooms() {
     <p class="muted small">กำหนดที่นี่ที่เดียว (หรือนำเข้าจาก Excel) — ระบบส่งข้อมูลไปหน้าวิเคราะห์ผู้เรียนของระบบทะเบียนให้อัตโนมัติ</p>
     <div class="table-wrap"><table class="list"><thead><tr><th>ห้อง</th><th class="num">นักเรียน</th><th>ครูประจำชั้น</th><th></th></tr></thead>
     <tbody>${rooms.map((r, i) => `<tr><td><a href="/homeroom.html?grade=${encodeURIComponent(r.grade_level)}&room=${encodeURIComponent(r.classroom)}&year=${Y}">${esc(r.grade_level)}/${esc(r.classroom)}</a></td><td class="num">${r.students}</td>
-      <td>${r.teachers.length ? r.teachers.map((t) => esc(t.full_name)).join(", ") : '<span class="tag warn">ยังไม่กำหนด</span>'}</td>
+      <td>${r.teachers.length ? r.teachers.map((t) => teacherLabel(list, list.find((x) => x.id === t.id) || t)).join(", ") : '<span class="tag warn">ยังไม่กำหนด</span>'}</td>
       <td><button class="btn small" data-i="${i}">กำหนด</button></td></tr>`).join("")}</tbody></table></div></div>`;
   for (const b of view.querySelectorAll("[data-i]")) b.onclick = async () => {
     const r0 = rooms[Number(b.dataset.i)];
     const chosen = r0.teachers.map((t) => t.id);
     const r = await dialog({
       title: `ครูประจำชั้น ${r0.grade_level}/${r0.classroom}`,
-      body: `<input type="search" placeholder="ค้นหาชื่อครู" data-filter style="margin-bottom:10px"><div style="display:grid;gap:4px;max-height:340px;overflow:auto">${list.map((t) => `<label class="check" data-name="${esc(t.full_name)}"><input type="checkbox" name="t${t.id}" ${chosen.includes(t.id) ? "checked" : ""}> ${esc(t.full_name)}</label>`).join("")}</div>`,
+      body: `<input type="search" placeholder="ค้นหาชื่อครู" data-filter style="margin-bottom:10px"><div style="display:grid;gap:4px;max-height:340px;overflow:auto">${list.map((t) => `<label class="check" data-name="${esc(teacherText(list, t))}"><input type="checkbox" name="t${t.id}" ${chosen.includes(t.id) ? "checked" : ""}> ${teacherLabel(list, t)}</label>`).join("")}</div>`,
       onOpen: (d) => { const f = d.querySelector("[data-filter]"); f.oninput = () => { for (const l of d.querySelectorAll("[data-name]")) l.hidden = !l.dataset.name.includes(f.value.trim()); }; },
     });
     if (!r.ok) return;
