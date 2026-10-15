@@ -535,7 +535,7 @@ function renderSetup() {
   };
   const itemRow = (it) => { const k = it.kind === "final" ? "" : bankKindOf(it); return `<div class="item ${it.kind}">
         <span class="code">${esc(it.kind === "final" ? "สอบปลายภาค" : it.code || "คะแนนเก็บ")}</span>
-        <span>${esc(it.title)}${k && !k.startsWith("ผล") ? ` <span class="tag ${k === "ปลายทาง" ? "ok" : ""}">${esc(k)}</span>` : ""}</span><span class="num">เต็ม ${fmt(it.max_score)}</span><span></span>
+        <span>${esc(it.title)}${k && !k.startsWith("ผล") ? ` <span class="tag ${k === "ปลายทาง" ? "ok" : ""}">${esc(k)}</span>` : ""}${it.kind === "final" ? `<br><span class="muted small">${(it.indicators || []).length ? `วัด${W}: ${(it.indicators || []).map((x) => esc(x.code || x.title)).join(", ")}` : `<span class="tag warn">ยังไม่ได้ระบุ${W}ที่สอบ</span>`}</span>` : ""}</span><span class="num">เต็ม ${fmt(it.max_score)}</span><span></span>
       </div>`; };
   const list = (term) => {
     const items = data.items.filter((i) => i.term_number === term);
@@ -731,10 +731,10 @@ async function openBuilder(term) {
   const units = (data.units || []).filter((u) => u.term_number === term).sort((a, b) => a.unit_no - b.unit_no)
     .map((u) => ({ id: u.id, title: u.title, hours: u.hours ?? "", task: u.task || "", items: items.filter((i) => i.kind !== "final" && i.unit_id === u.id).map(toB) }));
   const loose = items.filter((i) => i.kind !== "final" && !units.some((u) => u.id === i.unit_id)).map(toB);
-  const finals = items.filter((i) => i.kind === "final").map(toB);
+  const finals = items.filter((i) => i.kind === "final").map((i) => ({ ...toB(i), inds: (i.indicators || []).map((x) => ({ code: x.code || "", title: x.title })) }));
   const fT = 50 - data.course.collect_ratio / 2;
   if (!units.length) units.push({ id: null, title: "", hours: "", task: "", items: [] });
-  if (!finals.length) finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${term}`, max: fT });
+  if (!finals.length) finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${term}`, max: fT, inds: [] });
   builder = { term, units, loose, finals, dirty: false };
   tab = "setup"; renderTabs(); drawBuilder();
   window.scrollTo({ top: 0 });
@@ -779,7 +779,10 @@ function drawBuilder() {
       <div class="b-items">${B.finals.map((it, ii) => `<div class="b-item">
         <span class="code">สอบปลายภาค</span><input data-ft="${ii}" maxlength="500" value="${esc(it.title)}" aria-label="ชื่อการสอบ">
         <label class="b-max">เต็ม<input inputmode="decimal" data-max="final:${ii}" value="${esc(it.max ?? "")}"></label>
-        <button type="button" class="icon-btn" data-rm="final:${ii}" aria-label="เอาออก">✕</button></div>`).join("") || '<p class="muted small" style="margin:0">ไม่มีการสอบปลายภาค</p>'}</div></div>
+        <button type="button" class="icon-btn" data-rm="final:${ii}" aria-label="เอาออก">✕</button></div>
+        <div class="f-inds"><span class="muted small">${W}${finalKindLabel()}ที่สอบ:</span>
+          ${(it.inds || []).map((x, xi) => `<span class="chip" title="${esc(x.title)}">${esc(x.code || x.title.slice(0, 24))}<button type="button" data-frm="${ii}:${xi}" aria-label="เอาออก">✕</button></span>`).join("") || `<span class="tag warn">ยังไม่ได้เลือก</span>`}
+          <button type="button" class="btn small primary" data-fpick="${ii}">${ICONS.plus} เลือก${W}${finalKindLabel()}</button></div>`).join("") || '<p class="muted small" style="margin:0">ไม่มีการสอบปลายภาค</p>'}</div></div>
     <div class="b-foot"><span id="bTotals"></span><span class="actions">
       <button type="button" class="btn" id="bSplit" title="แบ่งคะแนนเก็บ ${fmt(cT)} คะแนนให้ทุก${W}เท่า ๆ กัน">แบ่งคะแนนเก็บเท่ากัน</button>
       <button type="button" class="btn primary" id="bSave">บันทึกโครงสร้าง</button></span></div>`;
@@ -806,7 +809,9 @@ function drawBuilder() {
   for (const b of view.querySelectorAll("[data-mv]")) b.onclick = () => { const [ui, d] = b.dataset.mv.split(":").map(Number); const [u] = B.units.splice(ui, 1); B.units.splice(ui + d, 0, u); B.dirty = true; drawBuilder(); };
   for (const b of view.querySelectorAll("[data-pick]")) b.onclick = () => pickIndicators(Number(b.dataset.pick));
   document.getElementById("bAddUnit").onclick = () => { B.units.push({ id: null, title: "", hours: "", task: "", items: [] }); B.dirty = true; drawBuilder(); view.querySelectorAll(".b-unit")[B.units.length - 1]?.scrollIntoView({ block: "center" }); };
-  document.getElementById("bAddFinal").onclick = () => { B.finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${B.term}`, max: "" }); B.dirty = true; drawBuilder(); };
+  document.getElementById("bAddFinal").onclick = () => { B.finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${B.term}`, max: "", inds: [] }); B.dirty = true; drawBuilder(); };
+  for (const b of view.querySelectorAll("[data-fpick]")) b.onclick = () => pickFinalIndicators(Number(b.dataset.fpick));
+  for (const b of view.querySelectorAll("[data-frm]")) b.onclick = () => { const [fi, i] = b.dataset.frm.split(":").map(Number); B.finals[fi].inds.splice(i, 1); B.dirty = true; drawBuilder(); };
   document.getElementById("bSplit").onclick = () => {
     const all = [...B.units.flatMap((u) => u.items), ...B.loose];
     if (!all.length) { toast(`ยังไม่ได้เลือก${W}`, "bad"); return; }
@@ -856,14 +861,51 @@ async function pickIndicators(ui) {
   B.dirty = true; drawBuilder();
 }
 
+// ป.4–6 มีตัวชี้วัดปลายทาง → สอบปลายภาควัดเฉพาะปลายทาง · ป.1–3 (ผลการเรียนรู้/ผลลัพธ์) ไม่แบ่งประเภท
+const hasFinalKind = () => (bankCache || []).some((b) => b.kind === "ปลายทาง");
+const finalKindLabel = () => (hasFinalKind() ? "ปลายทาง" : "");
+
+async function pickFinalIndicators(fi) {
+  const B = builder, f = B.finals[fi];
+  const pool = new Map();
+  const add = (x) => { const k = itemKey(x); if (!pool.has(k)) pool.set(k, { code: x.code || "", title: x.title, kind: bankKindOf(x) }); };
+  for (const b of bankCache) if (!hasFinalKind() || b.kind === "ปลายทาง") add(b);
+  // ปลายทางที่ใช้ในหน่วยของภาคนี้ (กรณีพิมพ์เอง ไม่มีในคลัง) และที่เคยเลือกไว้
+  for (const it of [...B.units.flatMap((u) => u.items), ...B.loose]) if (!hasFinalKind() || bankKindOf(it) === "ปลายทาง" || !bankKindOf(it)) add(it);
+  for (const x of f.inds || []) add(x);
+  const list = [...pool.values()];
+  const inTerm = new Set([...B.units.flatMap((u) => u.items), ...B.loose].map(itemKey));
+  const chosen = new Set((f.inds || []).map(itemKey));
+  const res = await dialog({
+    title: `${W}${finalKindLabel()}ที่วัดด้วย${f.title || "สอบปลายภาค"}`, wide: true, okText: "ใช้ที่เลือก",
+    body: list.length ? `<div class="actions" style="margin-bottom:8px"><button type="button" class="btn small" data-term>เฉพาะที่อยู่ในหน่วยของภาคนี้</button>
+        <button type="button" class="btn small" data-all>เลือกทั้งหมด</button><button type="button" class="btn small" data-none>ล้าง</button></div>
+      <div style="display:grid;gap:6px">${list.map((b, i) => `<label class="check pick-row"><input type="checkbox" name="f${i}" data-in="${inTerm.has(itemKey(b)) ? 1 : 0}" ${chosen.has(itemKey(b)) ? "checked" : ""}>
+        <span><b>${esc(b.code)}</b> ${esc(b.title)}${inTerm.has(itemKey(b)) ? ' <span class="tag ok">อยู่ในหน่วยของภาคนี้</span>' : ""}</span></label>`).join("")}</div>`
+      : `<p class="muted">ยังไม่มี${W}${finalKindLabel()}ของวิชานี้ในคลัง — เลือก${W}ในหน่วยการเรียนรู้ก่อน แล้วกลับมาเลือกที่นี่</p>`,
+    onOpen: (d) => {
+      const boxes = () => [...d.querySelectorAll("input[type=checkbox]")];
+      d.querySelector("[data-all]")?.addEventListener("click", () => boxes().forEach((x) => { x.checked = true; }));
+      d.querySelector("[data-none]")?.addEventListener("click", () => boxes().forEach((x) => { x.checked = false; }));
+      d.querySelector("[data-term]")?.addEventListener("click", () => boxes().forEach((x) => { x.checked = x.dataset.in === "1"; }));
+    },
+  });
+  if (!res.ok) return;
+  f.inds = list.filter((b, i) => res.data[`f${i}`]).map((b) => ({ code: b.code, title: b.title }));
+  B.dirty = true; drawBuilder();
+}
+
 async function saveBuilder(confirm = false) {
   const B = builder;
+  const noInd = B.finals.findIndex((f) => !(f.inds || []).length);
+  if (noInd >= 0) { toast(`เลือก${W}${finalKindLabel()}ที่วัดด้วย "${B.finals[noInd].title || "สอบปลายภาค"}" ก่อนบันทึก`, "bad"); view.querySelector(`[data-fpick="${noInd}"]`)?.scrollIntoView({ block: "center" }); return; }
   const bad = B.units.findIndex((u) => !String(u.title).trim());
   if (bad >= 0) { toast(`กรุณาพิมพ์ชื่อหน่วยการเรียนรู้ที่ ${bad + 1}`, "bad"); view.querySelector(`[data-uf="${bad}:title"]`)?.focus(); return; }
   const noMax = [...B.units.flatMap((u) => u.items), ...B.loose, ...B.finals].find((it) => !(Number(it.max) > 0));
   if (noMax) { toast(`ใส่คะแนนเต็มของ "${(noMax.code || noMax.title).slice(0, 30)}" ก่อน`, "bad"); return; }
   const it = (x) => ({ id: x.id, code: x.code, title: x.title, max_score: x.max });
-  const body = { term: B.term, confirm, units: B.units.map((u) => ({ id: u.id, title: u.title, hours: u.hours, task: u.task, items: u.items.map(it) })), loose: B.loose.map(it), finals: B.finals.map(it) };
+  const body = { term: B.term, confirm, units: B.units.map((u) => ({ id: u.id, title: u.title, hours: u.hours, task: u.task, items: u.items.map(it) })), loose: B.loose.map(it),
+    finals: B.finals.map((f) => ({ ...it(f), indicators: f.inds || [] })) };
   await flush();
   try {
     data = await api(`/api/courses/${courseId}/structure`, { method: "PUT", body });

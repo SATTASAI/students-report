@@ -256,7 +256,7 @@ export async function assertCourseAccess(env, user, courseId, { write = false } 
 export async function courseBundle(env, course) {
   const settings = await getSettings(env, course.academic_year_id);
   const [items, units, roster, scoreRows, resultRows] = await Promise.all([
-    env.DB.prepare(`SELECT i.id, i.term_number, i.kind, i.code, i.title, i.max_score, i.sort_order, i.unit_id ${ITEM_ORDER_SQL} ${ITEM_ORDER_BY}`)
+    env.DB.prepare(`SELECT i.id, i.term_number, i.kind, i.code, i.title, i.max_score, i.sort_order, i.unit_id, i.indicators ${ITEM_ORDER_SQL} ${ITEM_ORDER_BY}`)
       .bind(course.id).all().then((r) => r.results),
     env.DB.prepare("SELECT id, term_number, unit_no, title, hours, task FROM gr_units WHERE course_id = ? ORDER BY term_number, unit_no, id")
       .bind(course.id).all().then((r) => r.results),
@@ -265,6 +265,7 @@ export async function courseBundle(env, course) {
       .bind(course.id).all().then((r) => r.results),
     env.DB.prepare("SELECT * FROM gr_results WHERE course_id = ?").bind(course.id).all().then((r) => r.results),
   ]);
+  for (const it of items) { try { it.indicators = it.indicators ? JSON.parse(it.indicators) : []; } catch { it.indicators = []; } }
   const scores = {}, remedials = {};
   for (const r of scoreRows) {
     if (r.score != null) (scores[r.student_id] ||= {})[r.item_id] = r.score;

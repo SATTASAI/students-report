@@ -5,7 +5,7 @@ import BANK_2569_P13 from "../data/indicator-bank-2569-p13.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-14";
+export const SCHEMA_VERSION = "gr-15";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -260,6 +260,8 @@ export const ADDED_COLUMNS = [
   // gr-12: คลังตัวชี้วัดผูกกับรายวิชา (ว่าง = ใช้ได้ทุกวิชาของกลุ่มสาระ) + ประเภท ระหว่างทาง/ปลายทาง/ผลการเรียนรู้
   ["gr_indicator_bank", "subject_code", "TEXT"],
   ["gr_indicator_bank", "kind", "TEXT"],
+  // gr-15: สอบปลายภาควัดตัวชี้วัดปลายทางข้อใดบ้าง (JSON [{code, title}])
+  ["gr_items", "indicators", "TEXT"],
 ];
 
 async function addMissingColumns(env) {

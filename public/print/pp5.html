@@ -251,7 +251,9 @@ function book(d) {
     const fin = d.items.filter((i) => i.term_number === term && i.kind === "final");
     const finMax = fin.reduce((a, i) => a + i.max_score, 0);
     return [`<tr class="band"><td colspan="8"><b>ภาคเรียนที่ ${td(term)}</b></td></tr>`, ...rows,
-      fin.length ? `<tr><td></td><td>สอบปลายภาค</td><td></td><td></td><td></td><td class="c">${fmt(finMax)}</td><td>แบบทดสอบ</td><td></td></tr>` : ""];
+      fin.length ? (() => { const links = fin.flatMap((i) => i.indicators || []);
+        const stds = [...new Set(links.map((x) => splitCode(x.code).std).filter(Boolean))], nos = links.map((x) => splitCode(x.code).no).filter(Boolean);
+        return `<tr><td></td><td>สอบปลายภาค</td><td></td><td class="c">${esc(td(stds.join(", ")))}</td><td class="c">${esc(td(nos.join(", ")))}</td><td class="c">${fmt(finMax)}</td><td>แบบทดสอบ</td><td></td></tr>`; })() : ""];
   });
   const structure = `<section class="sheet land">${mark}
     ${head("โครงสร้างรายวิชา")}

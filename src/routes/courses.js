@@ -47,6 +47,19 @@ function cleanItem(raw, i = 0) {
   return { term, kind, code: text(raw.code, 60) || null, title, max: Math.round(max * 100) / 100, unit: kind === "final" ? null : unit };
 }
 
+// ตัวชี้วัด (ปลายทาง) ที่สอบปลายภาควัด — เก็บเป็น JSON [{code, title}]
+function cleanLinks(raw) {
+  if (!Array.isArray(raw) || !raw.length) return null;
+  const out = [], seen = new Set();
+  for (const x of raw.slice(0, 60)) {
+    const code = text(x?.code, 60), title = text(x?.title, 500);
+    if (!title) continue;
+    const k = `${code}|${title}`;
+    if (!seen.has(k)) { seen.add(k); out.push({ code, title }); }
+  }
+  return out.length ? JSON.stringify(out) : null;
+}
+
 // หน่วยต้องเป็นของรายวิชานี้และอยู่ภาคเดียวกับช่องคะแนน
 async function checkUnits(env, courseId, list) {
   const ids = [...new Set(list.map((it) => it.unit).filter((u) => u != null))];
@@ -80,19 +93,20 @@ async function insertStructure(env, courseId, units, items) {
     unitId[u.key] = r.meta.last_row_id;
   }
   await batchAll(env, items.map((it, i) => env.DB.prepare(
-    "INSERT INTO gr_items (course_id, term_number, kind, code, title, max_score, sort_order, unit_id) VALUES (?,?,?,?,?,?,?,?)"
-  ).bind(courseId, it.term_number, it.kind, it.code ?? null, it.title, it.max_score, count.mx + (i + 1) * 10, it.unit_key != null ? unitId[it.unit_key] ?? null : null)));
+    "INSERT INTO gr_items (course_id, term_number, kind, code, title, max_score, sort_order, unit_id, indicators) VALUES (?,?,?,?,?,?,?,?,?)"
+  ).bind(courseId, it.term_number, it.kind, it.code ?? null, it.title, it.max_score, count.mx + (i + 1) * 10, it.unit_key != null ? unitId[it.unit_key] ?? null : null, it.kind === "final" ? cleanLinks(it.indicators) : null)));
 }
 
 async function readStructure(env, courseId, terms = [1, 2]) {
   const ph = terms.map(() => "?").join(",");
   const [{ results: units }, { results: items }] = await Promise.all([
     env.DB.prepare(`SELECT id, term_number, unit_no, title, hours, task FROM gr_units WHERE course_id = ? AND term_number IN (${ph}) ORDER BY term_number, unit_no, id`).bind(courseId, ...terms).all(),
-    env.DB.prepare(`SELECT i.term_number, i.kind, i.code, i.title, i.max_score, i.unit_id ${ITEM_ORDER_SQL} AND i.term_number IN (${ph}) ${ITEM_ORDER_BY}`).bind(courseId, ...terms).all(),
+    env.DB.prepare(`SELECT i.term_number, i.kind, i.code, i.title, i.max_score, i.unit_id, i.indicators ${ITEM_ORDER_SQL} AND i.term_number IN (${ph}) ${ITEM_ORDER_BY}`).bind(courseId, ...terms).all(),
   ]);
   return {
     units: units.map((u) => ({ key: u.id, term_number: u.term_number, unit_no: u.unit_no, title: u.title, hours: u.hours, task: u.task })),
-    items: items.map((it) => ({ term_number: it.term_number, kind: it.kind, code: it.code, title: it.title, max_score: it.max_score, unit_key: it.unit_id })),
+    items: items.map((it) => ({ term_number: it.term_number, kind: it.kind, code: it.code, title: it.title, max_score: it.max_score, unit_key: it.unit_id,
+      indicators: (() => { try { return it.indicators ? JSON.parse(it.indicators) : []; } catch { return []; } })() })),
   };
 }
 
@@ -261,7 +275,7 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
       const iid = raw.id == null || raw.id === "" ? null : Number(raw.id);
       if (iid != null && !oldItems.some((x) => x.id === iid)) fail(400, "ช่องคะแนนไม่ใช่ของรายวิชา/ภาคนี้");
       if (iid != null && flat.some((x) => x.id === iid)) fail(400, "ช่องคะแนนซ้ำ");
-      flat.push({ id: iid, unitIdx, kind, code: it.code, title: it.title, max: it.max });
+      flat.push({ id: iid, unitIdx, kind, code: it.code, title: it.title, max: it.max, links: kind === "final" ? cleanLinks(raw.indicators) : null });
     };
     units.forEach((u, ui) => u.items.forEach((raw) => pushItem(raw, ui, "indicator")));
     (Array.isArray(b.loose) ? b.loose : []).forEach((raw) => pushItem(raw, null, "indicator"));
@@ -303,8 +317,8 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     flat.forEach((it, i) => {
       const unit = it.unitIdx == null ? null : unitIds[it.unitIdx], order = (i + 1) * 10;
       stmts.push(it.id != null
-        ? env.DB.prepare("UPDATE gr_items SET kind=?, code=?, title=?, max_score=?, unit_id=?, sort_order=? WHERE id=?").bind(it.kind, it.code, it.title, it.max, unit, order, it.id)
-        : env.DB.prepare("INSERT INTO gr_items (course_id, term_number, kind, code, title, max_score, sort_order, unit_id) VALUES (?,?,?,?,?,?,?,?)").bind(course.id, term, it.kind, it.code, it.title, it.max, order, unit));
+        ? env.DB.prepare("UPDATE gr_items SET kind=?, code=?, title=?, max_score=?, unit_id=?, sort_order=?, indicators=? WHERE id=?").bind(it.kind, it.code, it.title, it.max, unit, order, it.links, it.id)
+        : env.DB.prepare("INSERT INTO gr_items (course_id, term_number, kind, code, title, max_score, sort_order, unit_id, indicators) VALUES (?,?,?,?,?,?,?,?,?)").bind(course.id, term, it.kind, it.code, it.title, it.max, order, unit, it.links));
     });
     await batchAll(env, stmts);
     await audit(env, user, "structure.save", { course: course.id, term, units: units.length, items: flat.length, removed: removed.length });

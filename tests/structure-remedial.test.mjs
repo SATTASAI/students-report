@@ -181,6 +181,14 @@ test("หน้าสร้างโครงสร้างรายวิช�
   d = (await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body(without, [{ id: f.id, title: "สอบปลายภาค", max_score: 15 }], { confirm: true }), { expect: 200 })).data;
   assert.equal(d.items.length, 2);
   assert.equal(d.units.length, 1); // หน่วยที่ไม่ส่งมา = ลบ
+  // สอบปลายภาคระบุตัวชี้วัดปลายทางที่วัด (เก็บ/แสดง/ไม่ซ้ำ) และติดไปกับแม่แบบ
+  const links = [{ code: "ท 1.1 ป.1/1", title: "อ่านออกเสียง" }, { code: "ท 1.1 ป.1/1", title: "อ่านออกเสียง" }, { code: "ท 2.1 ป.1/1", title: "คัดลายมือ" }, { title: "" }];
+  d = (await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body(without, [{ id: f.id, title: "สอบปลายภาค", max_score: 15, indicators: links }]), { expect: 200 })).data;
+  assert.deepEqual(d.items.find((i) => i.kind === "final").indicators, [{ code: "ท 1.1 ป.1/1", title: "อ่านออกเสียง" }, { code: "ท 2.1 ป.1/1", title: "คัดลายมือ" }]);
+  assert.deepEqual(d.items.find((i) => i.kind !== "final").indicators, []);
+  await call("admin", "PUT", `/api/courses/${c1.id}/template`, {}, { expect: 200 });
+  const tpl = (await call("t1", "GET", `/api/courses/${c1.id}/template`, null, { expect: 200 })).data.template;
+  assert.equal(tpl.items.find((i) => i.kind === "final").indicators.length, 2);
   // ตรวจข้อมูล: ไม่มีชื่อหน่วย / คะแนนเต็มผิด / id ของรายวิชาอื่น
   await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body([{ title: "", items: [] }]), { expect: 400 });
   await call("t1", "PUT", `/api/courses/${c1.id}/structure`, body([{ title: "x", items: [{ title: "y", max_score: 0 }] }]), { expect: 400 });
