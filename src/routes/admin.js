@@ -69,7 +69,10 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         attendance_pass_pct: pct(b.attendance_pass_pct, "เกณฑ์เวลาเรียน"),
         school_name: text(b.school_name, 120), school_area: text(b.school_area, 160), affiliation: text(b.affiliation, 160),
         school_address: text(b.school_address, 160),
-        director_name: text(b.director_name, 120), deputy_director_name: text(b.deputy_director_name, 120),
+        director_name: text(b.director_name, 120),
+        // รองผู้อำนวยการได้หลายคน: รับเป็นอาร์เรย์หรือข้อความคั่นบรรทัด เก็บคั่นด้วยขึ้นบรรทัดใหม่
+        deputy_director_name: (Array.isArray(b.deputy_director_names) ? b.deputy_director_names : String(b.deputy_director_name ?? "").split("\n"))
+          .map((x) => text(x, 120)).filter(Boolean).slice(0, 5).join("\n"),
         academic_head_name: text(b.academic_head_name, 120), measurement_head_name: text(b.measurement_head_name, 120),
         entry_open: b.entry_open ? 1 : 0, roster_order: b.roster_order === "code" ? "code" : "gender",
       };

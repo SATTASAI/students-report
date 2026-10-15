@@ -75,6 +75,10 @@ test("เกณฑ์ผ่านตัวชี้วัดแยกภาค �
   const s = (await call("admin", "PUT", "/api/admin/settings", body, { expect: 200 })).data.settings;
   assert.equal(s.indicator_pass_pct_t2, 60);
   assert.equal(s.deputy_director_name, "นางสาววริศรา นวมนิ่ม");
+  // รองผู้อำนวยการหลายคน (ช่องว่างถูกตัด ไม่เกิน 5 คน)
+  const many = (await call("admin", "PUT", "/api/admin/settings", { ...body, deputy_director_names: ["นาย ก  ข", "", "นาง ค ง", "จ", "ฉ", "ช", "ซ"] }, { expect: 200 })).data.settings;
+  assert.equal(many.deputy_director_name, "นาย ก ข\nนาง ค ง\nจ\nฉ\nช");
+  await call("admin", "PUT", "/api/admin/settings", body, { expect: 200 });
   // ล้างเกณฑ์ภาค 2 = ใช้ค่าภาค 1
   const s2 = (await call("admin", "PUT", "/api/admin/settings", { ...body, indicator_pass_pct_t2: "" }, { expect: 200 })).data.settings;
   assert.equal(s2.indicator_pass_pct_t2, null);

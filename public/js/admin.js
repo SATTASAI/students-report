@@ -687,15 +687,24 @@ async function renderSettings() {
       <label class="field">สังกัด<input name="affiliation" value="${esc(s.affiliation)}" maxlength="160"></label>
       <label class="field">ที่อยู่บนปก ปพ.5<input name="school_address" value="${esc(s.school_address)}" maxlength="160" placeholder="อำเภอแก่งกระจาน จังหวัดเพชรบุรี"></label>
       <label class="field">ผู้อำนวยการ<input name="director_name" value="${esc(s.director_name)}" maxlength="120"></label>
-      <label class="field">รองผู้อำนวยการ<input name="deputy_director_name" value="${esc(s.deputy_director_name)}" maxlength="120"></label>
+      <div class="field" id="deputyBox">รองผู้อำนวยการ (ได้หลายคน)
+        ${(() => { const ds = String(s.deputy_director_name || "").split("\n").filter(Boolean); return (ds.length ? ds : [""]).map((n, i) => `<input data-deputy value="${esc(n)}" maxlength="120" placeholder="รองผู้อำนวยการคนที่ ${i + 1}" aria-label="รองผู้อำนวยการคนที่ ${i + 1}" style="margin-bottom:6px">`).join(""); })()}
+        <button type="button" class="btn small" id="addDeputy">+ เพิ่มรองผู้อำนวยการ</button></div>
       <label class="field">หัวหน้างานวิชาการ<input name="academic_head_name" value="${esc(s.academic_head_name)}" maxlength="120"></label>
       <label class="field">หัวหน้างานวัดผล<input name="measurement_head_name" value="${esc(s.measurement_head_name)}" maxlength="120"></label>
     </div>
     <div class="actions" style="margin-top:16px"><button class="btn primary">บันทึก</button></div></form>`;
+  document.getElementById("addDeputy").onclick = (ev) => {
+    const box = document.getElementById("deputyBox"), n = box.querySelectorAll("[data-deputy]").length;
+    if (n >= 5) { toast("ใส่ได้ไม่เกิน 5 คน", "bad"); return; }
+    ev.target.insertAdjacentHTML("beforebegin", `<input data-deputy maxlength="120" placeholder="รองผู้อำนวยการคนที่ ${n + 1}" aria-label="รองผู้อำนวยการคนที่ ${n + 1}" style="margin-bottom:6px">`);
+    ev.target.previousElementSibling.focus();
+  };
   document.getElementById("setForm").onsubmit = async (e) => {
     e.preventDefault();
     const d = Object.fromEntries(new FormData(e.target));
     d.entry_open = !!d.entry_open;
+    d.deputy_director_names = [...e.target.querySelectorAll("[data-deputy]")].map((x) => x.value.trim()).filter(Boolean);
     try { await api(`/api/admin/settings?${yq}`, { method: "PUT", body: d }); toast("บันทึกแล้ว"); }
     catch (err) {
       // เปลี่ยนเกณฑ์ผ่าน/เวลาเรียนหลังมีรายวิชาส่งผลแล้ว → ยืนยันก่อน
