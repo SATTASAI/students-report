@@ -386,21 +386,44 @@ async function renderHomerooms() {
   const [{ rooms }, list] = await Promise.all([api(`/api/admin/homerooms?${yq}`), teachers()]);
   view.innerHTML = `<div class="panel">
     <div class="panel-head"><h2>ครูประจำชั้น</h2></div>
-    <p class="muted small">กำหนดที่นี่ที่เดียว (หรือนำเข้าจาก Excel) — ระบบส่งข้อมูลไปหน้าวิเคราะห์ผู้เรียนของระบบทะเบียนให้อัตโนมัติ</p>
+    <p class="muted small">กำหนดที่นี่ที่เดียว (หรือนำเข้าจาก Excel) ห้องละ 1–4 คน — ระบบส่งข้อมูลไปหน้าวิเคราะห์ผู้เรียนของระบบทะเบียนให้อัตโนมัติ</p>
     <div class="table-wrap"><table class="list"><thead><tr><th>ห้อง</th><th class="num">นักเรียน</th><th>ครูประจำชั้น</th><th></th></tr></thead>
     <tbody>${rooms.map((r, i) => `<tr><td><a href="/homeroom.html?grade=${encodeURIComponent(r.grade_level)}&room=${encodeURIComponent(r.classroom)}&year=${Y}">${esc(r.grade_level)}/${esc(r.classroom)}</a></td><td class="num">${r.students}</td>
       <td>${r.teachers.length ? r.teachers.map((t) => teacherLabel(list, list.find((x) => x.id === t.id) || t)).join(", ") : '<span class="tag warn">ยังไม่กำหนด</span>'}</td>
       <td><button class="btn small" data-i="${i}">กำหนด</button></td></tr>`).join("")}</tbody></table></div></div>`;
+  // เลือกครูทีละช่อง: แสดงอย่างน้อย 2 ช่อง (ครูประจำชั้นคนที่ 1, 2) เพิ่มได้ถึง 4 คน — ช่องที่เว้นว่างไม่นับ
+  const MAX_HR = 4, MIN_SLOTS = 2;
+  const opts = (sel) => `<option value="">— ไม่ระบุ —</option>${list.map((t) => `<option value="${t.id}" ${t.id === sel ? "selected" : ""}>${esc(teacherText(list, t))}</option>`).join("")}`;
+  const slot = (n, sel) => `<label class="hr-slot">ครูประจำชั้นคนที่ ${n}<select data-hr>${opts(sel)}</select></label>`;
   for (const b of view.querySelectorAll("[data-i]")) b.onclick = async () => {
     const r0 = rooms[Number(b.dataset.i)];
     const chosen = r0.teachers.map((t) => t.id);
+    const slots = Array.from({ length: Math.max(MIN_SLOTS, chosen.length) }, (_, i) => chosen[i] ?? null);
+    let picked = chosen;
     const r = await dialog({
       title: `ครูประจำชั้น ${r0.grade_level}/${r0.classroom}`,
-      body: `<input type="search" placeholder="ค้นหาชื่อครู" data-filter style="margin-bottom:10px"><div style="display:grid;gap:4px;max-height:340px;overflow:auto">${list.map((t) => `<label class="check" data-name="${esc(teacherText(list, t))}"><input type="checkbox" name="t${t.id}" ${chosen.includes(t.id) ? "checked" : ""}> ${teacherLabel(list, t)}</label>`).join("")}</div>`,
-      onOpen: (d) => { const f = d.querySelector("[data-filter]"); f.oninput = () => { for (const l of d.querySelectorAll("[data-name]")) l.hidden = !l.dataset.name.includes(f.value.trim()); }; },
+      body: `<div style="display:grid;gap:10px" data-slots>${slots.map((id, i) => slot(i + 1, id)).join("")}</div>
+        <button type="button" class="btn small" data-more style="margin-top:10px" ${slots.length >= MAX_HR ? "hidden" : ""}>+ เพิ่มครูประจำชั้น</button>
+        <p class="muted small" style="margin:10px 0 0">กำหนดได้ห้องละไม่เกิน ${MAX_HR} คน · ทุกคนบันทึกการมาเรียน ผลการประเมิน และบันทึกประจำวันของห้องนี้ได้เท่ากัน · เว้นว่างได้</p>`,
+      onOpen: (d) => {
+        const box = d.querySelector("[data-slots]"), more = d.querySelector("[data-more]");
+        const sync = () => { picked = [...box.querySelectorAll("[data-hr]")].map((x) => Number(x.value)).filter(Boolean); };
+        box.addEventListener("change", (e) => {
+          const sels = [...box.querySelectorAll("[data-hr]")], v = e.target.value;
+          if (v && sels.some((x) => x !== e.target && x.value === v)) { e.target.value = ""; toast("เลือกครูคนนี้ไว้แล้ว", "bad"); }
+          sync();
+        });
+        more.onclick = () => {
+          const n = box.querySelectorAll("[data-hr]").length;
+          if (n >= MAX_HR) return;
+          box.insertAdjacentHTML("beforeend", slot(n + 1, null));
+          more.hidden = n + 1 >= MAX_HR;
+          box.lastElementChild.querySelector("select").focus();
+        };
+      },
     });
     if (!r.ok) return;
-    try { await api("/api/admin/homerooms", { method: "PUT", body: { year: Y, grade_level: r0.grade_level, classroom: r0.classroom, user_ids: list.filter((t) => r.data[`t${t.id}`]).map((t) => t.id) } }); toast("บันทึกแล้ว"); render(); } catch (err) { showError(err); }
+    try { await api("/api/admin/homerooms", { method: "PUT", body: { year: Y, grade_level: r0.grade_level, classroom: r0.classroom, user_ids: picked } }); toast("บันทึกแล้ว"); render(); } catch (err) { showError(err); }
   };
 }
 

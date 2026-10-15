@@ -134,6 +134,8 @@ textarea { min-height: 120px; resize: vertical; }
 input:focus, select:focus, textarea:focus { border-color: var(--ink-2); outline: 2px solid #c7cff3; outline-offset: 0; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.hr-slot { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+.hr-slot select { font-weight: 400; }
 .check input { width: 18px; height: 18px; min-height: 0; accent-color: var(--ink); }
 
 /* ---------- พื้นผิว ---------- */
