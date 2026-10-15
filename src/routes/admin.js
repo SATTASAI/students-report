@@ -5,7 +5,7 @@ export const LEARNING_AREAS = [
   "ภาษาไทย", "คณิตศาสตร์", "วิทยาศาสตร์และเทคโนโลยี", "สังคมศึกษา ศาสนาและวัฒนธรรม",
   "สุขศึกษาและพลศึกษา", "ศิลปะ", "การงานอาชีพ", "ภาษาต่างประเทศ",
 ];
-export const BANK_KINDS = ["ระหว่างทาง", "ปลายทาง", "ผลการเรียนรู้"];
+export const BANK_KINDS = ["ระหว่างทาง", "ปลายทาง", "ผลการเรียนรู้", "ผลลัพธ์การเรียนรู้"];
 
 // โครงรายวิชาพื้นฐานตามหลักสูตรแกนกลางฯ 2551 (เวลาเรียนต่อปี) — ผู้ดูแลต้องตรวจทานให้ตรงหลักสูตรสถานศึกษา
 const BASIC_TEMPLATE = [
@@ -595,7 +595,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
     // สรุปสิ่งที่อยู่ในคลัง: ชั้น × กลุ่มสาระ × รายวิชา
     if (method === "GET" && !idPart) {
       const { results } = await env.DB.prepare(`SELECT grade_level, learning_area, COALESCE(subject_code, '') AS subject_code,
-          SUM(kind = 'ระหว่างทาง') AS mid, SUM(kind = 'ปลายทาง') AS final, SUM(kind = 'ผลการเรียนรู้') AS outcome, COUNT(*) AS n
+          SUM(kind = 'ระหว่างทาง') AS mid, SUM(kind = 'ปลายทาง') AS final, SUM(kind IN ('ผลการเรียนรู้', 'ผลลัพธ์การเรียนรู้')) AS outcome, COUNT(*) AS n
           FROM gr_indicator_bank GROUP BY 1, 2, 3 ORDER BY 1, 3, 2`).all();
       return json({ groups: results });
     }

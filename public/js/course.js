@@ -723,7 +723,7 @@ async function bankItems(term) {
         ${bank.indicators.some((b) => b.kind === "ปลายทาง") ? '<button type="button" class="btn small" data-kind="ปลายทาง">เฉพาะปลายทาง</button><button type="button" class="btn small" data-kind="ระหว่างทาง">เฉพาะระหว่างทาง</button>' : ""}
         <button type="button" class="btn small" data-none>ล้าง</button></div>
       <div style="display:grid;gap:6px">${bank.indicators.map((b) => `<label class="check" style="align-items:flex-start"><input type="checkbox" name="b${b.id}" value="${b.id}" data-k="${esc(b.kind || "")}" ${used.has(`${b.code}|${b.title}`) ? "disabled" : ""}>
-        <span><b>${esc(b.code)}</b> ${esc(b.title)}${b.kind && b.kind !== "ผลการเรียนรู้" ? ` <span class="tag ${b.kind === "ปลายทาง" ? "ok" : ""}">${esc(b.kind)}</span>` : ""}${used.has(`${b.code}|${b.title}`) ? ' <span class="tag">มีแล้ว</span>' : ""}</span></label>`).join("")}</div>`,
+        <span><b>${esc(b.code)}</b> ${esc(b.title)}${b.kind && !b.kind.startsWith("ผล") ? ` <span class="tag ${b.kind === "ปลายทาง" ? "ok" : ""}">${esc(b.kind)}</span>` : ""}${used.has(`${b.code}|${b.title}`) ? ' <span class="tag">มีแล้ว</span>' : ""}</span></label>`).join("")}</div>`,
     onOpen: (d) => {
       const boxes = () => [...d.querySelectorAll("input[type=checkbox][data-k]:not(:disabled)")];
       d.querySelector("[data-all]").onclick = () => boxes().forEach((x) => { x.checked = true; });

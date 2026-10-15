@@ -641,7 +641,7 @@ async function drawBankSummary() {
   if (!box) return;
   const { groups } = await api("/api/admin/indicator-bank");
   if (!groups.length) { box.innerHTML = `<p class="muted">ยังไม่มีตัวชี้วัดในคลัง</p>`; return; }
-  box.innerHTML = `<div class="table-wrap"><table class="list"><thead><tr><th>ชั้น</th><th>รหัสวิชา</th><th>กลุ่มสาระ</th><th class="num">ระหว่างทาง</th><th class="num">ปลายทาง</th><th class="num">ผลการเรียนรู้</th><th class="num">รวม</th><th></th></tr></thead>
+  box.innerHTML = `<div class="table-wrap"><table class="list"><thead><tr><th>ชั้น</th><th>รหัสวิชา</th><th>กลุ่มสาระ</th><th class="num">ระหว่างทาง</th><th class="num">ปลายทาง</th><th class="num">ผลการเรียนรู้/ผลลัพธ์</th><th class="num">รวม</th><th></th></tr></thead>
     <tbody>${groups.map((g, i) => `<tr><td>${esc(g.grade_level)}</td><td>${esc(g.subject_code || "ทุกวิชาในกลุ่มสาระ")}</td><td>${esc(g.learning_area)}</td>
       <td class="num">${g.mid || ""}</td><td class="num">${g.final || ""}</td><td class="num">${g.outcome || ""}</td><td class="num"><b>${g.n}</b></td>
       <td><button class="btn small" data-g="${i}">ดูรายการ</button></td></tr>`).join("")}</tbody></table></div>`;
@@ -653,7 +653,7 @@ async function showBankGroup(g) {
   await dialog({
     title: `คลังตัวชี้วัด ${g.grade_level} ${g.subject_code || g.learning_area}`, wide: true, okText: "", cancelText: "ปิด",
     body: `<div style="display:grid;gap:6px" id="bankList">${indicators.map((x) => `<div class="actions" style="justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--line-soft);padding:4px 0" data-row="${x.id}">
-      <span><b>${esc(x.code)}</b> ${esc(x.title)}${x.kind && x.kind !== "ผลการเรียนรู้" ? ` <span class="tag">${esc(x.kind)}</span>` : ""}</span>
+      <span><b>${esc(x.code)}</b> ${esc(x.title)}${x.kind && !x.kind.startsWith("ผล") ? ` <span class="tag">${esc(x.kind)}</span>` : ""}</span>
       ${CAN_IMPORT ? `<button class="btn small" data-del="${x.id}">ลบ</button>` : ""}</div>`).join("")}</div>`,
     onOpen: (d) => {
       for (const b of d.querySelectorAll("[data-del]")) b.onclick = async () => {

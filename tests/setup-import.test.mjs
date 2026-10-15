@@ -241,7 +241,9 @@ test("คลังตัวชี้วัดผูกรายวิชา: ว
 test("ตัวชี้วัด ป.4–6 จากหลักสูตร 2569 อยู่ในคลังตั้งแต่ติดตั้ง ใส่ครั้งเดียว และแยกตามรายวิชา", async () => {
   const { env, call } = await setup();
   const n = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).first()).n;
-  assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code IS NOT NULL"), 673);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code IS NOT NULL AND grade_level IN ('ป.4','ป.5','ป.6')"), 673);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE kind = 'ผลลัพธ์การเรียนรู้' AND grade_level IN ('ป.1','ป.2','ป.3')"), 181);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code = 'ค13101'"), 28);
   assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code = 'ส14102'"), 8);
   assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code = 'ส14102' AND code NOT LIKE 'ส 4.%'"), 0);
   assert.equal(await n("SELECT COUNT(*) AS n FROM gr_indicator_bank WHERE subject_code = 'ท16101'"), 34);
