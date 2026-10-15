@@ -1,6 +1,6 @@
 import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear, fmt } from "/js/app.js";
 import { ASSESSMENT_GROUPS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
-import { analyzeBody, ageText } from "/js/growth.js";
+import { analyzeBody, ageText, levelClass, loadGrowthRefs } from "/js/growth.js";
 import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, domainSummary, overallSummary, shortCode } from "/js/kinder.js";
 
 await shell("home");
@@ -272,19 +272,22 @@ async function applyAll(f) {
 const ROUNDS = [1, 2, 3, 4];
 const bodyOf = (sid, r) => data.body?.[sid]?.[r] || {};
 const todayIso = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
-// BMI และภาวะโภชนาการ (BMI ตามอายุ เกณฑ์ WHO) ของการวัดครั้งล่าสุด — ตัดทศนิยมทิ้ง ไม่ปัด
+// ภาวะโภชนาการตามเกณฑ์กรมอนามัย ของการวัดครั้งล่าสุด: รูปร่าง (น้ำหนักตามส่วนสูง) + ส่วนสูงตามอายุ
+let growthReady = false;
+const tagOf = (x, what) => (x ? `<span class="tag ${levelClass(x.label)}" title="${what}${x.z != null ? ` · z = ${fmt(x.z, 2)}` : ""}">${x.label}</span>` : "");
 function bmiText(sid) {
   const st = data.students.find((x) => x.id === sid);
   for (const r of [...ROUNDS].reverse()) {
     const b = bodyOf(sid, r);
     if (!(b.weight && b.height)) continue;
     const a = analyzeBody(st, b, data.body_dates?.[sid]?.[r] || todayIso());
-    const cls = { "สมส่วน": "ok", "ผอมมาก": "bad", "อ้วน": "bad" }[a.status] || "warn";
-    return `${fmt(a.bmi, 1)}${a.status ? ` <span class="tag ${cls}" title="อายุ ${ageText(a.months)} · z = ${fmt(a.z, 2)}">${a.status}</span>` : ` <span class="muted small" title="${a.why}">–</span>`}`;
+    const tags = `${tagOf(a.wfh, "รูปร่าง (น้ำหนักตามเกณฑ์ส่วนสูง)")} ${tagOf(a.hfa, "ส่วนสูงตามเกณฑ์อายุ")}${a.good ? ' <span class="tag ok">สูงดีสมส่วน</span>' : ""}`.trim();
+    return `<span title="อายุ ${ageText(a.months)} · BMI ${fmt(a.bmi, 1)}">${tags || "–"}</span>${a.why ? ` <span class="muted small" title="${esc(a.why)}">ⓘ</span>` : ""}`;
   }
   return "–";
 }
 function renderBody() {
+  if (!growthReady) { loadGrowthRefs().then(() => { growthReady = true; if (tab === "body") renderBody(); }).catch(() => {}); }
   view.innerHTML = `
     <div class="sheet-tools">
       <span class="muted small">น้ำหนัก (กก.) และส่วนสูง (ซม.) ทศนิยม 1 ตำแหน่ง · กด Enter เพื่อลงไปคนถัดไป · บันทึกอัตโนมัติ</span>
@@ -293,7 +296,7 @@ function renderBody() {
     <div class="sheet-wrap"><table class="sheet" id="sheet">
       <thead>
         <tr><th class="stick no col-head" rowspan="2">เลขที่</th><th class="stick name col-head" rowspan="2" style="text-align:left">ชื่อ–สกุล</th>
-          ${ROUNDS.map((r) => `<th class="col-head" colspan="2">ครั้งที่ ${r}</th>`).join("")}<th class="col-head" rowspan="2">BMI / ภาวะโภชนาการ<br><span class="max">ครั้งล่าสุด</span></th></tr>
+          ${ROUNDS.map((r) => `<th class="col-head" colspan="2">ครั้งที่ ${r}</th>`).join("")}<th class="col-head" rowspan="2">ภาวะโภชนาการ<br><span class="max">ครั้งล่าสุด</span></th></tr>
         <tr>${ROUNDS.map(() => '<th class="col-head small">กก.</th><th class="col-head small">ซม.</th>').join("")}</tr>
       </thead>
       <tbody>${data.students.map((s) => `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}">
@@ -301,7 +304,7 @@ function renderBody() {
         ${ROUNDS.map((r) => ["weight", "height"].map((f) => `<td class="cell"><input inputmode="decimal" data-r="${r}" data-f="${f}" value="${bodyOf(s.id, r)[f] ?? ""}" aria-label="${esc(s.name)} ครั้งที่ ${r} ${f === "weight" ? "น้ำหนัก" : "ส่วนสูง"}"></td>`).join("")).join("")}
         <td class="calc" data-bmi style="white-space:nowrap">${bmiText(s.id)}</td></tr>`).join("")}</tbody>
     </table></div>
-    <p class="muted small" style="margin-top:10px">ภาวะโภชนาการแปลผลจาก BMI ตามอายุและเพศ เกณฑ์องค์การอนามัยโลก (WHO) — อายุคิดจากวันเกิดถึงวันที่บันทึก · ต้องมีวันเกิดและเพศในทะเบียน
+    <p class="muted small" style="margin-top:10px">ภาวะโภชนาการตามเกณฑ์กรมอนามัย: รูปร่าง (น้ำหนักตามเกณฑ์ส่วนสูง) และส่วนสูงตามเกณฑ์อายุ · สูงดีสมส่วน = ส่วนสูงตามเกณฑ์ขึ้นไปและรูปร่างสมส่วน — อายุคิดจากวันเกิดถึงวันที่บันทึก ต้องมีวันเกิดและเพศในทะเบียน
       · <a target="_blank" rel="noopener" href="/print/body.html?${q}">${ICONS.print} พิมพ์แบบบันทึกน้ำหนัก ส่วนสูง และภาวะโภชนาการ</a></p>`;
   const table = document.getElementById("sheet");
   const inputs = () => [...table.querySelectorAll("tbody input")];
