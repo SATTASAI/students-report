@@ -64,9 +64,9 @@ let refs = null;
 // โหลดตารางอ้างอิง (ไฟล์ใหญ่ — โหลดเฉพาะหน้าที่ใช้)
 export async function loadGrowthRefs() {
   if (refs) return refs;
-  const who = (await import("/js/growth-who2006.js")).default;
+  const who = (await import("./growth-who2006.js")).default;
   let doh = null;
-  try { doh = (await import("/js/growth-doh619.js")).default; } catch { /* ยังไม่มีตาราง 6–19 ปี */ }
+  try { doh = (await import("./growth-doh619.js")).default; } catch { /* ยังไม่มีตาราง 6–19 ปี */ }
   refs = { who, doh };
   return refs;
 }
