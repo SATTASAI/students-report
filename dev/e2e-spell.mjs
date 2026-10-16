@@ -1,5 +1,5 @@
 // ทดสอบหน้าเว็บ: ตรวจคำผิดในความคิดเห็นครูประจำชั้น (ป. และอนุบาล)
-// - พบคำผิด → ไม่บันทึก · แก้ตามคำแนะนำ → บันทึก · "+ คำนี้ถูก" → บันทึก
+// - พบคำผิด → ขึ้นตัวแดง "ท่านสะกดคำไม่ถูก" ไม่บันทึก · ครูแก้เอง → บันทึก · "+ คำนี้ถูก" → บันทึก
 // - "บันทึกทั้งที่มีคำผิด" ต้องยืนยัน 2 รอบ (ยกเลิกรอบ 2 = ยังไม่บันทึก)
 // - ออกจากแท็บขณะมีช่องค้าง → ถามก่อน
 // node dev/e2e-spell.mjs <โฟลเดอร์>  (เปิด dev server ใหม่ที่พอร์ต 8787 ก่อน)
@@ -31,7 +31,7 @@ await t.goto(`${BASE}/homeroom.html?${Q}`);
 await t.waitForSelector("#tabs button");
 await t.click('#tabs button[data-tab="comments"]');
 await t.waitForSelector(".cm-row textarea");
-await t.waitForFunction(() => document.getElementById("spellBar")?.textContent.includes("ตรวจคำที่อาจสะกดผิดและคำที่ไม่เข้ากับบริบทอัตโนมัติ"), null, { timeout: 15000 });
+await t.waitForFunction(() => document.getElementById("spellBar")?.textContent.includes("ระบบตรวจการสะกดคำอัตโนมัติ"), null, { timeout: 15000 });
 const rows = t.locator(".cm-row:not(.inactive)");
 const sid = async (i) => Number(await rows.nth(i).getAttribute("data-sid"));
 const saved = async (i, f) => (await api(t, `/api/homeroom?${Q}`)).comments[await sid(i)]?.[2]?.[f];
@@ -50,20 +50,22 @@ check(await saved(1, "learn") == null, "พบคำผิดแล้วต้�
 check(await rows.nth(1).locator(".sp-issues").first().isVisible(), "ต้องแสดงคำที่อาจผิดใต้ช่อง");
 check(await ta1.evaluate((el) => el.classList.contains("sp-bad")), "ช่องที่มีคำผิดต้องเป็นสีแดง");
 await t.screenshot({ path: `${OUT}/s1-issue.png` });
-await rows.nth(1).locator('.sp-fix[data-to="ใฝ่"]').click();
+check((await rows.nth(1).locator(".sp-issues").first().innerText()).includes("ท่านสะกดคำไม่ถูก"), "ต้องขึ้นว่า ท่านสะกดคำไม่ถูก");
+check(await rows.nth(1).locator(".sp-fix").count() === 0, "ต้องไม่มีปุ่มเลือกคำถูก");
+await ta1.fill("ใฝ่รู้ ตั้งใจเรียน");
 await waitState(t, "บันทึกแล้ว");
-check(await ta1.inputValue() === "ใฝ่รู้ ตั้งใจเรียน", `แก้ตามคำแนะนำไม่ถูก: ${await ta1.inputValue()}`);
+check(await ta1.inputValue() === "ใฝ่รู้ ตั้งใจเรียน", `แก้แล้วข้อความไม่ถูก: ${await ta1.inputValue()}`);
 check(await saved(1, "learn") === "ใฝ่รู้ ตั้งใจเรียน", "แก้คำผิดแล้วต้องบันทึก");
 
 // 2b) คำสะกดถูกแต่ไม่เข้ากับบริบท → ไม่บันทึก → แก้ตามคำแนะนำ
 const ta2 = rows.nth(1).locator('textarea[data-f="habit"]');
 await ta2.fill("ไม่ตั่งใจเลียน");
 await waitState(t, "ยังไม่บันทึก 1 ช่อง");
-check((await rows.nth(1).locator(".sp-issues").nth(1).innerText()).includes("ไม่เข้ากับบริบท"), "ต้องบอกว่าไม่เข้ากับบริบท");
+check((await rows.nth(1).locator(".sp-issues").nth(1).innerText()).includes("ท่านสะกดคำไม่ถูก"), "บริบทผิดต้องขึ้นว่า ท่านสะกดคำไม่ถูก");
 await t.screenshot({ path: `${OUT}/s1b-context.png` });
-await rows.nth(1).locator('.sp-fix[data-to="ตั้งใจเรียน"]').click();
+await ta2.fill("ไม่ตั้งใจเรียน");
 await waitState(t, "บันทึกแล้ว");
-check(await saved(1, "habit") === "ไม่ตั้งใจเรียน", `แก้ตามบริบทไม่ถูก: ${await saved(1, "habit")}`);
+check(await saved(1, "habit") === "ไม่ตั้งใจเรียน", `แก้แล้วข้อความไม่ถูก: ${await saved(1, "habit")}`);
 
 // 3) คำที่ระบบไม่รู้จัก → "+ คำนี้ถูก" → บันทึก และไม่เตือนคำนั้นอีก
 await rows.nth(2).locator('textarea[data-f="habit"]').fill("ปุ๊กปิ๊กชอบช่วยเหลือเพื่อน");
@@ -102,7 +104,7 @@ check(await saved(4, "health") === "ศรีษะสะอาด", "ยืน�
 await t.click('button[data-all="other"]');
 await t.fill("dialog[open] textarea[name=body]", "ควรสังเกตุอาการ");
 await t.click("dialog[open] button[value=ok]");
-await t.waitForFunction(() => document.querySelector("dialog[open] h2")?.textContent === "พบคำที่อาจสะกดผิด");
+await t.waitForFunction(() => document.querySelector("dialog[open] h2")?.textContent === "ท่านสะกดคำไม่ถูก");
 await t.click("dialog[open] button[value=cancel]");
 await t.waitForTimeout(800);
 check(await saved(0, "other") == null, "ยกเลิกแล้วต้องไม่ใช้กับทั้งห้อง");
@@ -135,7 +137,7 @@ await t.waitForSelector(".cm-row textarea");
 const krow = t.locator(".cm-row:not(.inactive)").first();
 await krow.locator("textarea").first().fill("ร่าเลิงแจ่มใส");
 await waitState(t, "ยังไม่บันทึก 1 ช่อง");
-await krow.locator('.sp-fix[data-to="ร่าเริง"]').click();
+await krow.locator("textarea").first().fill("ร่าเริงแจ่มใส");
 await waitState(t, "บันทึกแล้ว");
 const kd = await api(t, `/api/homeroom/kinder?${KQ}`);
 const ksid = Number(await krow.getAttribute("data-sid"));

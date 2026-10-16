@@ -523,7 +523,7 @@ const commentStore = (kind) => (kind === "p" ? data.comments : kd.comments);
 const pendingOf = (kind) => (kind === "p" ? pendingC : pendingKC);
 
 function spellBar() {
-  return `<p class="muted small sp-bar" id="spellBar">${checker ? "ตรวจคำที่อาจสะกดผิดและคำที่ไม่เข้ากับบริบทอัตโนมัติ — ช่องที่พบคำผิดจะยังไม่บันทึกจนกว่าจะแก้ หรือกดยืนยันบันทึก 2 ครั้ง"
+  return `<p class="muted small sp-bar" id="spellBar">${checker ? "ระบบตรวจการสะกดคำอัตโนมัติ — ช่องที่สะกดคำไม่ถูกจะยังไม่บันทึกจนกว่าจะแก้ หรือกดยืนยันบันทึก 2 ครั้ง"
     : "กำลังโหลดพจนานุกรมสำหรับตรวจคำผิด…"} · <button type="button" class="link-btn" id="myWords">พจนานุกรมของฉัน (${(data.spell_words || []).length})</button></p>`;
 }
 
@@ -566,8 +566,8 @@ function drawIssues(ta) {
   const issues = ta.value.trim() ? checkText(ta.value) : [];
   ta.classList.toggle("sp-bad", issues.length > 0);
   box.hidden = !issues.length;
-  box.innerHTML = issues.length ? `<span class="sp-title">คำที่อาจสะกดผิด:</span> ${issues.slice(0, 6).map((x, i) => `<span class="sp-item" title="${esc(x.note)}"><b>${esc(x.word)}</b>${x.kind === "context" ? ` <span class="sp-ctx">ไม่เข้ากับบริบท</span>` : ""}${
-    x.suggest.length ? ` → ${x.suggest.map((w) => `<button type="button" class="sp-fix" data-i="${i}" data-to="${esc(w)}">${esc(w)}</button>`).join(" ")}` : ""}${
+  // แจ้งเพียงว่าสะกดไม่ถูก และขีดเส้นใต้คำนั้น — ไม่เลือกคำถูกให้ ครูแก้เอง
+  box.innerHTML = issues.length ? `<span class="sp-title">ท่านสะกดคำไม่ถูก</span> ${issues.slice(0, 6).map((x) => `<span class="sp-item"><b>${esc(x.word)}</b>${
     (x.kind === "unknown" || x.kind === "context") && !/\s/.test(x.word) ? ` <button type="button" class="sp-add" data-word="${esc(x.word)}" title="คำนี้ถูกต้อง — ไม่ต้องเตือนอีก">+ คำนี้ถูก</button>` : ""}</span>`).join("")}${issues.length > 6 ? ` <span class="muted">และอีก ${issues.length - 6} คำ</span>` : ""}` : "";
   box._issues = issues;
 }
@@ -586,18 +586,10 @@ function wireSpell(list, kind) {
   if (checker) drawAllIssues(); else loadChecker().then(() => { if (list.isConnected) ready(); }).catch((err) => showError(err));
   const term = () => (kind === "p" ? cterm : kterm);
   list.addEventListener("click", async (e) => {
-    const fix = e.target.closest(".sp-fix"), add = e.target.closest(".sp-add");
-    if (!fix && !add) return;
+    const add = e.target.closest(".sp-add");
+    if (!add) return;
     e.preventDefault();
-    const ta = e.target.closest(".cm-field").querySelector("textarea"), sid = Number(e.target.closest(".cm-row").dataset.sid), f = ta.dataset.f;
-    if (fix) {
-      const x = ta.parentElement.querySelector(".sp-issues")._issues[Number(fix.dataset.i)];
-      ta.value = (ta.value.slice(0, x.start) + fix.dataset.to + ta.value.slice(x.end)).slice(0, 300);
-      ((commentStore(kind) || {})[sid] ||= {})[term()] ||= {};
-      if (kind === "p") setComment(sid, f, ta.value); else commentChanged(kind, term(), sid, f, ta.value);
-      drawIssues(ta);
-      ta.focus();
-    } else await addWord(add.dataset.word);
+    await addWord(add.dataset.word);
   });
 }
 
@@ -648,7 +640,7 @@ function heldList() {
 // ยืนยัน 2 รอบ → true = บันทึกได้
 async function confirmTwice(listHtml, count, what) {
   const r1 = await dialog({
-    title: "พบคำที่อาจสะกดผิด", okText: "บันทึกต่อ (ยืนยันครั้งที่ 1/2)", cancelText: "กลับไปแก้ไข",
+    title: "ท่านสะกดคำไม่ถูก", okText: "บันทึกต่อ (ยืนยันครั้งที่ 1/2)", cancelText: "กลับไปแก้ไข",
     body: `<p style="margin-top:0">ระบบตรวจพบคำที่อาจสะกดผิดใน${what} ${count} ช่อง จึงยังไม่บันทึก</p>
       <ul class="sp-confirm">${listHtml}</ul>
       <p class="muted small">ภาษาไทยตรวจได้ไม่สมบูรณ์ ถ้าตรวจทานแล้วว่าถูกต้องสามารถบันทึกต่อได้ (ต้องยืนยัน 2 ครั้ง)</p>`,
@@ -751,7 +743,7 @@ function showState(err) {
   else if (saving || anyPending() || checking.size) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
   else if (held.size) {
     el.classList.add("error");
-    el.innerHTML = `ยังไม่บันทึก ${held.size} ช่อง — พบคำที่อาจสะกดผิด <button class="btn small" id="forceSave">บันทึกทั้งที่มีคำผิด</button>`;
+    el.innerHTML = `ยังไม่บันทึก ${held.size} ช่อง — สะกดคำไม่ถูก <button class="btn small" id="forceSave">บันทึกทั้งที่มีคำผิด</button>`;
     document.getElementById("forceSave").onclick = forceSaveHeld;
   }
   else el.textContent = "บันทึกแล้ว";
