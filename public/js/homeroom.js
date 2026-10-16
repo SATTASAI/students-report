@@ -523,7 +523,7 @@ const commentStore = (kind) => (kind === "p" ? data.comments : kd.comments);
 const pendingOf = (kind) => (kind === "p" ? pendingC : pendingKC);
 
 function spellBar() {
-  return `<p class="muted small sp-bar" id="spellBar">${checker ? "ตรวจคำที่อาจสะกดผิดอัตโนมัติ — ช่องที่พบคำผิดจะยังไม่บันทึกจนกว่าจะแก้ หรือกดยืนยันบันทึก 2 ครั้ง"
+  return `<p class="muted small sp-bar" id="spellBar">${checker ? "ตรวจคำที่อาจสะกดผิดและคำที่ไม่เข้ากับบริบทอัตโนมัติ — ช่องที่พบคำผิดจะยังไม่บันทึกจนกว่าจะแก้ หรือกดยืนยันบันทึก 2 ครั้ง"
     : "กำลังโหลดพจนานุกรมสำหรับตรวจคำผิด…"} · <button type="button" class="link-btn" id="myWords">พจนานุกรมของฉัน (${(data.spell_words || []).length})</button></p>`;
 }
 
@@ -566,9 +566,9 @@ function drawIssues(ta) {
   const issues = ta.value.trim() ? checkText(ta.value) : [];
   ta.classList.toggle("sp-bad", issues.length > 0);
   box.hidden = !issues.length;
-  box.innerHTML = issues.length ? `<span class="sp-title">คำที่อาจสะกดผิด:</span> ${issues.slice(0, 6).map((x, i) => `<span class="sp-item" title="${esc(x.note)}"><b>${esc(x.word)}</b>${
+  box.innerHTML = issues.length ? `<span class="sp-title">คำที่อาจสะกดผิด:</span> ${issues.slice(0, 6).map((x, i) => `<span class="sp-item" title="${esc(x.note)}"><b>${esc(x.word)}</b>${x.kind === "context" ? ` <span class="sp-ctx">ไม่เข้ากับบริบท</span>` : ""}${
     x.suggest.length ? ` → ${x.suggest.map((w) => `<button type="button" class="sp-fix" data-i="${i}" data-to="${esc(w)}">${esc(w)}</button>`).join(" ")}` : ""}${
-    x.kind === "unknown" && !/\s/.test(x.word) ? ` <button type="button" class="sp-add" data-word="${esc(x.word)}" title="คำนี้ถูกต้อง — ไม่ต้องเตือนอีก">+ คำนี้ถูก</button>` : ""}</span>`).join("")}${issues.length > 6 ? ` <span class="muted">และอีก ${issues.length - 6} คำ</span>` : ""}` : "";
+    (x.kind === "unknown" || x.kind === "context") && !/\s/.test(x.word) ? ` <button type="button" class="sp-add" data-word="${esc(x.word)}" title="คำนี้ถูกต้อง — ไม่ต้องเตือนอีก">+ คำนี้ถูก</button>` : ""}</span>`).join("")}${issues.length > 6 ? ` <span class="muted">และอีก ${issues.length - 6} คำ</span>` : ""}` : "";
   box._issues = issues;
 }
 function drawAllIssues() { for (const ta of view.querySelectorAll("#cmList textarea[data-f]")) if (ta.value.trim()) drawIssues(ta); }

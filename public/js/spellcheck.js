@@ -2,6 +2,7 @@
 // 1) รูปแบบการพิมพ์ที่ผิดแน่นอน (เ+เ แทน แ, สระอำแยกตัว, วรรณยุกต์ซ้ำ, อักษรซ้ำ 3 ตัวขึ้นไป)
 // 2) คำที่มักเขียนผิด (MISSPELLINGS) พร้อมคำที่ถูก
 // 3) ตัดคำด้วยพจนานุกรม (/assets/thai-words.txt จาก PyThaiNLP, CC0) — ส่วนที่ไม่ตรงคำใดเลยถือว่า "อาจสะกดผิด"
+// 4) บริบท: คำแต่ละคำสะกดถูก แต่เมื่ออ่านติดกันแล้ว "ออกเสียงเหมือน" คำ/วลีที่ใช้บ่อย (ไม่ตั่งใจเลียน → ไม่ตั้งใจเรียน)
 // ภาษาไทยตรวจได้ไม่สมบูรณ์ (ชื่อเฉพาะ คำใหม่) ครูจึงเพิ่มคำเข้า "พจนานุกรมของฉัน" หรือยืนยันบันทึกทั้งที่มีคำเตือนได้
 
 // คำผิด → คำที่ถูก (ตรวจแล้วว่าคำผิดไม่เป็นส่วนหนึ่งของคำที่ถูกต้องในพจนานุกรม)
@@ -38,6 +39,26 @@ export const MISSPELLINGS = {
 
 // คำที่พจนานุกรมไม่มี แต่ใช้ในโรงเรียน (เพิ่มได้ที่นี่ หรือครูเพิ่มเองใน "พจนานุกรมของฉัน")
 export const EXTRA_WORDS = ["ป่าเด็ง", "บ้านป่าเด็ง", "แก่งกระจาน", "ปพ", "อนุบาล", "ฐานการเรียนรู้", "ออนไลน์", "แท็บเล็ต", "ยูทูบ", "เกม"];
+
+// วลีที่ครูใช้บ่อยในความคิดเห็น (เขียนติดกัน) — ใช้ตรวจบริบท: คำที่พิมพ์ออกเสียงเหมือนวลีเหล่านี้แต่สะกดต่างไป
+export const COMMON_PHRASES = `ตั้งใจเรียน ตั้งใจฟัง ตั้งใจทำงาน ตั้งใจฟังครู ขยันเรียน เรียนเก่ง เรียนดี เรียนช้า เรียนรู้ได้ดี เรียนรู้ได้เร็ว
+ใฝ่เรียนรู้ ใฝ่รู้ใฝ่เรียน ส่งงานครบ ส่งงานตรงเวลา ส่งงานช้า ทำงานเสร็จ ทำงานช้า ทำงานกลุ่ม ทำการบ้าน ส่งการบ้าน ทบทวนบทเรียน
+อ่านหนังสือ เขียนหนังสือ อ่านคล่อง เขียนคล่อง อ่านออกเขียนได้ อ่านไม่คล่อง ฝึกอ่าน ฝึกเขียน คัดลายมือ ลายมือสวย สะกดคำ
+ตอบคำถาม ถามคำถาม กล้าแสดงออก กล้าซักถาม ช่วยเหลือเพื่อน ช่วยเหลือครู ช่วยเหลือตนเอง ช่วยเหลือผู้อื่น ช่วยงานครู เชื่อฟังครู
+เชื่อฟังคำสั่งสอน มีน้ำใจ มีวินัย มีความรับผิดชอบ มีสมาธิ มีมารยาท มีมนุษยสัมพันธ์ มีความคิดสร้างสรรค์ พูดจาไพเราะ แต่งกายเรียบร้อย
+แต่งกายถูกระเบียบ เป็นเด็กดี ร่าเริงแจ่มใส ยิ้มแย้มแจ่มใส อารมณ์ดี เล่นกับเพื่อน ทะเลาะกับเพื่อน คุยในห้องเรียน คุยในเวลาเรียน
+ร่วมกิจกรรม เข้าร่วมกิจกรรม มาเรียนสม่ำเสมอ ขาดเรียนบ่อย มาสายบ่อย มาโรงเรียน สุขภาพแข็งแรง สุขภาพดี ร่างกายแข็งแรง
+น้ำหนักเกินเกณฑ์ น้ำหนักต่ำกว่าเกณฑ์ ตามเกณฑ์ ดื่มนม แปรงฟัน ล้างมือ ตัดเล็บ รับประทานอาหาร ออกกำลังกาย พักผ่อนให้เพียงพอ
+ผู้ปกครอง ควรส่งเสริม ควรปรับปรุง ควรฝึก ควรได้รับการส่งเสริม ผลการเรียน ผลการเรียนดี คะแนนสอบ ภาษาไทย ภาษาอังกฤษ
+คณิตศาสตร์ วิทยาศาสตร์ ห้องเรียน ชั้นเรียน เพื่อนร่วมชั้น ความสะอาด รักษาความสะอาด เรียบร้อยดี ดีมาก ดีเยี่ยม`.split(/\s+/).filter(Boolean);
+
+// กุญแจเสียงอ่าน: ตัดวรรณยุกต์ และรวมอักษรที่ออกเสียงเหมือนกัน — สองข้อความที่ได้กุญแจเดียวกันคือพิมพ์ "เสียงเหมือน" กัน
+const SOUND = [[/[\u0E48-\u0E4B\u0E47]/g, ""], [/ใ/g, "ไ"], [/ร/g, "ล"], [/[ศษซ]/g, "ส"], [/[ธฑฒถฐ]/g, "ท"], [/ฏ/g, "ต"], [/ฎ/g, "ด"],
+  [/ภ/g, "พ"], [/ฆ/g, "ค"], [/ฌ/g, "ช"], [/ณ/g, "น"], [/ญ/g, "ย"], [/ฬ/g, "ล"]];
+export function soundKey(s) { for (const [re, to] of SOUND) s = s.replace(re, to); return s; }
+// แบบหลวม (ใช้กับวลีที่ใช้บ่อยเท่านั้น): ไม่สนใจ ร/ล ด้วย เพื่อจับการพิมพ์ตกควบกล้ำ (ส่งงานคบ → ส่งงานครบ)
+const looseKey = (s) => soundKey(s).replace(/ล/g, "");
+const CONTEXT_RANK = 20000; // คำในพจนานุกรมที่ใช้บ่อย (อันดับความถี่) ที่นำมาเทียบบริบท
 
 const COMBINING = /[ัิ-ฺ็-๎]/; // สระบน/ล่าง วรรณยุกต์ การันต์
 const FOLLOW = /[ะาำๅ]/;           // ะ า ำ ๅ ขึ้นต้นคำไม่ได้
@@ -130,6 +151,11 @@ export function createChecker(wordList, extra = []) {
   const byLen = new Map();
   for (const w of dict.keys()) { const l = w.length; if (!byLen.has(l)) byLen.set(l, []); byLen.get(l).push(w); }
   const sugCache = new Map();
+  // ดัชนีบริบท: กุญแจเสียงอ่าน → คำ/วลีที่ใช้บ่อย
+  const strictIdx = new Map(), looseIdx = new Map();
+  const put = (idx, k, w) => { if (!idx.has(k)) idx.set(k, w); };
+  for (const [w, rank] of dict) if (rank < CONTEXT_RANK && w.length >= 4) put(strictIdx, soundKey(w), w);
+  for (const w of COMMON_PHRASES) { strictIdx.set(soundKey(w), w); put(looseIdx, looseKey(w), w); }
 
   function suggest(word) {
     if (sugCache.has(word)) return sugCache.get(word);
@@ -150,7 +176,7 @@ export function createChecker(wordList, extra = []) {
     has,
     setCustom(words) { custom.clear(); for (const w of words) custom.add(w); },
     addCustom(w) { custom.add(w); },
-    // ตรวจข้อความ → [{start, end, word, suggest:[...], kind: "pattern"|"known"|"unknown", note}]
+    // ตรวจข้อความ → [{start, end, word, suggest:[...], kind: "pattern"|"known"|"unknown"|"context", note}]
     // ignore: ข้อความที่ไม่ต้องตรวจ เช่น ชื่อนักเรียนในห้อง
     check(text, ignore = []) {
       const issues = [];
@@ -175,7 +201,7 @@ export function createChecker(wordList, extra = []) {
         [/([่-์])([ัิ-ู])/g, (m) => `${m[1]}${m[0]}`, "พิมพ์วรรณยุกต์ก่อนสระ (ต้องพิมพ์สระก่อน)"],
         [/([ัิ-ฺ็-๎])\1+/g, (m) => m[0], "พิมพ์สระ/วรรณยุกต์ซ้ำ"],
         [/([่-๋])[่-๋]+/g, (m) => m[0], "มีวรรณยุกต์มากกว่าหนึ่งตัว"],
-        [/([ก-ฮ])\1\1+/g, (m) => m[0], "พิมพ์ตัวอักษรซ้ำหลายตัว"],
+        [/([ก-ฬฮ])\1\1+/g, (m) => m[0], "พิมพ์ตัวอักษรซ้ำหลายตัว"], // ยกเว้น อ (เหงื่อออก)
       ];
       for (const [re, fix, note] of patterns) {
         for (const m of masked.matchAll(re)) {
@@ -208,9 +234,36 @@ export function createChecker(wordList, extra = []) {
           const start = base + t.start - left.length, end = start + word.length;
           let sug = suggest(word);
           if (!sug.length && (left || right)) sug = suggest(t.text).map((x) => left + x + right);
+          // อ่านรวมกับคำข้างเคียงแล้วออกเสียงเหมือนคำ/วลีที่ใช้บ่อย → ใช้เป็นคำแนะนำแรก (เรียบล้อย → เรียบร้อย)
+          let ctx = null;
+          for (let a = Math.max(0, i - 2); a <= i && !ctx; a++) {
+            for (let b = Math.min(segs.length - 1, i + 2); b >= i; b--) {
+              const span = segs.slice(a, b + 1).map((x) => x.text).join("");
+              if (span.length < 3) continue;
+              const target = strictIdx.get(soundKey(span)) || looseIdx.get(looseKey(span));
+              if (target && target !== span) { ctx = { start: base + segs[a].start, span, target }; break; }
+            }
+          }
+          if (ctx) { add(ctx.start, ctx.start + ctx.span.length, text.slice(ctx.start, ctx.start + ctx.span.length), [ctx.target], "unknown", "ไม่พบในพจนานุกรม"); continue; }
           if (word.length === 1 && /[ก-ฮ]/.test(word)) continue; // อักษรตัวเดียว เช่น อักษรย่อ
           add(start, end, text.slice(start, end), sug, "unknown", "ไม่พบในพจนานุกรม");
         }
+        // 4) บริบท: นำคำที่รู้จักซึ่งอยู่ติดกัน 1–4 คำมาอ่านต่อกัน ถ้าออกเสียงเหมือนคำ/วลีที่ใช้บ่อยแต่สะกดต่าง → เตือน
+        //    (คำเดี่ยวที่สะกดถูกไม่เตือน เพราะอาจเป็นคำที่ตั้งใจใช้ เช่น เลียน, ตั่ง)
+        const found = [];
+        for (let i = 0; i < segs.length; i++) {
+          let joined = "";
+          for (let j = i; j < Math.min(segs.length, i + 4); j++) {
+            if (!segs[j].known) break;
+            joined += segs[j].text;
+            if (j === i || joined.length < 4 || has(joined)) continue;
+            const target = strictIdx.get(soundKey(joined)) || looseIdx.get(looseKey(joined));
+            if (target && target !== joined) found.push({ start: base + segs[i].start, end: base + segs[i].start + joined.length, target });
+          }
+        }
+        // ช่วงที่ยาวที่สุดก่อน (ตั่งใจเลียน ดีกว่า ไม่ตั่งใจ)
+        found.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
+        for (const f of found) add(f.start, f.end, text.slice(f.start, f.end), [f.target], "context", "คำสะกดถูกแต่ไม่เข้ากับบริบท");
       }
       return issues.sort((a, b) => a.start - b.start);
     },
