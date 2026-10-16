@@ -50,7 +50,16 @@ export const COMMON_PHRASES = `ตั้งใจเรียน ตั้งใ
 ร่วมกิจกรรม เข้าร่วมกิจกรรม มาเรียนสม่ำเสมอ ขาดเรียนบ่อย มาสายบ่อย มาโรงเรียน สุขภาพแข็งแรง สุขภาพดี ร่างกายแข็งแรง
 น้ำหนักเกินเกณฑ์ น้ำหนักต่ำกว่าเกณฑ์ ตามเกณฑ์ ดื่มนม แปรงฟัน ล้างมือ ตัดเล็บ รับประทานอาหาร ออกกำลังกาย พักผ่อนให้เพียงพอ
 ผู้ปกครอง ควรส่งเสริม ควรปรับปรุง ควรฝึก ควรได้รับการส่งเสริม ผลการเรียน ผลการเรียนดี คะแนนสอบ ภาษาไทย ภาษาอังกฤษ
-คณิตศาสตร์ วิทยาศาสตร์ ห้องเรียน ชั้นเรียน เพื่อนร่วมชั้น ความสะอาด รักษาความสะอาด เรียบร้อยดี ดีมาก ดีเยี่ยม`.split(/\s+/).filter(Boolean);
+คณิตศาสตร์ วิทยาศาสตร์ ห้องเรียน ชั้นเรียน เพื่อนร่วมชั้น ความสะอาด รักษาความสะอาด เรียบร้อยดี ดีมาก ดีเยี่ยม
+ไม่ตั้งใจเรียน ไม่ตั้งใจ ไม่ค่อยตั้งใจ ไม่ส่งงาน ส่งงานไม่ครบ ไม่ครบ ไม่ส่งการบ้าน ไม่ทำการบ้าน ไม่เรียบร้อย ไม่สวย สวยงาม
+ลายมือไม่สวย เขียนสวย เขียนไม่สวย อ่านไม่ออก เขียนไม่ได้ ไม่ค่อยพูด ไม่ค่อยกล้า ไม่กล้าแสดงออก ไม่มีสมาธิ
+ชอบเรียน มาเรียน ไปเรียน เรียนหนังสือ เรียนรู้ เรียนรู้ได้ช้า การเรียน ผลการเรียนดีขึ้น ตั้งใจเรียนดี ขยันหมั่นเพียร หมั่นเพียร
+ควรตั้งใจเรียน ควรตั้งใจเรียนให้มากขึ้น ควรทบทวน ควรฝึกอ่าน ควรฝึกเขียน ควรระมัดระวัง ให้มากขึ้น มากขึ้น ดีขึ้น
+ช่วยงาน ทำความสะอาด เขตรับผิดชอบ แบ่งปัน เสียสละ ซื่อสัตย์ สุจริต อดทน ประหยัด กตัญญู ความกตัญญู สามัคคี
+เข้าแถว เคารพธงชาติ สวดมนต์ ไหว้ครู ทักทาย สวัสดี ขอบคุณ ขอโทษ พูดเพราะ พูดจาสุภาพ สุภาพเรียบร้อย
+ทำงานเรียบร้อย ทำงานสะอาด ทำงานตามที่ได้รับมอบหมาย รับผิดชอบงาน งานที่ได้รับมอบหมาย ทำงานร่วมกับผู้อื่น`.split(/\s+/).filter(Boolean);
+
+const PHRASE_SET = new Set(COMMON_PHRASES);
 
 // กุญแจเสียงอ่าน: ตัดวรรณยุกต์ และรวมอักษรที่ออกเสียงเหมือนกัน — สองข้อความที่ได้กุญแจเดียวกันคือพิมพ์ "เสียงเหมือน" กัน
 const SOUND = [[/[\u0E48-\u0E4B\u0E47]/g, ""], [/ใ/g, "ไ"], [/ร/g, "ล"], [/[ศษซ]/g, "ส"], [/[ธฑฒถฐ]/g, "ท"], [/ฏ/g, "ต"], [/ฎ/g, "ด"],
@@ -156,6 +165,27 @@ export function createChecker(wordList, extra = []) {
   const put = (idx, k, w) => { if (!idx.has(k)) idx.set(k, w); };
   for (const [w, rank] of dict) if (rank < CONTEXT_RANK && w.length >= 4) put(strictIdx, soundKey(w), w);
   for (const w of COMMON_PHRASES) { strictIdx.set(soundKey(w), w); put(looseIdx, looseKey(w), w); }
+  // ดัชนีต่างกัน 1 อักษร (ลบได้ 1 ตัว แบบ SymSpell): จับคำผิดที่บังเอิญเป็นคำอื่น เช่น ทำการบ้าย, สวนงาม, ไม่คบ
+  const nearIdx = new Map(), nearRank = new Map();
+  const putNear = (k, w) => { let a = nearIdx.get(k); if (!a) nearIdx.set(k, (a = [])); if (!a.includes(w)) a.push(w); };
+  const addNear = (w, rank) => {
+    if (nearRank.has(w) && nearRank.get(w) <= rank) return;
+    nearRank.set(w, rank);
+    putNear(w, w);
+    for (let i = 0; i < w.length; i++) putNear(w.slice(0, i) + w.slice(i + 1), w);
+  };
+  // ใช้เฉพาะวลีที่คัดไว้ (COMMON_PHRASES) — ถ้าใช้ทั้งพจนานุกรมจะเตือนผิดมาก (ของเพื่อน ↔ ของเถื่อน)
+  COMMON_PHRASES.forEach((w, i) => addNear(w, i));
+  function nearest(j) {
+    const cands = new Set(nearIdx.get(j) || []);
+    for (let i = 0; i < j.length; i++) for (const w of nearIdx.get(j.slice(0, i) + j.slice(i + 1)) || []) cands.add(w);
+    let best = null;
+    for (const w of cands) {
+      if (w === j || editDistance(j, w, 1) > 1) continue;
+      if (!best || nearRank.get(w) < nearRank.get(best)) best = w;
+    }
+    return best;
+  }
 
   function suggest(word) {
     if (sugCache.has(word)) return sugCache.get(word);
@@ -257,12 +287,12 @@ export function createChecker(wordList, extra = []) {
             if (!segs[j].known) break;
             joined += segs[j].text;
             if (j === i || joined.length < 4 || has(joined)) continue;
-            const target = strictIdx.get(soundKey(joined)) || looseIdx.get(looseKey(joined));
-            if (target && target !== joined) found.push({ start: base + segs[i].start, end: base + segs[i].start + joined.length, target });
+            const target = strictIdx.get(soundKey(joined)) || looseIdx.get(looseKey(joined)) || (joined.length >= 5 && j - i <= 2 ? nearest(joined) : null);
+            if (target && target !== joined) found.push({ start: base + segs[i].start, end: base + segs[i].start + joined.length, target, phrase: PHRASE_SET.has(target) });
           }
         }
         // ช่วงที่ยาวที่สุดก่อน (ตั่งใจเลียน ดีกว่า ไม่ตั่งใจ)
-        found.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
+        found.sort((a, b) => (b.end - b.start) - (a.end - a.start) || b.phrase - a.phrase || a.start - b.start);
         for (const f of found) add(f.start, f.end, text.slice(f.start, f.end), [f.target], "context", "คำสะกดถูกแต่ไม่เข้ากับบริบท");
       }
       return issues.sort((a, b) => a.start - b.start);

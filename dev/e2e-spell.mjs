@@ -67,6 +67,21 @@ await ta2.fill("ไม่ตั้งใจเรียน");
 await waitState(t, "บันทึกแล้ว");
 check(await saved(1, "habit") === "ไม่ตั้งใจเรียน", `แก้แล้วข้อความไม่ถูก: ${await saved(1, "habit")}`);
 
+// 2c) ผิดหลายคำในประโยคเดียว: แก้ทีละคำ ต้องยังไม่บันทึกจนกว่าจะแก้ครบทุกคำ
+const ta3 = rows.nth(1).locator('textarea[data-f="other"]');
+await ta3.fill("ไม่ตั่งใจเลียน ส่งงานไม่คบ ไม่ทำการบ้าย");
+await waitState(t, "ยังไม่บันทึก 1 ช่อง");
+check(await rows.nth(1).locator(".sp-issues").nth(3).locator(".sp-item").count() === 3, "ต้องขีดเส้นใต้ครบ 3 จุด");
+for (const step of ["ไม่ตั้งใจเรียน ส่งงานไม่คบ ไม่ทำการบ้าย", "ไม่ตั้งใจเรียน ส่งงานไม่ครบ ไม่ทำการบ้าย"]) {
+  await ta3.fill(step);
+  await t.waitForTimeout(1500);
+  check((await state(t)).includes("ยังไม่บันทึก 1 ช่อง"), `แก้ยังไม่ครบต้องยังไม่บันทึก: ${step}`);
+  check(await saved(1, "other") == null, `แก้ยังไม่ครบต้องไม่บันทึก: ${step}`);
+}
+await ta3.fill("ไม่ตั้งใจเรียน ส่งงานไม่ครบ ไม่ทำการบ้าน");
+await waitState(t, "บันทึกแล้ว");
+check(await saved(1, "other") === "ไม่ตั้งใจเรียน ส่งงานไม่ครบ ไม่ทำการบ้าน", "แก้ครบแล้วต้องบันทึก");
+
 // 3) คำที่ระบบไม่รู้จัก → "+ คำนี้ถูก" → บันทึก และไม่เตือนคำนั้นอีก
 await rows.nth(2).locator('textarea[data-f="habit"]').fill("ปุ๊กปิ๊กชอบช่วยเหลือเพื่อน");
 await waitState(t, "ยังไม่บันทึก 1 ช่อง");
