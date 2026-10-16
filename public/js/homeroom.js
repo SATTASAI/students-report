@@ -2,6 +2,7 @@ import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICON
 import { ASSESSMENT_GROUPS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
 import { analyzeBody, ageText, levelClass, loadGrowthRefs } from "/js/growth.js";
 import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, domainSummary, overallSummary, shortCode } from "/js/kinder.js";
+import { createChecker } from "/js/spellcheck.js";
 
 await shell("home");
 const p = params();
@@ -19,6 +20,10 @@ const pendingA = new Map();     // การมาเรียน "sid|date" →
 const pendingK = new Map();     // พัฒนาการอนุบาล "term|round|sid|code" → "" | 1 | 2 | 3
 const pendingKC = new Map();    // ความคิดเห็นอนุบาล "term|sid|field" → body
 const anyPending = () => pending.size || pendingC.size || pendingB.size || pendingA.size || pendingK.size || pendingKC.size;
+// ความคิดเห็นที่ตรวจพบคำที่อาจสะกดผิด → ไม่บันทึกจนกว่าจะแก้ หรือยืนยันบันทึก 2 รอบ
+const held = new Map();         // "p|term|sid|field" (ป.) / "k|term|sid|field" (อนุบาล) → body
+const heldOrig = new Map();     // ค่าเดิมก่อนแก้ (ใช้คืนค่าเมื่อออกจากหน้าโดยไม่บันทึก)
+const checking = new Map();     // key → timer (กำลังรอตรวจหลังหยุดพิมพ์)
 let saving = false, timer;
 
 try { data = await api(`/api/homeroom?${q}`); }
@@ -53,10 +58,10 @@ if (!TABS.some(([k]) => k === tab)) tab = TABS[0][0];
 function renderTabs() {
   for (const b of tabs.querySelectorAll("button")) {
     b.setAttribute("aria-selected", String(b.dataset.tab === tab));
-    b.onclick = async () => { await flush(); tab = b.dataset.tab; sessionStorage.setItem("sr-hr-tab", tab); renderTabs(); render(); };
+    b.onclick = async () => { if (b.dataset.tab !== tab && !(await leaveHeld())) return; await flush(); tab = b.dataset.tab; sessionStorage.setItem("sr-hr-tab", tab); renderTabs(); render(); };
   }
 }
-window.addEventListener("beforeunload", (e) => { if (anyPending() || saving) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (anyPending() || saving || held.size || checking.size) { e.preventDefault(); e.returnValue = ""; } });
 
 function render() {
   const group = ASSESSMENT_GROUPS.find((g) => g.key === tab);
@@ -197,27 +202,27 @@ function renderComments() {
       <span class="actions">${[1, 2].map((t) => `<button class="btn small ${t === cterm ? "primary" : ""}" data-term="${t}">ภาคเรียนที่ ${t}</button>`).join("")}</span>
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
+    ${spellBar()}
     <div class="panel bank-panel" id="bankPanel"></div>
     <div class="actions" style="margin-bottom:10px"><span class="muted small">ใช้กับทั้งห้อง:</span>${CFIELDS.map(([f, l]) => `<button class="btn small" data-all="${f}">${l}</button>`).join("")}</div>
     <div class="cm-head">${["นักเรียน", ...CFIELDS.map(([, l]) => l)].map((l) => `<span>${l}</span>`).join("")}</div>
     <div id="cmList">${data.students.map((s) => `<div class="cm-row ${s.enrollment_status !== "enrolled" ? "inactive" : ""}" data-sid="${s.id}">
       <span class="cm-name"><b>${s.number ?? ""}</b> ${esc(s.name)}</span>
-      ${CFIELDS.map(([f, l]) => `<label class="cm-field"><span class="cm-label">${l}</span><textarea rows="2" maxlength="300" data-f="${f}" aria-label="${esc(s.name)} ${l}">${esc(commentOf(s.id, f))}</textarea></label>`).join("")}
+      ${CFIELDS.map(([f, l]) => `<label class="cm-field"><span class="cm-label">${l}</span><textarea rows="2" maxlength="300" data-f="${f}" aria-label="${esc(s.name)} ${l}">${esc(commentOf(s.id, f))}</textarea><span class="sp-issues" hidden></span></label>`).join("")}
     </div>`).join("")}</div>`;
-  for (const b of view.querySelectorAll("[data-term]")) b.onclick = async () => { await flush(); cterm = Number(b.dataset.term); sessionStorage.setItem("sr-hr-cterm", cterm); renderComments(); };
+  for (const b of view.querySelectorAll("[data-term]")) b.onclick = async () => { if (!(await leaveHeld())) return; await flush(); cterm = Number(b.dataset.term); sessionStorage.setItem("sr-hr-cterm", cterm); renderComments(); };
   const list = document.getElementById("cmList");
   list.addEventListener("focusin", (e) => { if (e.target.dataset.f) { focusField = e.target.dataset.f; focusBox = e.target; drawBank(); } });
   list.addEventListener("input", (e) => { if (e.target.dataset.f) setComment(Number(e.target.closest(".cm-row").dataset.sid), e.target.dataset.f, e.target.value); });
   for (const b of view.querySelectorAll("[data-all]")) b.onclick = () => applyAll(b.dataset.all);
+  wireSpell(list, "p");
   drawBank();
   showState();
 }
 
-function setComment(sid, f, body) {
+function setComment(sid, f, body, opts) {
   ((data.comments ||= {})[sid] ||= {})[cterm] ||= {};
-  data.comments[sid][cterm][f] = body;
-  pendingC.set(`${cterm}|${sid}|${f}`, body);
-  schedule();
+  commentChanged("p", cterm, sid, f, body, opts);
 }
 
 function drawBank() {
@@ -232,6 +237,7 @@ function drawBank() {
   box.querySelector("#bankSave").onclick = async () => {
     const body = focusBox?.value.trim();
     if (!body) { toast("คลิกช่องความคิดเห็นที่มีข้อความก่อน", "bad"); return; }
+    if (!(await confirmMisspelled(body, "เก็บเข้าคลังข้อความ"))) return;
     try { data.comment_bank = (await api("/api/homeroom/comment-bank", { method: "POST", body: { field: focusField, body } })).comment_bank; drawBank(); toast("เก็บเข้าคลังแล้ว"); } catch (err) { showError(err); }
   };
   for (const b of box.querySelectorAll("[data-use]")) b.onclick = () => {
@@ -259,12 +265,13 @@ async function applyAll(f) {
   if (!r.ok) return;
   const body = r.data.body.trim();
   if (!body) return;
+  if (!(await confirmMisspelled(body, "ใช้กับทั้งห้อง"))) return;
   let n = 0;
   for (const s of active()) {
     if (!r.data.overwrite && commentOf(s.id, f)) continue;
-    setComment(s.id, f, body); n++;
+    setComment(s.id, f, body, { force: true }); n++;
     const ta = view.querySelector(`.cm-row[data-sid="${s.id}"] textarea[data-f="${f}"]`);
-    if (ta) ta.value = body;
+    if (ta) { ta.value = body; drawIssues(ta); }
   }
   toast(`ใช้กับ ${n} คนแล้ว`);
 }
@@ -470,21 +477,215 @@ function renderKComments() {
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
     <p class="muted small" style="margin:0 0 8px">ความคิดเห็นของครูรายด้าน (ไม่เกิน 300 ตัวอักษรต่อช่อง) ขึ้นในสมุดรายงานพัฒนาการรายคน · บันทึกอัตโนมัติ</p>
+    ${spellBar()}
     <div class="cm-head k5">${["นักเรียน", ...KINDER_COMMENT_FIELDS.map(([, l]) => l)].map((l) => `<span>${esc(l)}</span>`).join("")}</div>
     <div id="cmList">${data.students.map((s) => `<div class="cm-row k5 ${s.enrollment_status !== "enrolled" ? "inactive" : ""}" data-sid="${s.id}">
       <span class="cm-name"><b>${s.number ?? ""}</b> ${esc(s.name)}</span>
-      ${KINDER_COMMENT_FIELDS.map(([f, l]) => `<label class="cm-field"><span class="cm-label">${esc(l)}</span><textarea rows="2" maxlength="300" data-f="${f}" aria-label="${esc(s.name)} ${esc(l)}">${esc(kCommentOf(s.id, f))}</textarea></label>`).join("")}
+      ${KINDER_COMMENT_FIELDS.map(([f, l]) => `<label class="cm-field"><span class="cm-label">${esc(l)}</span><textarea rows="2" maxlength="300" data-f="${f}" aria-label="${esc(s.name)} ${esc(l)}">${esc(kCommentOf(s.id, f))}</textarea><span class="sp-issues" hidden></span></label>`).join("")}
     </div>`).join("")}</div>`;
-  for (const b of view.querySelectorAll("[data-kt]")) b.onclick = async () => { await flush(); kterm = Number(b.dataset.kt); saveK(); renderKComments(); };
-  document.getElementById("cmList").addEventListener("input", (e) => {
+  for (const b of view.querySelectorAll("[data-kt]")) b.onclick = async () => { if (!(await leaveHeld())) return; await flush(); kterm = Number(b.dataset.kt); saveK(); renderKComments(); };
+  const list = document.getElementById("cmList");
+  list.addEventListener("input", (e) => {
     const f = e.target.dataset.f;
     if (!f) return;
     const sid = Number(e.target.closest(".cm-row").dataset.sid);
-    (((kd.comments ||= {})[sid] ||= {})[kterm] ||= {})[f] = e.target.value;
-    pendingKC.set(`${kterm}|${sid}|${f}`, e.target.value);
-    schedule();
+    ((kd.comments ||= {})[sid] ||= {})[kterm] ||= {};
+    commentChanged("k", kterm, sid, f, e.target.value);
   });
+  wireSpell(list, "k");
   showState();
+}
+
+// ---------- ตรวจคำที่อาจสะกดผิด (ความคิดเห็นครูประจำชั้น ป. และอนุบาล) ----------
+// พบคำผิด → ช่องนั้นไม่บันทึกอัตโนมัติ · แก้ตามคำแนะนำ / เพิ่มคำเข้าพจนานุกรมของฉัน / ยืนยันบันทึก 2 รอบ
+let checker = null, checkerJob = null, ignoreNames = null;
+function loadChecker() {
+  return checkerJob ||= (async () => {
+    const res = await fetch("/assets/thai-words.txt");
+    if (!res.ok) throw new Error("โหลดพจนานุกรมไม่สำเร็จ");
+    checker = createChecker((await res.text()).split("\n"), data.spell_words || []);
+    return checker;
+  })().catch((err) => { checkerJob = null; throw err; });
+}
+// ชื่อ–สกุลนักเรียนและครูในห้อง ไม่ต้องตรวจ
+function namesToIgnore() {
+  if (ignoreNames) return ignoreNames;
+  const out = new Set();
+  for (const n of [...data.students.map((s) => s.name), ...(data.teachers || [])]) {
+    const clean = String(n || "").replace(/^(เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.|นางสาว|นาย|นาง|ว่าที่ร้อยตรี|ว่าที่ ร\.ต\.)\s*/, "");
+    for (const part of clean.split(/\s+/)) if (part.length >= 2) out.add(part);
+  }
+  return (ignoreNames = [...out].sort((a, b) => b.length - a.length));
+}
+const checkText = (body) => checker.check(body, namesToIgnore());
+const spellKey = (kind, term, sid, f) => `${kind}|${term}|${sid}|${f}`;
+const commentStore = (kind) => (kind === "p" ? data.comments : kd.comments);
+const pendingOf = (kind) => (kind === "p" ? pendingC : pendingKC);
+
+function spellBar() {
+  return `<p class="muted small sp-bar" id="spellBar">${checker ? "ตรวจคำที่อาจสะกดผิดอัตโนมัติ — ช่องที่พบคำผิดจะยังไม่บันทึกจนกว่าจะแก้ หรือกดยืนยันบันทึก 2 ครั้ง"
+    : "กำลังโหลดพจนานุกรมสำหรับตรวจคำผิด…"} · <button type="button" class="link-btn" id="myWords">พจนานุกรมของฉัน (${(data.spell_words || []).length})</button></p>`;
+}
+
+// ข้อความเปลี่ยน: เก็บไว้ก่อน แล้วตรวจเมื่อหยุดพิมพ์ — ผ่าน → ส่งบันทึก, ไม่ผ่าน → กักไว้
+function commentChanged(kind, term, sid, f, body, { force = false } = {}) {
+  const key = spellKey(kind, term, sid, f), store = commentStore(kind);
+  if (!held.has(key) && !heldOrig.has(key)) heldOrig.set(key, store[sid][term][f] ?? "");
+  store[sid][term][f] = body;
+  clearTimeout(checking.get(key));
+  checking.delete(key);
+  if (force) return release(key, kind, term, sid, f, body);
+  held.delete(key);
+  pendingOf(kind).delete(`${term}|${sid}|${f}`);
+  checking.set(key, setTimeout(() => { checking.set(key, "judging"); judge(kind, term, sid, f); }, 400));
+  showState();
+}
+function release(key, kind, term, sid, f, body) {
+  held.delete(key); heldOrig.delete(key);
+  pendingOf(kind).set(`${term}|${sid}|${f}`, body);
+  schedule();
+}
+async function judge(kind, term, sid, f) {
+  const key = spellKey(kind, term, sid, f), body = commentStore(kind)[sid]?.[term]?.[f] ?? "";
+  const done = () => { if (checking.get(key) === "judging") checking.delete(key); };
+  const ta = () => { const el = view.querySelector(`.cm-row[data-sid="${sid}"] textarea[data-f="${f}"]`); return el && el.value === body && Number(term) === (kind === "p" ? cterm : kterm) ? el : null; };
+  if (!body.trim()) { done(); const el = ta(); if (el) drawIssues(el); release(key, kind, term, sid, f, body); return; }
+  try { await loadChecker(); } catch (err) { done(); showError(err); held.set(key, body); showState(); return; }
+  if (checking.has(key) && checking.get(key) !== "judging") return; // พิมพ์ต่อระหว่างโหลด → รอรอบใหม่
+  done();
+  const el = ta();
+  if (el) drawIssues(el);
+  if (checkText(body).length) { held.set(key, body); showState(); }
+  else release(key, kind, term, sid, f, body);
+}
+
+// แสดงคำที่อาจผิดใต้ช่อง พร้อมคำแนะนำ
+function drawIssues(ta) {
+  const box = ta.parentElement.querySelector(".sp-issues");
+  if (!box || (!checker && ta.value.trim())) return;
+  const issues = ta.value.trim() ? checkText(ta.value) : [];
+  ta.classList.toggle("sp-bad", issues.length > 0);
+  box.hidden = !issues.length;
+  box.innerHTML = issues.length ? `<span class="sp-title">คำที่อาจสะกดผิด:</span> ${issues.slice(0, 6).map((x, i) => `<span class="sp-item" title="${esc(x.note)}"><b>${esc(x.word)}</b>${
+    x.suggest.length ? ` → ${x.suggest.map((w) => `<button type="button" class="sp-fix" data-i="${i}" data-to="${esc(w)}">${esc(w)}</button>`).join(" ")}` : ""}${
+    x.kind === "unknown" && !/\s/.test(x.word) ? ` <button type="button" class="sp-add" data-word="${esc(x.word)}" title="คำนี้ถูกต้อง — ไม่ต้องเตือนอีก">+ คำนี้ถูก</button>` : ""}</span>`).join("")}${issues.length > 6 ? ` <span class="muted">และอีก ${issues.length - 6} คำ</span>` : ""}` : "";
+  box._issues = issues;
+}
+function drawAllIssues() { for (const ta of view.querySelectorAll("#cmList textarea[data-f]")) if (ta.value.trim()) drawIssues(ta); }
+
+function wireSpell(list, kind) {
+  const ready = () => {
+    const bar = document.getElementById("spellBar");
+    if (bar) bar.outerHTML = spellBar();
+    document.getElementById("myWords").onclick = myWordsDialog;
+    drawAllIssues();
+    // ข้อความที่พิมพ์ระหว่างโหลดพจนานุกรม → ตรวจตอนนี้
+    for (const key of [...held.keys()]) { const [k, t, sid, f] = key.split("|"); if (k === kind) judge(k, Number(t), Number(sid), f); }
+  };
+  document.getElementById("myWords").onclick = myWordsDialog;
+  if (checker) drawAllIssues(); else loadChecker().then(() => { if (list.isConnected) ready(); }).catch((err) => showError(err));
+  const term = () => (kind === "p" ? cterm : kterm);
+  list.addEventListener("click", async (e) => {
+    const fix = e.target.closest(".sp-fix"), add = e.target.closest(".sp-add");
+    if (!fix && !add) return;
+    e.preventDefault();
+    const ta = e.target.closest(".cm-field").querySelector("textarea"), sid = Number(e.target.closest(".cm-row").dataset.sid), f = ta.dataset.f;
+    if (fix) {
+      const x = ta.parentElement.querySelector(".sp-issues")._issues[Number(fix.dataset.i)];
+      ta.value = (ta.value.slice(0, x.start) + fix.dataset.to + ta.value.slice(x.end)).slice(0, 300);
+      ((commentStore(kind) || {})[sid] ||= {})[term()] ||= {};
+      if (kind === "p") setComment(sid, f, ta.value); else commentChanged(kind, term(), sid, f, ta.value);
+      drawIssues(ta);
+      ta.focus();
+    } else await addWord(add.dataset.word);
+  });
+}
+
+async function addWord(word) {
+  try {
+    data.spell_words = (await api("/api/homeroom/spell-words", { method: "POST", body: { word } })).spell_words;
+    afterWordsChanged();
+    toast(`เพิ่ม "${word}" ในพจนานุกรมของฉันแล้ว`);
+  } catch (err) { showError(err); }
+}
+function afterWordsChanged() {
+  checker?.setCustom(data.spell_words || []);
+  const btn = document.getElementById("myWords");
+  if (btn) btn.textContent = `พจนานุกรมของฉัน (${(data.spell_words || []).length})`;
+  drawAllIssues();
+  for (const key of [...held.keys()]) { const [k, t, sid, f] = key.split("|"); judge(k, Number(t), Number(sid), f); }
+}
+async function myWordsDialog() {
+  await dialog({
+    title: "พจนานุกรมของฉัน", okText: "", cancelText: "ปิด",
+    body: `<p class="muted small" style="margin-top:0">คำที่ระบบไม่รู้จักแต่ถูกต้อง (เช่น ชื่อเฉพาะ ชื่อเล่น) — ใช้ได้ทุกห้องที่คุณดูแล เพิ่มได้จากปุ่ม "+ คำนี้ถูก" ใต้ช่องความคิดเห็น</p>
+      <div class="chips" id="wordChips"></div>`,
+    onOpen: (d) => {
+      const draw = () => {
+        const box = d.querySelector("#wordChips");
+        box.innerHTML = (data.spell_words || []).map((w) => `<span class="chip"><span class="chip-use">${esc(w)}</span><button type="button" class="chip-x" data-del="${esc(w)}" aria-label="ลบ ${esc(w)}">×</button></span>`).join("") || `<span class="muted small">ยังไม่มีคำ</span>`;
+        for (const b of box.querySelectorAll("[data-del]")) b.onclick = async () => {
+          try { data.spell_words = (await api("/api/homeroom/spell-words", { method: "DELETE", body: { word: b.dataset.del } })).spell_words; afterWordsChanged(); draw(); } catch (err) { showError(err); }
+        };
+      };
+      draw();
+    },
+  });
+}
+
+// รายการช่องที่ถูกกักไว้ (สำหรับแสดงในกล่องยืนยัน)
+function heldList() {
+  const items = [];
+  for (const [key, body] of held) {
+    const [kind, , sid, f] = key.split("|");
+    const st = data.students.find((s) => s.id === Number(sid));
+    const label = (kind === "p" ? CFIELDS : KINDER_COMMENT_FIELDS).find(([x]) => x === f)?.[1] || f;
+    const words = checker ? checkText(body).map((x) => x.word) : [];
+    items.push(`<li>เลขที่ ${esc(st?.number ?? "")} ${esc(st?.name || "")} · ${esc(label)}${words.length ? `: <b>${words.slice(0, 5).map(esc).join(", ")}</b>` : ""}</li>`);
+  }
+  return items;
+}
+// ยืนยัน 2 รอบ → true = บันทึกได้
+async function confirmTwice(listHtml, count, what) {
+  const r1 = await dialog({
+    title: "พบคำที่อาจสะกดผิด", okText: "บันทึกต่อ (ยืนยันครั้งที่ 1/2)", cancelText: "กลับไปแก้ไข",
+    body: `<p style="margin-top:0">ระบบตรวจพบคำที่อาจสะกดผิดใน${what} ${count} ช่อง จึงยังไม่บันทึก</p>
+      <ul class="sp-confirm">${listHtml}</ul>
+      <p class="muted small">ภาษาไทยตรวจได้ไม่สมบูรณ์ ถ้าตรวจทานแล้วว่าถูกต้องสามารถบันทึกต่อได้ (ต้องยืนยัน 2 ครั้ง)</p>`,
+  });
+  if (!r1.ok) return false;
+  return confirmBox("ยืนยันครั้งที่ 2", `ตรวจทานแล้วว่าข้อความถูกต้อง และต้องการบันทึก${what} ${count} ช่องตามที่พิมพ์ไว้ ใช่หรือไม่?`, "ยืนยันบันทึก (ครั้งที่ 2/2)", true);
+}
+async function forceSaveHeld() {
+  if (!held.size) return;
+  const items = heldList();
+  if (!(await confirmTwice(items.slice(0, 15).join("") + (items.length > 15 ? `<li class="muted">และอีก ${items.length - 15} ช่อง</li>` : ""), items.length, "ความคิดเห็น"))) return;
+  for (const [key, body] of [...held]) { const [kind, t, sid, f] = key.split("|"); release(key, kind, Number(t), Number(sid), f, body); }
+  await flush();
+  toast("บันทึกแล้ว");
+}
+// ข้อความเดียว (ใช้กับทั้งห้อง / เก็บเข้าคลัง): มีคำผิด → ต้องยืนยัน 2 รอบ
+async function confirmMisspelled(body, what) {
+  try { await loadChecker(); } catch { return true; } // โหลดพจนานุกรมไม่ได้: ไม่ขวางการทำงาน
+  const issues = checkText(body);
+  if (!issues.length) return true;
+  return confirmTwice(`<li>${esc(body)}<br><b>${issues.map((x) => esc(x.word)).join(", ")}</b></li>`, 1, `ข้อความที่จะ${what}`);
+}
+// ออกจากแท็บ/เปลี่ยนภาคเรียน ขณะยังมีช่องที่ถูกกักไว้
+async function leaveHeld() {
+  for (const [key, t] of [...checking]) { clearTimeout(t); checking.delete(key); const [k, term, sid, f] = key.split("|"); await judge(k, Number(term), Number(sid), f); }
+  if (!held.size) return true;
+  const ok = await confirmBox("ยังไม่ได้บันทึกบางช่อง", `มี ${held.size} ช่องที่ยังไม่บันทึกเพราะพบคำที่อาจสะกดผิด — ถ้าออกตอนนี้ ข้อความที่แก้ในช่องเหล่านั้นจะไม่ถูกบันทึก`, "ออกโดยไม่บันทึก", true);
+  if (!ok) return false;
+  for (const key of held.keys()) {
+    const [kind, term, sid, f] = key.split("|");
+    const st = commentStore(kind)?.[sid]?.[term];
+    if (st) st[f] = heldOrig.get(key) ?? "";
+    heldOrig.delete(key);
+  }
+  held.clear();
+  showState();
+  return true;
 }
 
 // ---------- บันทึกอัตโนมัติ (ทุกแท็บ) ----------
@@ -547,7 +748,12 @@ function showState(err) {
   if (!el) return;
   el.className = "save-state";
   if (err) { el.classList.add("error"); el.innerHTML = `บันทึกไม่สำเร็จ <button class="btn small" id="retry">ลองอีกครั้ง</button>`; document.getElementById("retry").onclick = flush; }
-  else if (saving || anyPending()) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
+  else if (saving || anyPending() || checking.size) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
+  else if (held.size) {
+    el.classList.add("error");
+    el.innerHTML = `ยังไม่บันทึก ${held.size} ช่อง — พบคำที่อาจสะกดผิด <button class="btn small" id="forceSave">บันทึกทั้งที่มีคำผิด</button>`;
+    document.getElementById("forceSave").onclick = forceSaveHeld;
+  }
   else el.textContent = "บันทึกแล้ว";
 }
 

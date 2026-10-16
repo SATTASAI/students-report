@@ -39,6 +39,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       env.DB.prepare("SELECT id, field, body FROM gr_comment_bank WHERE user_id = ? ORDER BY field, id").bind(user.id).all().then((r) => r.results),
       homeroomNames(env, year.id, grade, room),
     ]);
+    const spellWords = await spellWordsOf(env, user.id);
     // วันที่บันทึกน้ำหนักส่วนสูงแต่ละครั้ง (ใช้คิดอายุตอนวัด สำหรับ BMI ตามอายุ) + ข้อมูลโรงเรียนสำหรับหน้าพิมพ์
     const bodyDates = {};
     for (let i = 0; i < ids.length; i += 90) {
@@ -50,7 +51,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     return json({
       year, grade, room,
       students: roster.map((s) => ({ id: s.id, number: s.number, student_code: s.student_code, name: studentName(s), enrollment_status: s.enrollment_status, gender: s.gender, birth_date: s.birth_date, transfer_in_term: s.transfer_in_term || null })),
-      assessments, grades, absences, comments, body, body_dates: bodyDates, comment_bank: bank, teachers: hrTeachers,
+      assessments, grades, absences, comments, body, body_dates: bodyDates, comment_bank: bank, spell_words: spellWords, teachers: hrTeachers,
       school: { name: st.school_name, area: st.school_area, director: st.director_name },
       edit: await homeroomEditState(env, user, year.id, grade, room),
     });
@@ -124,6 +125,21 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     }
     await batchAll(env, stmts);
     return json({ ok: true, saved: stmts.length });
+  }
+
+  // พจนานุกรมของฉัน (ตัวตรวจคำผิดในความคิดเห็น): POST {word} เพิ่ม · DELETE {word} ลบ — ของครูแต่ละคน ใช้ได้ทุกห้อง
+  if (sub === "spell-words") {
+    const b = method === "GET" ? {} : await readJson(request);
+    const word = String(b.word ?? "").normalize("NFC").replace(/\s+/g, "").slice(0, 40);
+    if (method === "POST") {
+      if (!/^[\u0E01-\u0E4E]+$/.test(word)) fail(400, "เพิ่มได้เฉพาะคำภาษาไทย (ไม่มีช่องว่าง)");
+      const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_spell_words WHERE user_id = ?").bind(user.id).first();
+      if (n.n >= 2000) fail(400, "พจนานุกรมของฉันเต็ม (2,000 คำ)");
+      await env.DB.prepare("INSERT OR IGNORE INTO gr_spell_words (user_id, word) VALUES (?,?)").bind(user.id, word).run();
+    } else if (method === "DELETE") {
+      await env.DB.prepare("DELETE FROM gr_spell_words WHERE user_id = ? AND word = ?").bind(user.id, word).run();
+    } else if (method !== "GET") fail(405, "ไม่รองรับ");
+    return json({ ok: true, spell_words: await spellWordsOf(env, user.id) });
   }
 
   // คลังข้อความของครู (ใช้ได้ทุกห้องที่ครูคนนี้ดูแล)
@@ -457,6 +473,11 @@ export async function listAbsences(env, yearId, ids) {
 }
 
 // ความคิดเห็น: { student_id: { 1: {learn, habit, health, other}, 2: {...} } }
+async function spellWordsOf(env, userId) {
+  const { results } = await env.DB.prepare("SELECT word FROM gr_spell_words WHERE user_id = ? ORDER BY word").bind(userId).all();
+  return results.map((r) => r.word);
+}
+
 export async function commentsFor(env, yearId, ids) {
   const out = {};
   for (let i = 0; i < ids.length; i += 90) {

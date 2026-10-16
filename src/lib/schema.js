@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-19";
+export const SCHEMA_VERSION = "gr-20";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -130,6 +130,12 @@ export const SCHEMA_SQL = [
     body TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (user_id, field, body))`,
+  // gr-20: พจนานุกรมของครูแต่ละคน (ตัวตรวจคำผิดในความคิดเห็น — คำที่ระบบไม่รู้จักแต่ถูกต้อง เช่น ชื่อเฉพาะ)
+  `CREATE TABLE IF NOT EXISTS gr_spell_words (
+    user_id INTEGER NOT NULL,
+    word TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, word))`,
   // น้ำหนัก/ส่วนสูง 4 ครั้งต่อปี
   `CREATE TABLE IF NOT EXISTS gr_body (
     academic_year_id INTEGER NOT NULL,
