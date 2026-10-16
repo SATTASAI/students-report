@@ -444,7 +444,7 @@ function showSaveState(err) {
 function attText(sid) {
   const a = data.attendance?.[sid] || {}, rate = a.rate;
   const off = (a["ข"] || 0) + (a["ล"] || 0) + (a["ป"] || 0);
-  const detail = [["ข", "ขาด"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]].filter(([k]) => a[k]).map(([k, l]) => `${l} ${a[k]}`).join(" · ");
+  const detail = [["ข", "ขาด"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["ส", "มาสาย"]].filter(([k]) => a[k]).map(([k, l]) => `${l} ${a[k]}`).join(" · ");
   if (!rate || rate.pct == null) return detail ? `<span data-tip="${esc(detail)} (วัน)" tabindex="0">${off}</span>` : "–";
   const low = rate.pct < Number(data.settings.attendance_pass_pct);
   const tip = `มาเรียน ${rate.days - rate.absent}/${rate.days} วัน (${fmt(rate.pct, 2)}%) นับถึงวันนี้${detail ? ` · ${detail}` : ""}`;

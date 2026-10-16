@@ -166,7 +166,7 @@ test("อนุบาล: ครูประจำชั้นบันทึก
   const hr = (await call("t1", "GET", `/api/homeroom?${KQ}`, null, { expect: 200 })).data;
   assert.equal(hr.students.length, 6);
   const sid = hr.students[0].id;
-  await call("t1", "PUT", `/api/homeroom/attendance?${KQ}`, { changes: [{ student_id: sid, date: "2026-11-03", code: "ป" }, { student_id: sid, date: "2026-11-04", code: "มส" }] }, { expect: 200 });
+  await call("t1", "PUT", `/api/homeroom/attendance?${KQ}`, { changes: [{ student_id: sid, date: "2026-11-03", code: "ป" }, { student_id: sid, date: "2026-11-04", code: "ส" }] }, { expect: 200 });
   await call("t1", "PUT", `/api/homeroom/body?${KQ}`, { changes: [{ student_id: sid, round: 1, weight: 18, height: 105 }] }, { expect: 200 });
   const letter = (await call("t1", "GET", `/api/reports/absence?${KQ}&student=${sid}`, null, { expect: 200 })).data;
   assert.equal(letter.absences.length, 1); // มาสายไม่นับเป็นวันขาด

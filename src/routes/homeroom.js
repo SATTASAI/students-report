@@ -4,7 +4,7 @@ import { ASSESSMENT_KEYS, validAssessmentValue, clean } from "../../public/js/gr
 import { KINDER_COMMENT_FIELDS } from "../../public/js/kinder.js";
 import KINDER_BANK from "../data/indicator-bank-2569-kinder.js";
 
-export const ATT_CODES = [["ข", "ขาดเรียน"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["มส", "มาสาย"]];
+export const ATT_CODES = [["ข", "ขาดเรียน"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["ส", "มาสาย"]];
 // แบบบันทึกประจำวัน (ครูประจำชั้น) — ติ๊กรายวันตามวันเรียน
 export const DAILY_LOGS = { milk: "การดื่มนม", brush: "การแปรงฟัน", lunch: "การรับประทานอาหารกลางวัน", duty: "การทำเขตรับผิดชอบ" };
 // ตรวจสุขภาพสัปดาห์ละครั้ง 4 สัปดาห์ต่อเดือน
@@ -156,7 +156,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   }
 
   // ---------- บันทึกการมาเรียนรายวัน (ครูประจำชั้น) ----------
-  // ตารางรายเดือน นักเรียน × วันเรียน (จันทร์–ศุกร์ในช่วงภาคเรียน) — มาเรียนปกติไม่ต้องใส่ เก็บเฉพาะ ข ล ป มส
+  // ตารางรายเดือน นักเรียน × วันเรียน (จันทร์–ศุกร์ในช่วงภาคเรียน) — มาเรียนปกติไม่ต้องใส่ เก็บเฉพาะ ข ล ป ส
   if (sub === "attendance") {
     const { year, grade, room } = await roomContext(env, user, url);
     const roster = await roomRoster(env, year.id, grade, room);
@@ -186,7 +186,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) fail(400, `วันที่ ${d} ไม่ถูกต้อง`);
         if (terms.length && !inTerm(d)) fail(400, `${d} อยู่นอกช่วงภาคเรียน`);
         if (code && cal.off.has(d)) fail(400, `${d} เป็นวันหยุด (${cal.off.get(d)})`);
-        if (code && !ATT_CODES.some(([k]) => k === code)) fail(400, "ใส่ได้เฉพาะ ข ล ป มส (มาเรียนปกติเว้นว่าง)");
+        if (code && !ATT_CODES.some(([k]) => k === code)) fail(400, "ใส่ได้เฉพาะ ข ล ป ส (ส = มาสาย, มาเรียนปกติเว้นว่าง)");
         stmts.push(code
           ? env.DB.prepare(`INSERT INTO gr_attendance (academic_year_id, student_id, att_date, code, recorded_by, updated_at) VALUES (?,?,?,?,?,datetime('now'))
               ON CONFLICT(student_id, att_date) DO UPDATE SET code = excluded.code, recorded_by = excluded.recorded_by, updated_at = datetime('now')`).bind(year.id, sid, d, code, user.id)

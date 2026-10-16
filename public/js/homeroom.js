@@ -15,7 +15,7 @@ let cterm = Number(sessionStorage.getItem("sr-hr-cterm")) || 2;
 const pending = new Map();      // การประเมิน "sid|key" → value
 const pendingC = new Map();     // ความคิดเห็น "term|sid|field" → body
 const pendingB = new Map();     // น้ำหนักส่วนสูง "sid|round" → {weight,height}
-const pendingA = new Map();     // การมาเรียน "sid|date" → "" | ข | ล | ป | มส
+const pendingA = new Map();     // การมาเรียน "sid|date" → "" | ข | ล | ป | ส
 const pendingK = new Map();     // พัฒนาการอนุบาล "term|round|sid|code" → "" | 1 | 2 | 3
 const pendingKC = new Map();    // ความคิดเห็นอนุบาล "term|sid|field" → body
 const anyPending = () => pending.size || pendingC.size || pendingB.size || pendingA.size || pendingK.size || pendingKC.size;
@@ -566,9 +566,9 @@ function renderGrades() {
 }
 
 // ---------- บันทึกการมาเรียน (ตารางรายเดือน) ----------
-// มาเรียนปกติเว้นว่าง · ใส่ ข ขาด / ล ลากิจ / ป ลาป่วย / มส มาสาย · บันทึกอัตโนมัติ
-const ATT = { "ข": "ขาดเรียน", "ล": "ลากิจ", "ป": "ลาป่วย", "มส": "มาสาย" };
-const ATT_ALIAS = { "ข": "ข", "ล": "ล", "ป": "ป", "มส": "มส", "ส": "มส" };
+// มาเรียนปกติเว้นว่าง · ใส่ ข ขาด / ล ลากิจ / ป ลาป่วย / ส มาสาย · บันทึกอัตโนมัติ
+const ATT = { "ข": "ขาดเรียน", "ล": "ลากิจ", "ป": "ลาป่วย", "ส": "มาสาย" };
+const ATT_ALIAS = { "ข": "ข", "ล": "ล", "ป": "ป", "ส": "ส" }; // มส ไม่รับ (มส = หมดสิทธิ์สอบ ไม่ใช่รหัสการมาเรียน)
 let attMonth = sessionStorage.getItem("sr-hr-month") || "";
 let att;
 const WD = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
@@ -580,7 +580,7 @@ async function renderAttendance() {
   attMonth = att.month;
   const idx = att.months.indexOf(att.month);
   const codeOf = (sid, d) => att.records[sid]?.[d] || "";
-  const counts = (sid) => { const c = { "ข": 0, "ล": 0, "ป": 0, "มส": 0 }; for (const v of Object.values(att.records[sid] || {})) c[v]++; return c; };
+  const counts = (sid) => { const c = { "ข": 0, "ล": 0, "ป": 0, "ส": 0 }; for (const v of Object.values(att.records[sid] || {})) c[v]++; return c; };
   view.innerHTML = `
     <div class="sheet-tools">
       <span class="actions">
@@ -601,7 +601,7 @@ async function renderAttendance() {
         ${att.days.map((d) => { const v = codeOf(s.id, d); return `<td class="cell att ${v ? `c-${v}` : ""} ${d === att.today ? "today" : ""}"><input data-date="${d}" value="${esc(v)}" maxlength="2" autocomplete="off" aria-label="${esc(s.name)} ${d}"></td>`; }).join("")}
         ${Object.keys(ATT).map((k) => `<td class="calc att-sum" data-n="${k}">${c[k] || ""}</td>`).join("")}</tr>`; }).join("")}</tbody>
     </table></div>
-    <p class="muted small" style="margin-top:10px">พิมพ์ ข ล ป หรือ มส (พิมพ์ ส ก็ได้ = มาสาย) แล้วกด Enter ลงไปคนถัดไป · ลูกศรเลื่อนช่อง · ลบตัวอักษร = มาเรียน · วันหยุดที่ฝ่ายวัดผลตั้งไว้จะไม่แสดงในตาราง
+    <p class="muted small" style="margin-top:10px">พิมพ์ ข ล ป หรือ ส (ส = มาสาย) แล้วกด Enter ลงไปคนถัดไป · ลูกศรเลื่อนช่อง · ลบตัวอักษร = มาเรียน · วันหยุดที่ฝ่ายวัดผลตั้งไว้จะไม่แสดงในตาราง
       · หนังสือแจ้งผู้ปกครองกรณีขาดเรียน (บค.) พิมพ์ได้ที่ <a href="/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}">คลังเอกสาร</a></p>`
     : `<div class="panel empty"><strong>เดือนนี้ไม่มีวันเรียน</strong>อยู่นอกช่วงภาคเรียน</div>`}`;
   const go = async (m) => { await flush(); attMonth = m; sessionStorage.setItem("sr-hr-month", m); renderAttendance().catch(showError); };
@@ -621,7 +621,7 @@ async function renderAttendance() {
     const raw = inp.value.trim();
     const code = raw === "" ? "" : ATT_ALIAS[raw];
     const td = inp.parentElement;
-    if (code === undefined) { td.classList.add("invalid"); inp.title = "ใส่ได้เฉพาะ ข ล ป มส"; return; }
+    if (code === undefined) { td.classList.add("invalid"); inp.title = "ใส่ได้เฉพาะ ข ล ป ส (ส = มาสาย)"; return; }
     td.classList.remove("invalid"); inp.title = "";
     if (raw !== code) inp.value = code;
     const tr = inp.closest("tr"), sid = Number(tr.dataset.sid), d = inp.dataset.date;
@@ -637,7 +637,6 @@ async function renderAttendance() {
   table.addEventListener("input", (e) => {
     const inp = e.target, v = inp.value.trim();
     if (!inp.matches("input")) return;
-    if (v === "ม") return; // รอพิมพ์ "มส"
     accept(inp);
   });
   table.addEventListener("change", (e) => { if (e.target.matches("input")) accept(e.target); });

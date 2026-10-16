@@ -361,8 +361,8 @@ table.sheet { border-collapse: separate; border-spacing: 0; font-size: 14px; }
 .c-ข { background: #fde8e8; color: #b42318; }
 .c-ล { background: #fff4e0; color: #9a5b00; }
 .c-ป { background: #e8f1fd; color: #1d4f9c; }
-.c-มส { background: #f1ecfb; color: #6b3fb5; }
-td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-มส input { color: inherit; background: transparent; }
+.c-ส { background: #f1ecfb; color: #6b3fb5; }
+td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-ส input { color: inherit; background: transparent; }
 #mSel { width: auto; min-width: 170px; }
 .tabs .tab-link { padding: 10px 16px; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; font-size: 15px; }
 .tabs .tab-link[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }

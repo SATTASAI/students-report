@@ -194,18 +194,18 @@ test("ครูประจำชั้น: ประเมินคุณลั
   const month = (await call("t1", "GET", `${AQ}&month=2026-11`, null, { expect: 200 })).data;
   assert.equal(month.days[0], "2026-11-02"); // วันจันทร์แรกของเดือน (เสาร์อาทิตย์ไม่แสดง)
   assert.ok(!month.days.includes("2026-11-07"));
-  assert.deepEqual(month.codes.map(([k]) => k), ["ข", "ล", "ป", "มส"]);
+  assert.deepEqual(month.codes.map(([k]) => k), ["ข", "ล", "ป", "ส"]);
   await call("t1", "PUT", AQ, { changes: [{ student_id: sid, date: "2026-11-03", code: "x" }] }, { expect: 400 });
   await call("t1", "PUT", AQ, { changes: [{ student_id: sid, date: "2026-10-20", code: "ข" }] }, { expect: 400 }); // ปิดภาค
   await call("t1", "PUT", AQ, { changes: [{ student_id: 25, date: "2026-11-03", code: "ข" }] }, { expect: 400 });
   await call("t2", "PUT", AQ, { changes: [] }, { expect: 403 });
   await call("t1", "PUT", AQ, { changes: [
     { student_id: sid, date: "2026-11-03", code: "ข" }, { student_id: sid, date: "2026-11-04", code: "ป" },
-    { student_id: sid, date: "2026-11-05", code: "มส" }, { student_id: sid, date: "2026-11-06", code: "ล" },
+    { student_id: sid, date: "2026-11-05", code: "ส" }, { student_id: sid, date: "2026-11-06", code: "ล" },
   ] }, { expect: 200 });
   await call("t1", "PUT", AQ, { changes: [{ student_id: sid, date: "2026-11-06", code: "" }] }, { expect: 200 }); // ลบ = มาเรียน
   const rec = (await call("t1", "GET", `${AQ}&month=2026-11`, null, { expect: 200 })).data.records[sid];
-  assert.deepEqual(rec, { "2026-11-03": "ข", "2026-11-04": "ป", "2026-11-05": "มส" });
+  assert.deepEqual(rec, { "2026-11-03": "ข", "2026-11-04": "ป", "2026-11-05": "ส" });
   const letter = (await call("t1", "GET", `/api/reports/absence?grade=ป.1&room=1&student=${sid}`, null, { expect: 200 })).data;
   assert.equal(letter.absences.length, 2);
   const room = (await call("t1", "GET", "/api/reports/room?grade=ป.1&room=1", null, { expect: 200 })).data;

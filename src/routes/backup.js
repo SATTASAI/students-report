@@ -127,6 +127,8 @@ export async function handleBackup(request, env, user, parts, method, url) {
       const order = live.filter((n) => !SKIP_RESTORE.has(n));
       const stmts = [];
       for (const n of [...order].reverse()) stmts.push(env.DB.prepare(`DELETE FROM ${n}`));
+      // ไฟล์สำรองก่อน gr-18 ใช้ "มส" เป็นรหัสมาสาย → แปลงเป็น "ส"
+      if (plan.some((p) => p.name === "gr_attendance")) stmts.push(env.DB.prepare(`UPDATE ${STAGE}attendance SET code = 'ส' WHERE code = 'มส'`));
       for (const n of order) {
         const p = plan.find((x) => x.name === n);
         if (!p) continue; // ไฟล์ไม่มีตารางนี้ → ว่าง

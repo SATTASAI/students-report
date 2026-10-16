@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-17";
+export const SCHEMA_VERSION = "gr-18";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -161,12 +161,12 @@ export const SCHEMA_SQL = [
     total REAL NOT NULL CHECK (total >= 0 AND total <= 50),
     updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (academic_year_id, student_id, subject_code, term_number))`,
-  // gr-7: บันทึกการมาเรียนรายวัน (ครูประจำชั้น) — เก็บเฉพาะวันที่ไม่ได้มาเรียนปกติ: ข ขาด · ล ลากิจ · ป ลาป่วย · มส มาสาย
+  // gr-7: บันทึกการมาเรียนรายวัน (ครูประจำชั้น) — เก็บเฉพาะวันที่ไม่ได้มาเรียนปกติ: ข ขาด · ล ลากิจ · ป ลาป่วย · ส มาสาย (gr-18: เดิมใช้ มส — มส สงวนไว้ให้ หมดสิทธิ์สอบ)
   `CREATE TABLE IF NOT EXISTS gr_attendance (
     academic_year_id INTEGER NOT NULL,
     student_id INTEGER NOT NULL,
     att_date TEXT NOT NULL,
-    code TEXT NOT NULL CHECK (code IN ('ข','ล','ป','มส')),
+    code TEXT NOT NULL CHECK (code IN ('ข','ล','ป','ส')),
     recorded_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (student_id, att_date))`,
   `CREATE INDEX IF NOT EXISTS idx_gr_attendance_year ON gr_attendance(academic_year_id, student_id, att_date)`,
@@ -311,6 +311,28 @@ async function seedOne(env, KEY, BANK) {
     .bind(KEY, String(BANK.rows.length)).run();
 }
 
+// gr-18: รหัสมาสายเปลี่ยนจาก "มส" เป็น "ส" (มส ใช้เฉพาะ หมดสิทธิ์สอบ) — SQLite แก้ CHECK ไม่ได้ จึงสร้างตารางใหม่แล้วย้ายข้อมูล
+// ทำครั้งเดียว (ดูจาก CHECK ของตารางเดิม) ทั้งหมดใน batch เดียว ผิดพลาดข้อมูลเดิมยังอยู่ครบ
+export async function migrateLateCode(env) {
+  const row = await env.DB.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'gr_attendance'").first();
+  if (!row?.sql || !row.sql.includes("'มส'")) return;
+  await env.DB.batch([
+    `DROP TABLE IF EXISTS gr_attendance_v18`,
+    `CREATE TABLE gr_attendance_v18 (
+      academic_year_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      att_date TEXT NOT NULL,
+      code TEXT NOT NULL CHECK (code IN ('ข','ล','ป','ส')),
+      recorded_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (student_id, att_date))`,
+    `INSERT INTO gr_attendance_v18 (academic_year_id, student_id, att_date, code, recorded_by, updated_at)
+       SELECT academic_year_id, student_id, att_date, CASE code WHEN 'มส' THEN 'ส' ELSE code END, recorded_by, updated_at FROM gr_attendance`,
+    `DROP TABLE gr_attendance`,
+    `ALTER TABLE gr_attendance_v18 RENAME TO gr_attendance`,
+    `CREATE INDEX IF NOT EXISTS idx_gr_attendance_year ON gr_attendance(academic_year_id, student_id, att_date)`,
+  ].map((sql) => env.DB.prepare(sql)));
+}
+
 const ensured = new WeakMap();
 
 export async function ensureSchema(env) {
@@ -321,6 +343,7 @@ export async function ensureSchema(env) {
     if (marker?.setting_value === SCHEMA_VERSION) return;
     await env.DB.batch(SCHEMA_SQL.map((sql) => env.DB.prepare(sql)));
     await addMissingColumns(env);
+    await migrateLateCode(env);
     await seedIndicatorBank(env);
     await env.DB.prepare(`INSERT INTO system_settings (setting_key, setting_value, updated_at)
       VALUES ('students_report_schema', ?, datetime('now'))

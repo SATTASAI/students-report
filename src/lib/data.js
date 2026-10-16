@@ -497,7 +497,7 @@ export async function attendanceRates(env, yearId, studentIds, today = thaiToday
   return out;
 }
 
-// { student_id: { ข: n, ล: n, ป: n, มส: n } }
+// { student_id: { ข: n, ล: n, ป: n, ส: n } } (ส = มาสาย)
 export async function attendanceSummary(env, yearId, studentIds) {
   const out = {};
   for (let i = 0; i < studentIds.length; i += 90) {

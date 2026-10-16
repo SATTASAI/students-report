@@ -267,7 +267,7 @@ function book(d) {
   </section>`;
 
   // ---------- 3. บันทึกเวลาเรียน ----------
-  // ครูผู้สอนไม่เช็กชื่อ — ใช้บันทึกการมาเรียนรายวันของครูประจำชั้น (ข ขาด · ล ลากิจ · ป ลาป่วย · มส มาสาย)
+  // ครูผู้สอนไม่เช็กชื่อ — ใช้บันทึกการมาเรียนรายวันของครูประจำชั้น (ข ขาด · ล ลากิจ · ป ลาป่วย · ส มาสาย)
   const attendance = `<section class="sheet">${mark}
     ${head("บันทึกเวลาเรียน")}
     <table class="t small">
@@ -279,7 +279,7 @@ function book(d) {
         const off = (a["ข"] || 0) + (a["ล"] || 0) + (a["ป"] || 0);
         const ms = k.low_attendance || (d.results[x.id] || {}).special === "มส";
         return `<tr><td class="c">${td(x.number ?? "")}</td><td class="c">${esc(td(x.student_code))}</td><td class="nm">${esc(x.name)}</td>
-          <td class="c">${n("ข")}</td><td class="c">${n("ล")}</td><td class="c">${n("ป")}</td><td class="c">${n("มส")}</td><td class="c">${off ? td(off) : ""}</td>
+          <td class="c">${n("ข")}</td><td class="c">${n("ล")}</td><td class="c">${n("ป")}</td><td class="c">${n("ส")}</td><td class="c">${off ? td(off) : ""}</td>
           <td class="c">${ms ? "มส" : "มีสิทธิ์"}</td><td class="c">${statusNote(x)}</td></tr>`;
       }).join("")}</tbody>
     </table>
