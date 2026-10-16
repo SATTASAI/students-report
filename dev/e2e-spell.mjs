@@ -1,5 +1,5 @@
 // ทดสอบหน้าเว็บ: ตรวจคำผิดในความคิดเห็นครูประจำชั้น (ป. และอนุบาล)
-// - พบคำผิด → ขึ้นตัวแดง "ท่านสะกดคำไม่ถูก" ไม่บันทึก · ครูแก้เอง → บันทึก · "+ คำนี้ถูก" → บันทึก
+// - พบคำผิด → ขึ้นตัวแดง "ท่านสะกดคำไม่ถูก" ไม่บันทึก · แตะคำที่ถูก → บันทึก · "+ คำนี้ถูก" → บันทึก
 // - "บันทึกทั้งที่มีคำผิด" ต้องยืนยัน 2 รอบ (ยกเลิกรอบ 2 = ยังไม่บันทึก)
 // - ออกจากแท็บขณะมีช่องค้าง → ถามก่อน
 // node dev/e2e-spell.mjs <โฟลเดอร์>  (เปิด dev server ใหม่ที่พอร์ต 8787 ก่อน)
@@ -51,8 +51,7 @@ check(await rows.nth(1).locator(".sp-issues").first().isVisible(), "ต้อง
 check(await ta1.evaluate((el) => el.classList.contains("sp-bad")), "ช่องที่มีคำผิดต้องเป็นสีแดง");
 await t.screenshot({ path: `${OUT}/s1-issue.png` });
 check((await rows.nth(1).locator(".sp-issues").first().innerText()).includes("ท่านสะกดคำไม่ถูก"), "ต้องขึ้นว่า ท่านสะกดคำไม่ถูก");
-check(await rows.nth(1).locator(".sp-fix").count() === 0, "ต้องไม่มีปุ่มเลือกคำถูก");
-await ta1.fill("ใฝ่รู้ ตั้งใจเรียน");
+await rows.nth(1).locator('.sp-fix[data-to="ใฝ่"]').click();
 await waitState(t, "บันทึกแล้ว");
 check(await ta1.inputValue() === "ใฝ่รู้ ตั้งใจเรียน", `แก้แล้วข้อความไม่ถูก: ${await ta1.inputValue()}`);
 check(await saved(1, "learn") === "ใฝ่รู้ ตั้งใจเรียน", "แก้คำผิดแล้วต้องบันทึก");
@@ -63,7 +62,7 @@ await ta2.fill("ไม่ตั่งใจเลียน");
 await waitState(t, "ยังไม่บันทึก 1 ช่อง");
 check((await rows.nth(1).locator(".sp-issues").nth(1).innerText()).includes("ท่านสะกดคำไม่ถูก"), "บริบทผิดต้องขึ้นว่า ท่านสะกดคำไม่ถูก");
 await t.screenshot({ path: `${OUT}/s1b-context.png` });
-await ta2.fill("ไม่ตั้งใจเรียน");
+await rows.nth(1).locator('.sp-fix[data-to="ไม่ตั้งใจเรียน"]').click();
 await waitState(t, "บันทึกแล้ว");
 check(await saved(1, "habit") === "ไม่ตั้งใจเรียน", `แก้แล้วข้อความไม่ถูก: ${await saved(1, "habit")}`);
 
@@ -72,13 +71,16 @@ const ta3 = rows.nth(1).locator('textarea[data-f="other"]');
 await ta3.fill("ไม่ตั่งใจเลียน ส่งงานไม่คบ ไม่ทำการบ้าย");
 await waitState(t, "ยังไม่บันทึก 1 ช่อง");
 check(await rows.nth(1).locator(".sp-issues").nth(3).locator(".sp-item").count() === 3, "ต้องขีดเส้นใต้ครบ 3 จุด");
-for (const step of ["ไม่ตั้งใจเรียน ส่งงานไม่คบ ไม่ทำการบ้าย", "ไม่ตั้งใจเรียน ส่งงานไม่ครบ ไม่ทำการบ้าย"]) {
-  await ta3.fill(step);
+// แตะคำแนะนำทีละคำ: คำที่เหลือยังขึ้นอยู่ และยังไม่บันทึก
+const box3 = rows.nth(1).locator(".sp-issues").nth(3);
+for (const [to, left] of [["ไม่ตั้งใจเรียน", 2], ["ส่งงานไม่ครบ", 1]]) {
+  await box3.locator(`.sp-fix[data-to="${to}"]`).click();
   await t.waitForTimeout(1500);
-  check((await state(t)).includes("ยังไม่บันทึก 1 ช่อง"), `แก้ยังไม่ครบต้องยังไม่บันทึก: ${step}`);
-  check(await saved(1, "other") == null, `แก้ยังไม่ครบต้องไม่บันทึก: ${step}`);
+  check(await box3.locator(".sp-item").count() === left, `แตะ ${to} แล้วต้องเหลือ ${left} จุด`);
+  check((await state(t)).includes("ยังไม่บันทึก 1 ช่อง"), `แก้ยังไม่ครบต้องยังไม่บันทึก (${to})`);
+  check(await saved(1, "other") == null, `แก้ยังไม่ครบต้องไม่บันทึก (${to})`);
 }
-await ta3.fill("ไม่ตั้งใจเรียน ส่งงานไม่ครบ ไม่ทำการบ้าน");
+await box3.locator('.sp-fix[data-to="ไม่ทำการบ้าน"]').click();
 await waitState(t, "บันทึกแล้ว");
 check(await saved(1, "other") === "ไม่ตั้งใจเรียน ส่งงานไม่ครบ ไม่ทำการบ้าน", "แก้ครบแล้วต้องบันทึก");
 
@@ -152,7 +154,7 @@ await t.waitForSelector(".cm-row textarea");
 const krow = t.locator(".cm-row:not(.inactive)").first();
 await krow.locator("textarea").first().fill("ร่าเลิงแจ่มใส");
 await waitState(t, "ยังไม่บันทึก 1 ช่อง");
-await krow.locator("textarea").first().fill("ร่าเริงแจ่มใส");
+await krow.locator('.sp-fix[data-to="ร่าเริง"]').click();
 await waitState(t, "บันทึกแล้ว");
 const kd = await api(t, `/api/homeroom/kinder?${KQ}`);
 const ksid = Number(await krow.getAttribute("data-sid"));

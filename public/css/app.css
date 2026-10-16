@@ -534,8 +534,9 @@ details.panel > summary { cursor: pointer; }
 .sp-title { font-weight: 600; }
 .sp-item { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-right: 8px; }
 .sp-item b { text-decoration: underline wavy var(--bad); text-underline-offset: 3px; font-weight: 600; }
-.sp-add { font: inherit; font-size: 12.5px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text); padding: 1px 9px; cursor: pointer; min-height: 26px; }
-.sp-add:hover { filter: brightness(.96); }
+.sp-fix, .sp-add { font: inherit; font-size: 12.5px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text); padding: 1px 9px; cursor: pointer; min-height: 26px; }
+.sp-fix:hover, .sp-add:hover { filter: brightness(.96); }
+.sp-fix { border-color: #b9d8c7; background: var(--ok-bg); color: var(--ok); font-weight: 600; }
 .sp-add { color: var(--muted); }
 .sp-bar { margin: 0 0 8px; }
 .sp-confirm { margin: 6px 0; padding-left: 20px; max-height: 280px; overflow: auto; font-size: 14px; }

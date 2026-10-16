@@ -566,8 +566,9 @@ function drawIssues(ta) {
   const issues = ta.value.trim() ? checkText(ta.value) : [];
   ta.classList.toggle("sp-bad", issues.length > 0);
   box.hidden = !issues.length;
-  // แจ้งเพียงว่าสะกดไม่ถูก และขีดเส้นใต้คำนั้น — ไม่เลือกคำถูกให้ ครูแก้เอง
-  box.innerHTML = issues.length ? `<span class="sp-title">ท่านสะกดคำไม่ถูก</span> ${issues.slice(0, 6).map((x) => `<span class="sp-item"><b>${esc(x.word)}</b>${
+  // ขีดเส้นใต้คำที่ผิด + ปุ่มคำที่ถูก (แตะเพื่อแก้)
+  box.innerHTML = issues.length ? `<span class="sp-title">ท่านสะกดคำไม่ถูก</span> ${issues.slice(0, 6).map((x, i) => `<span class="sp-item" title="${esc(x.note)}"><b>${esc(x.word)}</b>${
+    x.suggest.length ? ` → ${x.suggest.map((w) => `<button type="button" class="sp-fix" data-i="${i}" data-to="${esc(w)}" title="แตะเพื่อแก้เป็นคำนี้">${esc(w)}</button>`).join(" ")}` : ""}${
     (x.kind === "unknown" || x.kind === "context") && !/\s/.test(x.word) ? ` <button type="button" class="sp-add" data-word="${esc(x.word)}" title="คำนี้ถูกต้อง — ไม่ต้องเตือนอีก">+ คำนี้ถูก</button>` : ""}</span>`).join("")}${issues.length > 6 ? ` <span class="muted">และอีก ${issues.length - 6} คำ</span>` : ""}` : "";
   box._issues = issues;
 }
@@ -586,10 +587,17 @@ function wireSpell(list, kind) {
   if (checker) drawAllIssues(); else loadChecker().then(() => { if (list.isConnected) ready(); }).catch((err) => showError(err));
   const term = () => (kind === "p" ? cterm : kterm);
   list.addEventListener("click", async (e) => {
-    const add = e.target.closest(".sp-add");
-    if (!add) return;
+    const fix = e.target.closest(".sp-fix"), add = e.target.closest(".sp-add");
+    if (!fix && !add) return;
     e.preventDefault();
-    await addWord(add.dataset.word);
+    if (add) { await addWord(add.dataset.word); return; }
+    const ta = e.target.closest(".cm-field").querySelector("textarea"), sid = Number(e.target.closest(".cm-row").dataset.sid), f = ta.dataset.f;
+    const x = ta.parentElement.querySelector(".sp-issues")._issues[Number(fix.dataset.i)];
+    ta.value = (ta.value.slice(0, x.start) + fix.dataset.to + ta.value.slice(x.end)).slice(0, 300);
+    ((commentStore(kind) || {})[sid] ||= {})[term()] ||= {};
+    if (kind === "p") setComment(sid, f, ta.value); else commentChanged(kind, term(), sid, f, ta.value);
+    drawIssues(ta); // คำอื่นที่ยังผิดยังแสดงอยู่
+    ta.focus();
   });
 }
 
