@@ -478,6 +478,7 @@ function renderSummary() {
             <td><select data-special style="width:80px" ${can ? "" : "disabled"} aria-label="ผลพิเศษ ${esc(s.name)}"><option value="">–</option><option ${r.special === "ร" ? "selected" : ""}>ร</option><option ${r.special === "มส" ? "selected" : ""}>มส</option></select></td>
             <td>${gradeBadge(k.original_grade)}</td>
             <td>${r.remedial_grade ? `<span class="tag">${r.remedial_type === "repeat" ? "เรียนซ้ำ" : "แก้ตัว"} → ${esc(r.remedial_grade)}</span> ` : ""}
+              ${k.remedial_stale ? `<span class="tag" style="color:var(--bad);font-weight:700" title="ผลเดิมเปลี่ยนไปหลังบันทึกผลแก้ไข ระบบจึงใช้ผลเดิม — ตรวจแล้วแก้ไขหรือล้างผลแก้ไข">ผลแก้ไขไม่ตรงกับผลเดิมแล้ว ไม่ได้นำมาใช้</span> ` : ""}
               ${can && !["transferred", "withdrawn"].includes(s.enrollment_status) && (["0", "ร", "มส"].includes(k.original_grade) || r.remedial_grade) ? `<button class="btn small" data-remedial>${r.remedial_grade ? "แก้ไข" : "บันทึกผลแก้ตัว"}</button>` : ""}</td>
             <td>${gradeBadge(k.grade)}</td>
             <td class="small muted">${[k.reason, failed ? `ไม่ผ่าน ${failed} ${W}` : ""].filter(Boolean).map(esc).join(" · ")}</td>

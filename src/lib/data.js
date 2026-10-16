@@ -357,10 +357,30 @@ export async function yearResultsForStudents(env, yearId, grade, studentIds) {
   for (const sid of studentIds) {
     for (const code of Object.keys(bySubject)) {
       const options = bySubject[code];
-      const course = options.find((c) => hasData.has(`${c.id}:${sid}`)) || options.find((c) => c.classroom === roomOf[sid]);
+      const withData = options.filter((c) => hasData.has(`${c.id}:${sid}`));
+      // รายวิชาหลัก (ผลแก้ตัว/มส/สถานะ): ห้องปัจจุบันถ้ามีข้อมูล ไม่อย่างนั้นห้องแรกที่มีข้อมูล
+      const course = withData.find((c) => c.classroom === roomOf[sid]) || withData[0] || options.find((c) => c.classroom === roomOf[sid]);
       if (!course) continue;
       const key = `${course.id}:${sid}`;
-      const calc = computeStudentResult(itemsByCourse[course.id] || [], scoreIdx[key] || {}, resultWithAttendance(resIdx[key], rates[sid], course.hours_per_year), gradeSettings(course, settings), remIdx[key] || {}, carry[sid]?.[code]);
+      let calcItems = itemsByCourse[course.id] || [], calcScores = scoreIdx[key] || {}, calcRem = remIdx[key] || {};
+      if (withData.length > 1) {
+        // ย้ายห้องกลางปี: คะแนนแต่ละภาคอยู่คนละห้อง → แต่ละภาคใช้ช่องคะแนนของห้องที่นักเรียนมีคะแนนในภาคนั้นมากที่สุด
+        // (เดิมเลือกห้องเดียว ทำให้อีกภาคหายและเกรดเป็น "-")
+        calcItems = []; calcScores = {}; calcRem = {};
+        const terms = [...new Set(withData.flatMap((c) => (itemsByCourse[c.id] || []).map((i) => Number(i.term_number))))];
+        for (const t of terms) {
+          const filled = (c) => (itemsByCourse[c.id] || []).filter((i) => Number(i.term_number) === t && scoreIdx[`${c.id}:${sid}`]?.[i.id] != null).length;
+          const src = [...withData].sort((a, b) => filled(b) - filled(a) || (b === course) - (a === course))[0];
+          const k = `${src.id}:${sid}`;
+          for (const i of itemsByCourse[src.id] || []) {
+            if (Number(i.term_number) !== t) continue;
+            calcItems.push(i);
+            if (scoreIdx[k]?.[i.id] != null) calcScores[i.id] = scoreIdx[k][i.id];
+            if (remIdx[k]?.[i.id] != null) calcRem[i.id] = remIdx[k][i.id];
+          }
+        }
+      }
+      const calc = computeStudentResult(calcItems, calcScores, resultWithAttendance(resIdx[key], rates[sid], course.hours_per_year), gradeSettings(course, settings), calcRem, carry[sid]?.[code]);
       out[sid].push({
         course_id: course.id, code: course.code, name: course.name, learning_area: course.learning_area,
         subject_type: course.subject_type, hours_per_year: course.hours_per_year, sort_order: course.sort_order,
@@ -465,7 +485,14 @@ export async function attendanceRates(env, yearId, studentIds, today = thaiToday
     const days = elapsed.filter((d) => d >= from);
     const set = new Set(days);
     const a = (absent[sid] || []).filter((d) => set.has(d)).length;
-    out[sid] = { days: days.length, absent: a, pct: days.length ? clean(((days.length - a) * 100) / days.length) : null }; // ร้อยละจริง ไม่ปัด/ไม่ตัด (ใช้เทียบเกณฑ์เวลาเรียน)
+    // year_pct: เทียบกับวันเรียนทั้งปี (ตั้งแต่วันที่ย้ายเข้า) — ใช้ตัดสิน มส เพื่อไม่ให้ขาด 1–2 วันต้นภาคกลายเป็น มส
+    // ระหว่างปีจึงเป็น มส เฉพาะเมื่อขาด/ลาเกินที่ทั้งปียอมให้แล้วจริง ๆ ส่วนปลายปี (วันผ่านครบ) ค่าเท่ากับ pct
+    const yearDays = cal.days.filter((d) => d >= from).length;
+    out[sid] = {
+      days: days.length, absent: a, year_days: yearDays,
+      pct: days.length ? clean(((days.length - a) * 100) / days.length) : null, // ร้อยละจริงนับถึงวันนี้ ไม่ปัด/ไม่ตัด (แสดงเป็นคำเตือน)
+      year_pct: days.length && yearDays ? clean(((yearDays - a) * 100) / yearDays) : null,
+    };
   }
   return out;
 }

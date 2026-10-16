@@ -98,7 +98,7 @@ export function computeStudentResult(items, scores, result, settings, remedials,
   const getItem = (item) => {
     const raw = pick(scores, item.id), rem = pick(remedials, item.id);
     if (rem == null) return raw;
-    remediated.push(item.id);
+    if (item.kind !== "final") remediated.push(item.id); // คะแนนแก้ตัวของสอบปลายภาคไม่นับ จึงไม่ถือว่าแก้ตัว
     return effectiveScore(item, raw, rem, settings);
   };
   const ratio = Math.min(100, Math.max(0, Number(settings.collect_ratio ?? 70)));
@@ -111,7 +111,7 @@ export function computeStudentResult(items, scores, result, settings, remedials,
     const t = yearly ? 0 : Number(item.term_number);
     const b = per[t] ||= { collect: 0, collectMax: 0, final: 0, finalMax: 0, missing: 0 };
     if (item.kind === "final") b.finalMax = sum2(b.finalMax, max); else b.collectMax = sum2(b.collectMax, max);
-    if (!yearly && carried(t)) continue; // ภาคนี้ใช้คะแนนยกมา ไม่นับช่องคะแนน
+    if (!yearly && carried(t)) { b.carried = true; continue; } // ภาคนี้ใช้คะแนนยกมา ไม่นับช่องคะแนน
     const v = getItem(item);
     if (v == null) { missing++; b.missing++; continue; }
     if (item.kind === "final") b.final = sum2(b.final, v);
@@ -161,7 +161,8 @@ export function computeStudentResult(items, scores, result, settings, remedials,
   }
   const bothTerms = yearly || ((!!per[1] || !!carried(1)) && (!!per[2] || !!carried(2)));
   const hasItems = (items.length > 0 && Object.values(per).some((b) => b.collectMax + b.finalMax > 0)) || (!yearly && !!(carried(1) || carried(2)));
-  const raw = (k) => Object.values(per).reduce((a, b) => sum2(a, b[k]), 0);
+  // คะแนนดิบ/คะแนนเต็มดิบ: ไม่นับภาคที่ใช้คะแนนยกมา (ไม่อย่างนั้นคะแนนเต็มนับ แต่คะแนนที่ได้ไม่นับ ตัวเลขไม่สมดุล)
+  const raw = (k) => Object.values(per).filter((b) => !b.carried).reduce((a, b) => sum2(a, b[k]), 0);
 
   const hoursPerYear = Number(settings.hours_per_year) || 0;
   const hours = result?.hours_attended == null || result.hours_attended === ""
@@ -180,7 +181,15 @@ export function computeStudentResult(items, scores, result, settings, remedials,
   else if (missing > 0) { original = finalized ? "ร" : null; reason = `คะแนนยังไม่ครบ ${missing} ช่อง`; }
   else original = gradeFromTotal(total);
 
-  const finalGrade = result?.remedial_grade ? String(result.remedial_grade) : original;
+  // ผลแก้ตัว/เรียนซ้ำใช้แทนผลเดิมได้เฉพาะเมื่อยังถูกต้องกับผลเดิมปัจจุบัน — ถ้าภายหลังแก้คะแนน/เวลาเรียนจนผลเดิมผ่านแล้ว
+  // (หรือผลเดิมเปลี่ยนจาก ร เป็น 0 ทำให้ผลแก้ตัวเกิน 1) จะไม่ใช้ผลแก้ตัวนั้น และแจ้ง remedial_stale ให้ครู/ฝ่ายวัดผลตรวจ
+  // ผลเดิมที่ใช้ตรวจ = ผลเมื่อยืนยันผลแล้ว (คะแนนไม่ครบ = ร) เหมือนตอนบันทึกผลแก้ตัว
+  let remedialStale = false, finalGrade = original;
+  if (result?.remedial_grade != null && result.remedial_grade !== "") {
+    const checkOriginal = original ?? (hasItems && bothTerms && missing > 0 ? "ร" : null);
+    if (checkOriginal != null && !validateRemedial(checkOriginal, result.remedial_type || "remedial", String(result.remedial_grade))) finalGrade = String(result.remedial_grade);
+    else remedialStale = true;
+  }
 
   return {
     collect_raw: raw("collect"), collect_max: raw("collectMax"),
@@ -188,16 +197,19 @@ export function computeStudentResult(items, scores, result, settings, remedials,
     collect_scaled: hasItems ? collectScaled : 0, final_scaled: hasItems ? finalScaled : 0,
     exact, total: hasItems ? total : null, total_max: yearly ? 100 : Object.keys(term_scores).length * 50,
     missing, term_scores, hours, need_hours: needHours, low_attendance: lowAttendance,
-    original_grade: original, reason, grade: finalGrade, carried_terms: yearly ? [] : [1, 2].filter((t) => carried(t)),
+    original_grade: original, reason, grade: finalGrade, remedial_stale: remedialStale, carried_terms: yearly ? [] : [1, 2].filter((t) => carried(t)),
     failed_indicators: failedIndicators, remediated,
   };
 }
 
 // เวลาเรียนรายวิชาจากการมาเรียนของครูประจำชั้น (ครูผู้สอนไม่กรอกชั่วโมง): ชั่วโมงเต็ม × ร้อยละการมาเรียน
 // ใช้เฉพาะเมื่อไม่มี hours_attended ที่บันทึกไว้เดิม · rate = { pct } จาก attendanceRates (null = ยังไม่เปิดภาค)
+// ใช้ year_pct (เทียบวันเรียนทั้งปี) ตัดสิน มส: ระหว่างปีเป็น มส เมื่อขาด/ลาเกินที่ทั้งปียอมให้แล้วเท่านั้น
+// (pct นับถึงวันนี้ ใช้แสดงเป็นคำเตือน) — ปลายปี วันเรียนผ่านครบ สองค่าเท่ากัน
 export function resultWithAttendance(result, rate, hoursPerYear) {
   if (!rate || rate.pct == null || (result && result.hours_attended != null && result.hours_attended !== "")) return result || {};
-  return { ...(result || {}), hours_attended: clean(Number(hoursPerYear || 0) * rate.pct / 100) };
+  const pct = rate.year_pct ?? rate.pct;
+  return { ...(result || {}), hours_attended: clean(Number(hoursPerYear || 0) * pct / 100) };
 }
 
 // ตรวจโครงสร้างคะแนนก่อนยืนยันผล: คะแนนเต็มของแต่ละภาคต้องตรงสัดส่วน (เช่น 35 + 15 = 50)
@@ -226,13 +238,13 @@ export function indicatorWord(gradeLevel) {
 // ตรวจผลสอบแก้ตัว/เรียนซ้ำ ตามระเบียบการวัดผล (ประถม)
 // - แก้ 0 หรือ มส (ได้รับอนุญาตให้สอบ/เรียนเพิ่มแล้ว) → ได้สูงสุด 1
 // - แก้ ร → ได้ตามคะแนนจริง (0–4)
-// - เรียนซ้ำรายวิชา → ได้ตามคะแนนจริง (0–4)
+// - เรียนซ้ำรายวิชา (เฉพาะผลเดิม 0 / ร / มส) → ได้ตามคะแนนจริง (0–4)
 export function validateRemedial(original, type, grade) {
   if (!type && !grade) return null;
   if (!["remedial", "repeat"].includes(type)) return "ประเภทการแก้ไขไม่ถูกต้อง";
   if (!NUMERIC_GRADES.includes(String(grade))) return "ผลหลังแก้ไขต้องเป็น 0–4";
+  if (!["0", "ร", "มส"].includes(original)) return type === "repeat" ? "เรียนซ้ำได้เฉพาะรายวิชาที่ผลการเรียน 0, ร หรือ มส" : "สอบแก้ตัวได้เฉพาะผลการเรียน 0, ร หรือ มส";
   if (type === "remedial") {
-    if (!["0", "ร", "มส"].includes(original)) return "สอบแก้ตัวได้เฉพาะผลการเรียน 0, ร หรือ มส";
     if ((original === "0" || original === "มส") && Number(grade) > 1) return "แก้ 0 หรือ มส ได้ผลการเรียนสูงสุด 1";
   }
   return null;

@@ -140,3 +140,53 @@ test("ภาวะโภชนาการตามเกณฑ์กรมอ�
   a = g.analyzeBody({ gender: "ญ", birth_date: "2020-10-01" }, { weight: 19, height: 111 }, "2026-06-01");
   assert.ok(a.hfa && a.wfa && a.wfh && a.why == null);
 });
+
+test("ผลแก้ตัวที่ไม่ตรงกับผลเดิมปัจจุบันไม่ถูกนำมาใช้ (แก้คะแนนภายหลังจนผ่าน)", () => {
+  const items = [{ id: 1, kind: "indicator", max_score: 10 }];
+  const s = { collect_ratio: 70, hours_per_year: 40, attendance_pass_pct: 80 };
+  const pass = computeStudentResult(items, { 1: 7 }, { remedial_type: "remedial", remedial_grade: "1" }, s);
+  assert.equal(pass.original_grade, "3");
+  assert.equal(pass.grade, "3");
+  assert.equal(pass.remedial_stale, true);
+  const fail = computeStudentResult(items, { 1: 2 }, { remedial_type: "remedial", remedial_grade: "1" }, s);
+  assert.equal(fail.grade, "1");
+  assert.equal(fail.remedial_stale, false);
+  // ผลเดิม ร (คะแนนไม่ครบ) แก้ได้ 3 → ภายหลังกรอกครบได้ 0 → แก้ 0 ได้สูงสุด 1 ผล 3 จึงใช้ไม่ได้
+  const two = [{ id: 1, kind: "indicator", max_score: 10 }, { id: 2, kind: "indicator", max_score: 10 }];
+  const r = { remedial_type: "remedial", remedial_grade: "3" };
+  assert.equal(computeStudentResult(two, { 1: 9 }, r, { ...s, finalized: true }).grade, "3");
+  const z = computeStudentResult(two, { 1: 1, 2: 1 }, r, { ...s, finalized: true });
+  assert.equal(z.grade, "0");
+  assert.equal(z.remedial_stale, true);
+});
+
+test("เรียนซ้ำได้เฉพาะผลเดิม 0 ร มส", () => {
+  assert.ok(validateRemedial("3", "repeat", "3"));
+  assert.ok(validateRemedial("1", "repeat", "2"));
+  assert.equal(validateRemedial("มส", "repeat", "2"), null);
+  assert.equal(validateRemedial("ร", "repeat", "4"), null);
+});
+
+test("มส ตัดสินจากวันเรียนทั้งปี: ขาดต้นภาค 1–2 วันยังไม่ มส", async () => {
+  const { resultWithAttendance } = await import("../public/js/grading.js");
+  const items = [{ id: 1, kind: "indicator", max_score: 10 }];
+  const s = { collect_ratio: 70, hours_per_year: 40, attendance_pass_pct: 80 };
+  const early = resultWithAttendance({}, { days: 2, absent: 1, pct: 50, year_days: 200, year_pct: 99.5 }, 40);
+  assert.equal(computeStudentResult(items, { 1: 7 }, early, s).low_attendance, false);
+  const over = resultWithAttendance({}, { days: 120, absent: 41, pct: 65.83, year_days: 200, year_pct: 79.5 }, 40);
+  assert.equal(computeStudentResult(items, { 1: 7 }, over, s).grade, "มส");
+  // ข้อมูลเดิมที่ไม่มี year_pct ใช้ pct ตามเดิม
+  assert.equal(computeStudentResult(items, { 1: 7 }, resultWithAttendance({}, { pct: 50 }, 40), s).grade, "มส");
+});
+
+test("ภาคที่ใช้คะแนนยกมาไม่นับคะแนนเต็มดิบ", () => {
+  const items = [
+    { id: 1, kind: "indicator", term_number: 1, max_score: 35 }, { id: 2, kind: "final", term_number: 1, max_score: 15 },
+    { id: 3, kind: "indicator", term_number: 2, max_score: 35 }, { id: 4, kind: "final", term_number: 2, max_score: 15 },
+  ];
+  const r = computeStudentResult(items, { 3: 30, 4: 10 }, {}, { collect_ratio: 70, hours_per_year: 40 }, {}, { 1: { collect: 30, final: 10, total: 40 } });
+  assert.equal(r.collect_raw, 30);
+  assert.equal(r.collect_max, 35);
+  assert.equal(r.total, 80);
+  assert.equal(r.grade, "4");
+});

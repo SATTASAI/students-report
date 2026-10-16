@@ -55,16 +55,17 @@ test("มส อัตโนมัติ: มาเรียนต่ำกว�
   const { call, c } = await setup();
   const kids = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.students;
   const [a, b] = kids;
-  // ขาด 40 วันทำการแรกของภาค 1 (พ.ค.–มิ.ย. 2569) → ต่ำกว่า 80% แน่นอนเมื่อดูถึงวันนี้
+  // ขาด 60 วันทำการแรกของภาค 1 → เกิน 20% ของวันเรียนทั้งปีแล้ว (มส ตัดสินจากวันเรียนทั้งปี ไม่ใช่นับถึงวันนี้)
   const days = [];
   const off = new Set((await call("admin", "GET", "/api/calendar", null, { expect: 200 })).data.holidays.map((h) => h.holiday_date)); // วันหยุดราชการที่ระบบใส่ให้
-  for (let d = new Date("2026-05-01T00:00:00Z"); days.length < 40; d.setUTCDate(d.getUTCDate() + 1)) if (![0, 6].includes(d.getUTCDay()) && !off.has(d.toISOString().slice(0, 10))) days.push(d.toISOString().slice(0, 10));
+  for (let d = new Date("2026-05-01T00:00:00Z"); days.length < 60; d.setUTCDate(d.getUTCDate() + 1)) if (![0, 6].includes(d.getUTCDay()) && !off.has(d.toISOString().slice(0, 10))) days.push(d.toISOString().slice(0, 10));
   await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, { changes: days.map((date, i) => ({ student_id: a.id, date, code: i % 2 ? "ล" : "ข" })) }, { expect: 200 });
   await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, { changes: days.map((date) => ({ student_id: b.id, date, code: "มส" })) }, { expect: 200 }); // มาสายทั้งหมด = มาเรียน
   const cd = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
   const ra = cd.attendance[a.id].rate, rb = cd.attendance[b.id].rate;
-  assert.equal(ra.absent, 40);
+  assert.equal(ra.absent, 60);
   assert.ok(ra.pct < 80, `pct ${ra.pct}`);
+  assert.ok(ra.year_pct < 80, `year_pct ${ra.year_pct}`);
   assert.equal(rb.absent, 0);
   assert.equal(rb.pct, 100);
   assert.equal(cd.computed[a.id].low_attendance, true);
@@ -73,7 +74,7 @@ test("มส อัตโนมัติ: มาเรียนต่ำกว�
   const rep = (await call("t1", "GET", `/api/reports/room?${Q}`, null, { expect: 200 })).data;
   assert.equal(rep.students.find((x) => x.id === a.id).subjects.find((x) => x.code === "ท14101").grade, "มส");
   // วันขาดที่กลายเป็นวันหยุดไม่นับ
-  await call("admin", "POST", "/api/calendar", { from: days[0], to: days[39], name: "ปิดโรงเรียนกรณีพิเศษ" }, { expect: 200 });
+  await call("admin", "POST", "/api/calendar", { from: days[0], to: days[59], name: "ปิดโรงเรียนกรณีพิเศษ" }, { expect: 200 });
   const cd2 = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
   assert.equal(cd2.attendance[a.id].rate.absent, 0);
   assert.equal(cd2.computed[a.id].low_attendance, false);
