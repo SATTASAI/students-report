@@ -306,7 +306,7 @@ function renderBody() {
         <td class="calc" data-bmi style="white-space:nowrap">${bmiText(s.id)}</td></tr>`).join("")}</tbody>
     </table></div>
     <p class="muted small" style="margin-top:10px">ภาวะโภชนาการตามเกณฑ์กรมอนามัย: รูปร่าง (น้ำหนักตามเกณฑ์ส่วนสูง) และส่วนสูงตามเกณฑ์อายุ · สูงดีสมส่วน = ส่วนสูงตามเกณฑ์ขึ้นไปและรูปร่างสมส่วน — อายุคิดจากวันเกิดถึงวันที่บันทึก ต้องมีวันเกิดและเพศในทะเบียน
-      · <a target="_blank" rel="noopener" href="/print/body.html?${q}">${ICONS.print} พิมพ์แบบบันทึกน้ำหนัก ส่วนสูง และภาวะโภชนาการ</a></p>`;
+      · แบบบันทึกน้ำหนัก ส่วนสูง และภาวะโภชนาการ พิมพ์ได้ที่ <a href="/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}">คลังเอกสาร</a></p>`;
   const table = document.getElementById("sheet");
   const inputs = () => [...table.querySelectorAll("tbody input")];
   table.addEventListener("keydown", (e) => {
