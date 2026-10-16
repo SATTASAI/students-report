@@ -7,7 +7,7 @@ const me = await shell("sar");
 const view = document.getElementById("view");
 document.getElementById("main").hidden = false;
 const Y = me.year.id;
-const CAN_EDIT = !!(me.user.can_import || me.user.role === "executive" || me.user.role === "superadmin");
+const CAN_EDIT = !!(me.user.can_import || me.user.role === "superadmin"); // ผู้บริหารดูอย่างเดียว
 let d, ev, stage = sessionStorage.getItem("sr-sar-stage") || "basic";
 const pending = new Map(); // item_key → {target, manual_value, note}
 const fmt = (v) => (v == null ? "–" : String(Number((Math.trunc(Number((Number(v) * 100).toPrecision(12))) / 100).toPrecision(12)))); // ไม่ปัด

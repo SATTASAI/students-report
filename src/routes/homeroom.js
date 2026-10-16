@@ -13,12 +13,12 @@ export const HEALTH_ITEMS = { h_nail: "เล็บ", h_teeth: "ฟัน", h_ha
 export const HEALTH_WEEKS = 4;
 export const COMMENT_FIELDS = ["learn", "habit", "health", "other"];
 
-async function roomContext(env, user, url) {
+async function roomContext(env, user, url, method = "GET") {
   const year = await resolveYear(env, url.searchParams.get("year"));
   const grade = text(url.searchParams.get("grade"), 10);
   const room = text(url.searchParams.get("room"), 10);
   if (!isSchoolGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
-  if (!(await isHomeroomTeacher(env, user, year.id, grade, room))) fail(403, "คุณไม่ได้เป็นครูประจำชั้นของห้องนี้");
+  if (!(await isHomeroomTeacher(env, user, year.id, grade, room, { view: method === "GET" }))) fail(403, method === "GET" || !user.can_view_all ? "คุณไม่ได้เป็นครูประจำชั้นของห้องนี้" : "ผู้บริหารดูและตรวจสอบได้อย่างเดียว แก้ข้อมูลไม่ได้");
   return { year, grade, room };
 }
 
@@ -27,7 +27,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   const sub = parts[2];
 
   if (!sub && method === "GET") {
-    const { year, grade, room } = await roomContext(env, user, url);
+    const { year, grade, room } = await roomContext(env, user, url, method);
     const roster = await roomRoster(env, year.id, grade, room);
     const ids = roster.map((s) => s.id);
     const [assessments, grades, absences, comments, body, bank, hrTeachers] = await Promise.all([
@@ -58,7 +58,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
 
   // คำขอแก้ไขข้อมูลครูประจำชั้นหลังปิดการกรอก → ฝ่ายวัดผลอนุมัติแล้วแก้ได้ HOMEROOM_GRANT_DAYS วัน
   if (sub === "edit-request" && method === "POST") {
-    const { year, grade, room } = await roomContext(env, user, url);
+    const { year, grade, room } = await roomContext(env, user, url, method);
     const st = await homeroomEditState(env, user, year.id, grade, room);
     if (st.open) fail(409, st.why === "grant" ? "ห้องนี้ได้รับอนุญาตให้แก้อยู่แล้ว" : "ยังเปิดให้กรอกอยู่ ไม่ต้องส่งคำขอ");
     if (st.pending) fail(409, "ส่งคำขอแล้ว รอฝ่ายวัดผลอนุมัติ");
@@ -72,7 +72,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   }
 
   if (sub === "assessments" && method === "PUT") {
-    const { year, grade, room } = await roomContext(env, user, url);
+    const { year, grade, room } = await roomContext(env, user, url, method);
     await assertHomeroomWritable(env, user, year.id, grade, room);
     const all = await roomRoster(env, year.id, grade, room);
     const roster = new Set(all.map((s) => s.id)), writable = writableIds(all);
@@ -100,7 +100,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
 
   // ความคิดเห็นครูประจำชั้น: changes [{student_id, field, body}] (body ว่าง = ลบ)
   if (sub === "comments" && method === "PUT") {
-    const { year, grade, room } = await roomContext(env, user, url);
+    const { year, grade, room } = await roomContext(env, user, url, method);
     await assertHomeroomWritable(env, user, year.id, grade, room);
     const all = await roomRoster(env, year.id, grade, room);
     const roster = new Set(all.map((s) => s.id)), writable = writableIds(all);
@@ -145,7 +145,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
 
   // น้ำหนัก/ส่วนสูง: changes [{student_id, round, weight, height}]
   if (sub === "body" && method === "PUT") {
-    const { year, grade, room } = await roomContext(env, user, url);
+    const { year, grade, room } = await roomContext(env, user, url, method);
     await assertHomeroomWritable(env, user, year.id, grade, room);
     const all = await roomRoster(env, year.id, grade, room);
     const roster = new Set(all.map((s) => s.id)), writable = writableIds(all);
@@ -179,7 +179,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   // ---------- บันทึกการมาเรียนรายวัน (ครูประจำชั้น) ----------
   // ตารางรายเดือน นักเรียน × วันเรียน (จันทร์–ศุกร์ในช่วงภาคเรียน) — มาเรียนปกติไม่ต้องใส่ เก็บเฉพาะ ข ล ป ส
   if (sub === "attendance") {
-    const { year, grade, room } = await roomContext(env, user, url);
+    const { year, grade, room } = await roomContext(env, user, url, method);
     const roster = await roomRoster(env, year.id, grade, room);
     const ids = new Set(roster.map((s) => s.id)), writable = writableIds(roster);
     const cal = await schoolCalendar(env, year.id);
@@ -226,7 +226,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   // PUT  /api/homeroom/kinder/scores   {changes:[{student_id, code, term, round, score}]}  (score ว่าง = ลบ)
   // PUT  /api/homeroom/kinder/comments {term, changes:[{student_id, field, body}]}
   if (sub === "kinder") {
-    const { year, grade, room } = await roomContext(env, user, url);
+    const { year, grade, room } = await roomContext(env, user, url, method);
     if (!isKinderGrade(grade)) fail(400, "ประเมินพัฒนาการใช้กับชั้นอนุบาลเท่านั้น");
     const roster = await roomRoster(env, year.id, grade, room);
     const ids = roster.map((s) => s.id), writable = writableIds(roster);
@@ -306,7 +306,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     const year = await resolveYear(env, url.searchParams.get("year"));
     const own = (await env.DB.prepare("SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?").bind(year.id, user.id).all()).results.sort(compareRoom);
     const isOwn = (g, c) => own.some((r) => r.grade_level === g && r.classroom === c);
-    const viewAll = user.is_admin && url.searchParams.get("scope") !== "teacher";
+    const viewAll = user.can_view_all && url.searchParams.get("scope") !== "teacher";
     if (method === "GET" && !url.searchParams.get("grade")) {
       const rooms = viewAll
         ? (await listRooms(env, year.id)).filter((r) => isSchoolGrade(r.grade_level)).map((r) => ({ grade_level: r.grade_level, classroom: r.classroom, can_edit: isOwn(r.grade_level, r.classroom) }))
@@ -375,7 +375,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   // ---------- คะแนนยกมาจาก ปพ.6 ของโรงเรียนเดิม (นักเรียนย้ายเข้าระหว่างปี) ----------
   // กรอกได้เฉพาะภาคเรียนก่อนภาคที่ย้ายเข้า (เช่น ย้ายเข้าภาค 2 → กรอกคะแนนภาค 1 จาก ปพ.6 ที่ติดตัวมา)
   if (sub === "carryover") {
-    const { year, grade, room } = await roomContext(env, user, url);
+    const { year, grade, room } = await roomContext(env, user, url, method);
     const roster = await roomRoster(env, year.id, grade, room);
     const movers = roster.filter((s) => s.transfer_in_term > 1 && !isLeft(s));
     const { results: subjects } = await env.DB.prepare(

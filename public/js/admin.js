@@ -8,7 +8,7 @@ import { renderBackup } from "/js/backup.js";
 const me = await shell("admin");
 const view = document.getElementById("view");
 const main = document.getElementById("main");
-if (!me.user.is_admin) {
+if (!me.user.can_view_all) {
   main.hidden = false;
   view.innerHTML = `<div class="panel empty"><strong>หน้านี้สำหรับฝ่ายวิชาการ/วัดผล</strong>ติดต่อผู้บริหารเพื่อขอสิทธิ์</div>`;
   throw new Error("not admin");
@@ -26,11 +26,13 @@ const SECTIONS = {
   students: "นักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียน", sync: "ดึงข้อมูลจากระบบทะเบียน", review: "ตรวจผลการเรียน", requests: "คำขอแก้ไข", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน", backup: "สำรองและกู้คืนข้อมูล",
 };
 const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves", "students", "calendar", "requests"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super)
-  && !(["sync", "backup"].includes(k) && me.user.role !== "superadmin"));
-let tab = hashTab(allowed, me.role === "exec" && allowed.includes("approve") ? "approve" : "start");
+  && !(["sync", "backup"].includes(k) && me.user.role !== "superadmin")
+  // ผู้บริหาร: ดูและตรวจสอบเท่านั้น — อนุมัติ/ส่งคืน และดูประวัติ
+  && (me.user.is_admin || ["approve", "audit"].includes(k)));
+let tab = hashTab(allowed, (me.role === "exec" || !allowed.includes("start")) && allowed.includes("approve") ? "approve" : "start");
 document.getElementById("tabs")?.classList.add("by-menu");
 if (location.hash === "#activity") location.replace("/activities.html"); // ลิงก์เก่า
-window.addEventListener("hashchange", () => { tab = hashTab(allowed, "start"); renderTabs(); render(); });
+window.addEventListener("hashchange", () => { tab = hashTab(allowed, allowed.includes("start") ? "start" : allowed[0]); renderTabs(); render(); });
 let teachersCache;
 const teachers = async () => (teachersCache ||= (await api("/api/admin/teachers")).teachers);
 // ชื่อครูในตัวเลือก: ถ้ามีหลายบัญชีชื่อเดียวกัน แสดงอีเมลกำกับ จะได้ไม่มอบหมายผิดบัญชี
@@ -750,7 +752,7 @@ async function renderApprove(mode = "approve") {
         <td><input type="checkbox" class="pick" value="${c.id}" aria-label="เลือก ${esc(c.code)}" style="width:18px;height:18px;min-height:0"></td>
         <td>${esc(c.code)}</td><td><a href="/course.html?id=${c.id}&year=${Y}">${esc(c.name)}</a>${c.edit_count ? ` <span class="tag warn" title="ฝ่ายวัดผลแก้ไขหลังส่ง">แก้ ${c.edit_count}</span>` : ""}</td>
         <td class="small">${c.teachers.map((t) => esc(t.full_name)).join(", ")}</td><td class="small muted">${esc(thaiTime(R ? c.submitted_at : c.reviewed_at))}</td>
-        <td class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/pp5.html?course=${c.id}">ตรวจ ปพ.5</a>${R ? `<button class="btn small" data-return="${c.id}">ส่งคืน</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`).join("")
+        <td class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/pp5.html?course=${c.id}">ตรวจ ปพ.5</a><button class="btn small" data-return="${c.id}">ส่งคืน</button></td></tr>`).join("")}</tbody></table></div>`).join("")
       : `<div class="empty"><strong>${R ? "ไม่มีรายวิชารอตรวจ" : "ไม่มีรายวิชารออนุมัติ"}</strong>${R ? "เมื่อครูส่งผลแล้ว รายวิชาจะขึ้นที่นี่" : "เมื่อฝ่ายวัดผลตรวจแล้ว รายวิชาจะขึ้นที่นี่"}</div>`}
   </div>
   <div class="panel"><div class="panel-head"><h2>${R ? "ตรวจแล้ว / อนุมัติแล้ว" : "อนุมัติแล้ว"} <span class="tag ok">${done.length}</span></h2></div>

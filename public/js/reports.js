@@ -4,7 +4,7 @@ import { NUMERIC_GRADES } from "/js/grading.js";
 const me = await shell("reports");
 const view = document.getElementById("view");
 document.getElementById("main").hidden = false;
-if (!me.user.is_admin) {
+if (!me.user.can_view_all) {
   view.innerHTML = `<div class="panel empty"><strong>หน้านี้สำหรับฝ่ายวิชาการ/วัดผล</strong>ครูประจำชั้นพิมพ์ ปพ.6 ได้จากหน้าห้องของตนเอง</div>`;
   throw new Error("not admin");
 }

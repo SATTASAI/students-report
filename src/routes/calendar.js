@@ -10,7 +10,7 @@ export async function handleCalendar(request, env, user, parts, method, url) {
   const year = await resolveYear(env, url.searchParams.get("year"));
   if (method === "GET") {
     // ดูได้: ฝ่ายวิชาการ/วัดผล และครูประจำชั้น (ครูประจำชั้นดูอย่างเดียว แก้ไม่ได้)
-    if (!user.is_admin) {
+    if (!user.can_view_all) {
       const hr = await env.DB.prepare("SELECT 1 AS ok FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ? LIMIT 1").bind(year.id, user.id).first();
       if (!hr) fail(403, "ปฏิทินวันหยุดดูได้เฉพาะครูประจำชั้นและฝ่ายวัดผล");
     }

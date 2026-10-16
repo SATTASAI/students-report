@@ -8,7 +8,7 @@ const MAX_ITEMS_PER_COURSE = 80;
 
 function serializeBundle(b, user) {
   return {
-    course: { ...b.course, can_edit: (!b.course.locked && (b.settings.entry_open || user.is_admin || !!b.course.edit_granted_at)) || (b.course.locked && !!user.can_import), admin_edit: !!(b.course.locked && user.can_import) },
+    course: { ...b.course, can_edit: (!b.course.locked && (user.is_admin || b.course.teachers.some((t) => t.id === user.id)) && (b.settings.entry_open || user.is_admin || !!b.course.edit_granted_at)) || (b.course.locked && !!user.can_import), admin_edit: !!(b.course.locked && user.can_import) },
     edit_request: b.edit_request || null,
     edits: b.edits || [],
     can_approve: ADMIN_ROLES.includes(user.role),
@@ -28,6 +28,7 @@ function serializeBundle(b, user) {
     results: b.results,
     computed: b.computed,
     is_admin: user.is_admin,
+    is_teacher: b.course.teachers.some((t) => t.id === user.id),
   };
 }
 

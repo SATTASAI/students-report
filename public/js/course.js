@@ -78,7 +78,7 @@ function renderHeader() {
     note.innerHTML = `${line}${c.admin_edit
       ? `<br><b>คุณแก้ไขได้ในฐานะฝ่ายวัดผล</b> — ทุกการแก้ไขจะถูกบันทึกให้ครูผู้สอนเห็น${c.status === "approved" ? " และต้องให้ผู้บริหารอนุมัติใหม่" : ""}`
       : ` — ถ้าต้องแก้ ให้ส่งคำขอแก้ไขถึงฝ่ายวัดผล${requestBit()}`}
-      ${data.is_admin ? ' <button class="btn small" id="returnLink">ส่งคืนให้ครูแก้</button>' : ""}`;
+      ${data.is_admin || data.can_approve ? ' <button class="btn small" id="returnLink">ส่งคืนให้ครูแก้</button>' : ""}`;
     const rl = document.getElementById("returnLink");
     if (rl) rl.onclick = returnCourse;
     bindRequest();
@@ -92,7 +92,8 @@ function renderHeader() {
     } else {
       note.hidden = c.can_edit;
       note.classList.add("warn");
-      note.innerHTML = `ปิดการกรอกคะแนนแล้ว — ถ้าต้องแก้ ให้ส่งคำขอแก้ไขถึงฝ่ายวัดผล${requestBit()}`;
+      note.innerHTML = !data.is_admin && !data.is_teacher ? "ดูและตรวจสอบได้อย่างเดียว — ผู้บริหารแก้คะแนนไม่ได้"
+        : `ปิดการกรอกคะแนนแล้ว — ถ้าต้องแก้ ให้ส่งคำขอแก้ไขถึงฝ่ายวัดผล${requestBit()}`;
       bindRequest();
     }
   }
@@ -100,7 +101,7 @@ function renderHeader() {
 
 // คำขอแก้ไข (รายวิชาส่งแล้ว / ปิดการกรอกแล้ว) → ฝ่ายวัดผลอนุมัติแล้วจึงแก้ได้
 function requestBit() {
-  if (data.is_admin) return ""; // ฝ่ายวัดผล/ผู้ดูแลใช้ปุ่มส่งคืนแทน
+  if (data.is_admin || !data.is_teacher) return ""; // ฝ่ายวัดผล/ผู้ดูแลใช้ปุ่มส่งคืนแทน · ผู้บริหารดูอย่างเดียว
   const r = data.edit_request;
   if (r) return `<br><span class="tag">ส่งคำขอแก้ไขแล้ว ${esc(thaiTime(r.requested_at))} รอฝ่ายวัดผลอนุมัติ</span> <span class="small muted">"${esc(r.reason)}"</span>`;
   return ' <button class="btn small" id="reqEdit">ขอแก้ไข</button>';

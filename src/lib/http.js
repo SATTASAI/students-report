@@ -41,7 +41,10 @@ export async function currentUser(request, env) {
   ).bind(payload.sub).first();
   if (!user || user.status !== "active") return null;
   if (user.session_version != null && Number(payload.sv || 1) !== Number(user.session_version)) return null;
-  user.is_admin = ADMIN_ROLES.includes(user.role) || user.grade_role === "grade_admin";
+  // is_admin = แก้ไขข้อมูลส่วนกลางได้ (ผู้ดูแลระบบ/ทีมวัดผล) — ผู้บริหารไม่มีสิทธิ์แก้ (16 ต.ค. 2569)
+  // can_view_all = ดูได้ทุกรายวิชา/ทุกห้อง (รวมผู้บริหาร) · is_super = อนุมัติผลได้ (ผู้บริหาร/ผู้ดูแลระบบ)
+  user.is_admin = user.role === "superadmin" || user.grade_role === "grade_admin";
+  user.can_view_all = user.is_admin || user.role === "executive";
   user.is_super = ADMIN_ROLES.includes(user.role);
   // นำเข้าข้อมูลจำนวนมาก (Excel / คัดลอกปีก่อน / ดึงจากระบบบริหารฯ / คลังตัวชี้วัด): เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล
   user.can_import = user.role === "superadmin" || user.grade_role === "grade_admin";
@@ -57,6 +60,12 @@ export function requireUser(user) {
 export function requireAdmin(user) {
   requireUser(user);
   if (!user.is_admin) fail(403, "เฉพาะผู้ดูแลงานวัดผล/วิชาการเท่านั้น");
+  return user;
+}
+
+export function requireViewer(user) {
+  requireUser(user);
+  if (!user.can_view_all) fail(403, "เฉพาะผู้บริหารและผู้ดูแลงานวัดผล/วิชาการเท่านั้น");
   return user;
 }
 

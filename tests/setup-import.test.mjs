@@ -194,7 +194,7 @@ test("ชุดทดสอบการคำนวณ: 0, 49.5, 54.5, 79.5, 100
 test("นำเข้าข้อมูลได้เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล (ผู้บริหารไม่ได้)", async () => {
   const { env, call } = await setup();
   const row = { grade_level: "ป.4", code: "ท14101", name: "ภาษาไทย", learning_area: "ภาษาไทย", subject_type: "พื้นฐาน", hours_per_year: "160" };
-  // ผู้บริหาร (executive) ยังตั้งค่าได้ แต่นำเข้าไม่ได้
+  // ผู้บริหาร (executive) ดูได้ แต่นำเข้าไม่ได้
   env.DB.raw.prepare("UPDATE users SET role = 'executive' WHERE id = 1").run();
   await call("admin", "GET", "/api/admin/subjects", null, { expect: 200 });
   for (const [path, body] of [["/api/admin/import/subjects", { rows: [row] }], ["/api/admin/subjects/copy", { from_year: 1 }],

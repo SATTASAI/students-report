@@ -150,3 +150,27 @@ test("สัดส่วนรายวิชา 80:20 (วิชาปฏิบ
   // เปลี่ยนชื่อวิชาได้ตามปกติ (ไม่แตะสัดส่วน)
   await call("admin", "PUT", `/api/admin/subjects/${sub.id}`, { ...body, name: "ภาษาไทย (แก้ชื่อ)", collect_ratio: 80 }, { expect: 200 });
 });
+
+test("ผู้บริหาร: ดูและตรวจสอบได้ทุกรายวิชา แต่แก้คะแนน/กดตรวจแทนวัดผลไม่ได้ — อนุมัติและส่งคืนได้", async () => {
+  const { env, call, c, d } = await setup();
+  const [ind, fin] = d.items;
+  const s = d.students.filter((x) => x.enrollment_status === "enrolled");
+  await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: s.flatMap((x) => [{ item_id: ind.id, student_id: x.id, score: 30 }, { item_id: fin.id, student_id: x.id, score: 12 }]) }, { expect: 200 });
+  env.DB.raw.prepare("UPDATE users SET role = 'executive' WHERE id = 1").run();
+  const me = (await call("admin", "GET", "/api/me", null, { expect: 200 })).data.user;
+  assert.equal(me.is_admin, false); assert.equal(me.can_view_all, true);
+  const view = (await call("admin", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
+  assert.ok(!view.course.can_edit);
+  await call("admin", "PUT", `/api/courses/${c.id}/scores`, { changes: [{ item_id: ind.id, student_id: s[0].id, score: 1 }] }, { expect: 403 });
+  await call("admin", "PUT", "/api/admin/settings", { entry_open: false }, { expect: 403 });
+  await call("admin", "GET", "/api/admin/courses", null, { expect: 200 });
+  // ครูส่ง → ผู้บริหารกดตรวจแทนวัดผลไม่ได้
+  env.DB.raw.prepare("UPDATE gr_courses SET locked = 1, submitted_at = datetime('now') WHERE id = ?").run(c.id);
+  await call("admin", "POST", "/api/admin/courses/review", { course_ids: [c.id] }, { expect: 403 });
+  env.DB.raw.prepare("UPDATE gr_courses SET reviewed_at = datetime('now') WHERE id = ?").run(c.id);
+  assert.equal((await call("admin", "POST", "/api/admin/courses/approve", { course_ids: [c.id] }, { expect: 200 })).data.approved, 1);
+  await call("admin", "POST", `/api/admin/courses/${c.id}/return`, { note: "ตรวจพบคะแนนผิด" }, { expect: 200 });
+  // SAR ดูได้ แก้เป้าหมายไม่ได้
+  await call("admin", "GET", "/api/sar", null, { expect: 200 });
+  await call("admin", "PUT", "/api/sar", { values: [] }, { expect: 403 });
+});

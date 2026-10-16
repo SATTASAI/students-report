@@ -10,6 +10,11 @@ const nowSql = () => new Date().toISOString().replace("T", " ").slice(0, 19); //
 // สถานะการแก้ข้อมูลครูประจำชั้นของห้อง: { open, why: 'open'|'admin'|'grant'|'closed', grant_until, pending }
 export async function homeroomEditState(env, user, yearId, grade, room) {
   const settings = await getSettings(env, yearId);
+  // ผู้บริหาร (ไม่ใช่ครูประจำชั้นห้องนี้) ดูได้อย่างเดียว
+  if (!user.is_admin && user.can_view_all) {
+    const own = await env.DB.prepare("SELECT 1 AS ok FROM gr_homerooms WHERE academic_year_id = ? AND grade_level = ? AND classroom = ? AND user_id = ?").bind(yearId, grade, room, user.id).first();
+    if (!own) return { open: false, why: "viewer", entry_open: !!settings.entry_open, grant_until: null, pending: null };
+  }
   const [grant, pending] = await Promise.all([
     env.DB.prepare(`SELECT open_until FROM gr_edit_requests WHERE academic_year_id = ? AND scope = 'homeroom' AND grade_level = ? AND classroom = ?
       AND status = 'approved' AND open_until > ? ORDER BY open_until DESC LIMIT 1`).bind(yearId, grade, room, nowSql()).first(),

@@ -1,4 +1,4 @@
-import { json, readJson, fail, requireAdmin, intParam, text, audit, batchAll, HttpError, requireImporter } from "../lib/http.js";
+import { json, readJson, fail, requireAdmin, requireViewer, intParam, text, audit, batchAll, HttpError, requireImporter } from "../lib/http.js";
 import { HOMEROOM_GRANT_DAYS, nowSql } from "../lib/edit-requests.js";
 import { structureIssues, indicatorWord } from "../../public/js/grading.js";
 import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade, isSchoolGrade, mirrorHomerooms, compareThaiName, compareSubject, compareGrade, compareThai, ACTIVE_USER } from "../lib/data.js";
@@ -50,8 +50,13 @@ function cleanSubject(body, settings) {
 }
 
 export async function handleAdmin(request, env, user, parts, method, url) {
-  requireAdmin(user);
+  requireViewer(user);
   const [, , section, idPart, action] = parts; // /api/admin/<section>/<id>/<action>
+  // ผู้บริหาร: ดูได้ทุกส่วน แต่เปลี่ยนข้อมูลได้เฉพาะ "อนุมัติผล" และ "ส่งคืนให้ครูแก้" (ไม่แก้คะแนน/ไม่กดตรวจแทนฝ่ายวัดผล)
+  if (!user.is_admin && method !== "GET") {
+    const execAction = section === "courses" && ((idPart === "approve" && !action) || (idPart && action === "return"));
+    if (!execAction) fail(403, "ผู้บริหารดูและตรวจสอบได้อย่างเดียว — อนุมัติหรือส่งคืนรายวิชาได้ที่หน้าอนุมัติผลการเรียน");
+  }
   const isImport = method === "POST" && (section === "import" || (section === "subjects" && idPart === "copy") ||
     (section === "homerooms" && idPart === "import") || (section === "indicator-bank" && idPart === "import"));
   if (isImport || (section === "indicator-bank" && method === "DELETE")) requireImporter(user);

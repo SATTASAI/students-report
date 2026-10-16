@@ -1,4 +1,4 @@
-import { json, fail, requireUser, requireAdmin, intParam, text } from "../lib/http.js";
+import { json, fail, requireUser, requireViewer, intParam, text } from "../lib/http.js";
 import {
   resolveYear, listYears, getSettings, listRooms, roomRoster, isHomeroomTeacher, yearResultsForStudents,
   assessmentsFor, absenceCounts, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, compareGrade, compareRoom, compareSubject, homeroomNames,
@@ -12,7 +12,7 @@ export async function handleMe(request, env, user, url) {
   const years = await listYears(env);
   const year = await resolveYear(env, url.searchParams.get("year"));
   const settings = await getSettings(env, year.id);
-  const all = user.is_admin ? await courseOverview(env, year.id) : null;
+  const all = user.can_view_all ? await courseOverview(env, year.id) : null;
   const mine = all ? all.filter((c) => c.teachers.some((t) => t.id === user.id)) : await courseOverview(env, year.id, { teacherId: user.id });
   const { results: homerooms } = await env.DB.prepare(
     "SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?"
@@ -20,14 +20,14 @@ export async function handleMe(request, env, user, url) {
   homerooms.sort(compareRoom); // เมนูประจำชั้นเรียง อ.1 → ป.6 และห้อง 1, 2, …, 10
   const rooms = await listRooms(env, year.id);
   for (const h of homerooms) h.students = rooms.find((r) => r.grade_level === h.grade_level && r.classroom === h.classroom)?.students || 0;
-  const summary = user.is_admin ? {
+  const summary = user.can_view_all ? {
     courses: all.length,
     without_teacher: all.filter((c) => !c.teachers.length).length,
     locked: all.filter((c) => c.locked).length,
     avg_progress: all.length ? Math.round(all.reduce((a, c) => a + c.progress, 0) / all.length) : 0,
   } : null;
   return json({
-    user: { id: user.id, full_name: user.full_name, role: user.role, grade_role: user.grade_role || null, is_admin: user.is_admin, is_super: user.is_super, can_import: !!user.can_import },
+    user: { id: user.id, full_name: user.full_name, role: user.role, grade_role: user.grade_role || null, is_admin: user.is_admin, can_view_all: user.can_view_all, is_super: user.is_super, can_import: !!user.can_import },
     years, year, settings: { entry_open: settings.entry_open, school_name: settings.school_name },
     courses: mine, homerooms, summary,
   });
@@ -38,7 +38,7 @@ async function roomParams(env, user, url, { allowHomeroom = true } = {}) {
   const grade = text(url.searchParams.get("grade"), 10);
   const room = text(url.searchParams.get("room"), 10);
   if (!isSchoolGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
-  if (!user.is_admin && !(allowHomeroom && await isHomeroomTeacher(env, user, year.id, grade, room))) fail(403, "ดูได้เฉพาะครูประจำชั้นของห้องนี้หรือผู้ดูแล");
+  if (!user.can_view_all && !(allowHomeroom && await isHomeroomTeacher(env, user, year.id, grade, room))) fail(403, "ดูได้เฉพาะครูประจำชั้นของห้องนี้หรือผู้ดูแล");
   return { year, grade, room };
 }
 
@@ -85,7 +85,7 @@ export async function handleReports(request, env, user, parts, method, url) {
     const primary = rooms.filter((r) => isSchoolGrade(r.grade_level)); // อนุบาลมีเฉพาะหนังสือแจ้งผู้ปกครอง
     const key = (g, r) => `${g}/${r}`;
     // ครูผู้สอน (หรือผู้ดูแลที่สลับมาดูในบทบาทครู ?scope=mine) เห็นเฉพาะห้องที่เป็นครูประจำชั้น + รายวิชาที่ตัวเองสอน
-    const asAdmin = user.is_admin && url.searchParams.get("scope") !== "mine";
+    const asAdmin = user.can_view_all && url.searchParams.get("scope") !== "mine";
     let full = new Set();
     if (asAdmin) full = new Set(primary.map((r) => key(r.grade_level, r.classroom)).filter((k) => !settings.pilot_rooms || settings.pilot_rooms.includes(k)));
     else {
@@ -109,7 +109,7 @@ export async function handleReports(request, env, user, parts, method, url) {
     const grade = text(url.searchParams.get("grade"), 10), room = text(url.searchParams.get("room"), 10);
     if (!isPrimaryGrade(grade) || !room) fail(400, "ห้องเรียนไม่ถูกต้อง");
     const all = (await courseOverview(env, year.id)).filter((c) => c.grade_level === grade && c.classroom === room);
-    const full = user.is_admin || await isHomeroomTeacher(env, user, year.id, grade, room);
+    const full = user.can_view_all || await isHomeroomTeacher(env, user, year.id, grade, room);
     const list = full ? all : all.filter((c) => c.teachers.some((t) => t.id === user.id));
     if (!list.length && !full) fail(403, "ไม่มีรายวิชาของห้องนี้ที่คุณสอน");
     return json({ year, grade, room, courses: list.map((c) => ({ id: c.id, code: c.code, name: c.name, status: c.status, item_count: c.item_count })) });
@@ -144,7 +144,7 @@ export async function handleReports(request, env, user, parts, method, url) {
     const perYear = {};
     for (const e of enrolls) perYear[e.year_id] = e; // ภาคสุดท้ายของปีทับ
     const years = Object.values(perYear).filter((e) => isPrimaryGrade(e.grade_level)).sort((a, b) => a.year_be - b.year_be);
-    if (!user.is_admin) {
+    if (!user.can_view_all) {
       const last = years[years.length - 1];
       if (!last || !(await isHomeroomTeacher(env, user, last.year_id, last.grade_level, last.classroom))) fail(403, "ดูได้เฉพาะครูประจำชั้นหรือผู้ดูแล");
     }
@@ -159,7 +159,7 @@ export async function handleReports(request, env, user, parts, method, url) {
   }
 
   if (kind === "summary") {
-    requireAdmin(user);
+    requireViewer(user);
     const year = await resolveYear(env, url.searchParams.get("year"));
     const rooms = (await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level));
     const grades = [...new Set(rooms.map((r) => r.grade_level))].sort(compareGrade);
@@ -195,7 +195,7 @@ export async function handleReports(request, env, user, parts, method, url) {
   }
 
   if (kind === "progress") {
-    requireAdmin(user);
+    requireViewer(user);
     const year = await resolveYear(env, url.searchParams.get("year"));
     return json({ year, courses: await courseOverview(env, year.id) });
   }

@@ -239,13 +239,15 @@ export function courseStatus(c) {
 export const STATUS_TH = { draft: "กำลังกรอก", submitted: "ส่งแล้ว รอฝ่ายวัดผลตรวจ", reviewed: "ตรวจแล้ว รอผู้บริหารอนุมัติ", approved: "อนุมัติแล้ว" };
 
 export function canViewCourse(user, course) {
-  return user.is_admin || course.teachers.some((t) => t.id === user.id);
+  return user.can_view_all || course.teachers.some((t) => t.id === user.id);
 }
 
 export async function assertCourseAccess(env, user, courseId, { write = false } = {}) {
   const course = await loadCourse(env, courseId);
   if (!canViewCourse(user, course)) fail(403, "คุณไม่ได้รับมอบหมายให้สอนรายวิชานี้");
   if (write) {
+    // ผู้บริหารดูได้ทุกรายวิชาแต่แก้ไม่ได้ (แก้ได้เฉพาะรายวิชาที่ตนเป็นครูผู้สอน)
+    if (!user.is_admin && !course.teachers.some((t) => t.id === user.id)) fail(403, "ผู้บริหารดูและตรวจสอบได้อย่างเดียว แก้คะแนนไม่ได้");
     // ฝ่ายวัดผล (ผู้ดูแลข้อมูลหลังบ้าน) แก้รายวิชาที่ส่งแล้วได้ทันที — ระบบบันทึกประวัติให้ครูเห็น (logCourseEdit)
     if (course.locked && !user.can_import) fail(409, course.approved_at ? "รายวิชานี้อนุมัติผลแล้ว — ส่งคำขอแก้ไขถึงฝ่ายวัดผลก่อน" : "รายวิชานี้ส่งแล้ว — ส่งคำขอแก้ไขถึงฝ่ายวัดผลก่อน");
     if (course.locked) user._adminEdit = { course_id: course.id, approved: !!course.approved_at };
@@ -302,8 +304,8 @@ export function gradeSettings(course, settings) {
   };
 }
 
-export async function isHomeroomTeacher(env, user, yearId, grade, room) {
-  if (user.is_admin) return true;
+export async function isHomeroomTeacher(env, user, yearId, grade, room, { view = false } = {}) {
+  if (user.is_admin || (view && user.can_view_all)) return true;
   const row = await env.DB.prepare(
     "SELECT 1 AS ok FROM gr_homerooms WHERE academic_year_id = ? AND grade_level = ? AND classroom = ? AND user_id = ?"
   ).bind(yearId, grade, room, user.id).first();

@@ -375,13 +375,14 @@ export function editGate(container, state, requestPath) {
   const INPUTS = "td input, td select, .level-select, .cm-field textarea, .num-in";
   const lock = () => {
     if (!st || st.open) return;
-    for (const el of container.querySelectorAll(INPUTS)) if (!el.disabled) { el.disabled = true; el.title = "ปิดการกรอกแล้ว — ส่งคำขอแก้ไขถึงฝ่ายวัดผลก่อน"; }
+    for (const el of container.querySelectorAll(INPUTS)) if (!el.disabled) { el.disabled = true; el.title = st.why === "viewer" ? "ผู้บริหารดูได้อย่างเดียว" : "ปิดการกรอกแล้ว — ส่งคำขอแก้ไขถึงฝ่ายวัดผลก่อน"; }
   };
   const draw = () => {
     banner.hidden = !st || (st.open && st.why !== "grant");
     if (banner.hidden) { banner.innerHTML = ""; return; }
     if (st.open) { banner.className = "note ok"; banner.textContent = `ฝ่ายวัดผลอนุมัติคำขอแก้ไขแล้ว แก้ได้ถึง ${thaiTime(st.grant_until)}`; return; }
     banner.className = "note warn";
+    if (st.why === "viewer") { banner.textContent = "ดูและตรวจสอบได้อย่างเดียว — ผู้บริหารแก้ข้อมูลไม่ได้"; return; }
     banner.innerHTML = st.pending
       ? `ปิดการกรอกแล้ว ดูได้อย่างเดียว · ส่งคำขอแก้ไขแล้ว (${esc(thaiTime(st.pending.requested_at))}) รอฝ่ายวัดผลอนุมัติ`
       : `ปิดการกรอกแล้ว ดูได้อย่างเดียว — ถ้าต้องแก้ ให้ส่งคำขอถึงฝ่ายวัดผล <button class="btn small" data-req>ขอแก้ไข</button>`;
