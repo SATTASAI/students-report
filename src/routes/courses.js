@@ -8,7 +8,8 @@ const MAX_ITEMS_PER_COURSE = 80;
 
 function serializeBundle(b, user) {
   return {
-    course: { ...b.course, can_edit: (!b.course.locked && (b.settings.entry_open || user.is_admin)) || (b.course.locked && !!user.can_import), admin_edit: !!(b.course.locked && user.can_import) },
+    course: { ...b.course, can_edit: (!b.course.locked && (b.settings.entry_open || user.is_admin || !!b.course.edit_granted_at)) || (b.course.locked && !!user.can_import), admin_edit: !!(b.course.locked && user.can_import) },
+    edit_request: b.edit_request || null,
     edits: b.edits || [],
     can_approve: ADMIN_ROLES.includes(user.role),
     structure_issues: structureIssues(b.items, b.course.collect_ratio, indicatorWord(b.course.grade_level)),
@@ -264,7 +265,24 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     const course = await assertCourseAccess(env, user, id);
     const bundle = await courseBundle(env, course);
     bundle.assessments = await assessmentsFor(env, course.academic_year_id, bundle.roster.map((s) => s.id));
+    bundle.edit_request = await pendingCourseRequest(env, course.id);
     return json(serializeBundle(bundle, user));
+  }
+
+  // ---------- คำขอแก้ไข (รายวิชาส่งผลแล้ว หรือปิดการกรอกแล้ว) → ฝ่ายวัดผลอนุมัติ ----------
+  if (sub === "edit-request" && method === "POST") {
+    const course = await assertCourseAccess(env, user, id);
+    if (!course.teachers.some((t) => t.id === user.id) && !user.is_admin) fail(403, "ส่งคำขอได้เฉพาะครูผู้สอนรายวิชานี้");
+    const settings = await getSettings(env, course.academic_year_id);
+    if (!course.locked && (settings.entry_open || course.edit_granted_at)) fail(409, "รายวิชานี้ยังแก้ไขได้ ไม่ต้องส่งคำขอ");
+    if (await pendingCourseRequest(env, course.id)) fail(409, "ส่งคำขอแล้ว รอฝ่ายวัดผลอนุมัติ");
+    const b = await readJson(request);
+    const reason = text(b.reason, 500);
+    if (reason.length < 3) fail(400, "กรุณาระบุเหตุผลที่ต้องการแก้ไข");
+    await env.DB.prepare("INSERT INTO gr_edit_requests (academic_year_id, scope, course_id, grade_level, classroom, reason, requested_by) VALUES (?,?,?,?,?,?,?)")
+      .bind(course.academic_year_id, "course", course.id, course.grade_level, course.classroom, reason, user.id).run();
+    await audit(env, user, "edit_request.course", { course: course.id, reason });
+    return json({ ok: true, edit_request: await pendingCourseRequest(env, course.id) });
   }
 
   // ---------- โครงสร้างคะแนน ----------
@@ -652,12 +670,18 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     if (warn && !b.force) {
       return json({ error: "ตรวจพบรายการที่ควรดูก่อนส่ง", needs_confirm: true, checks: { ...checks, missing_terms: missingTerms }, pending: pending.map((x) => x.name) }, 409);
     }
-    await env.DB.prepare("UPDATE gr_courses SET locked = 1, submitted_at = datetime('now'), submitted_by = ?, approved_at = NULL, approved_by = NULL, reviewed_at = NULL, reviewed_by = NULL WHERE id = ?").bind(user.id, course.id).run();
+    // ส่งผลใหม่: สิทธิ์แก้จากคำขอแก้ไขสิ้นสุด (แก้อีกต้องขอใหม่)
+    await env.DB.prepare("UPDATE gr_courses SET locked = 1, submitted_at = datetime('now'), submitted_by = ?, approved_at = NULL, approved_by = NULL, reviewed_at = NULL, reviewed_by = NULL, edit_granted_at = NULL WHERE id = ?").bind(user.id, course.id).run();
     await audit(env, user, "course.submit", { course: course.id, blanks: pending.length, decimals: checks.decimals.length, borderline: checks.borderline.length, ms: checks.ms.length });
     return json(serializeBundle(await courseBundle(env, await loadCourse(env, course.id)), user));
   }
 
   fail(404, "ไม่พบเส้นทาง API");
+}
+
+async function pendingCourseRequest(env, courseId) {
+  return env.DB.prepare(`SELECT r.id, r.reason, r.requested_at, u.full_name AS requested_by_name FROM gr_edit_requests r LEFT JOIN users u ON u.id = r.requested_by
+    WHERE r.scope = 'course' AND r.course_id = ? AND r.status = 'pending' ORDER BY r.id DESC LIMIT 1`).bind(courseId).first();
 }
 
 async function sameSubjectFamily(env, a, b) {

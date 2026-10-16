@@ -1,4 +1,6 @@
 import { json, readJson, fail, requireAdmin, intParam, text, audit, batchAll, HttpError, requireImporter } from "../lib/http.js";
+import { HOMEROOM_GRANT_DAYS, nowSql } from "../lib/edit-requests.js";
+import { structureIssues, indicatorWord } from "../../public/js/grading.js";
 import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade, isSchoolGrade, mirrorHomerooms, compareThaiName, compareSubject, compareGrade, compareThai, ACTIVE_USER } from "../lib/data.js";
 
 export const LEARNING_AREAS = [
@@ -379,6 +381,57 @@ export async function handleAdmin(request, env, user, parts, method, url) {
   }
 
   // ---------- รายวิชาของแต่ละห้อง (courses) ----------
+  // ---------- คำขอแก้ไขจากครู (หลังปิดการกรอก/ส่งผลแล้ว) — ฝ่ายวัดผลอนุมัติ ----------
+  if (section === "edit-requests") {
+    if (!user.can_import) fail(403, "พิจารณาคำขอแก้ไขได้เฉพาะฝ่ายวัดผลและผู้ดูแลระบบ");
+    if (method === "GET") {
+      const year = await resolveYear(env, url.searchParams.get("year"));
+      const { results } = await env.DB.prepare(
+        `SELECT r.*, u.full_name AS requested_by_name, d.full_name AS decided_by_name, s.code, s.name AS subject_name
+           FROM gr_edit_requests r LEFT JOIN users u ON u.id = r.requested_by LEFT JOIN users d ON d.id = r.decided_by
+           LEFT JOIN gr_courses c ON c.id = r.course_id LEFT JOIN gr_subjects s ON s.id = c.subject_id
+          WHERE r.academic_year_id = ? ORDER BY (r.status = 'pending') DESC, r.id DESC LIMIT 200`
+      ).bind(year.id).all();
+      const now = nowSql();
+      return json({ year, grant_days: HOMEROOM_GRANT_DAYS, requests: results.map((r) => ({ ...r, active: r.status === "approved" && r.scope === "homeroom" && r.open_until > now })) });
+    }
+    const id = intParam(idPart);
+    if (method !== "POST" || !["approve", "reject", "close"].includes(action)) fail(404, "ไม่พบเส้นทาง API");
+    const r = await env.DB.prepare("SELECT * FROM gr_edit_requests WHERE id = ?").bind(id).first();
+    if (!r) fail(404, "ไม่พบคำขอ");
+    const b = await readJson(request);
+    const note = text(b.note, 500) || null;
+    if (action === "close") { // ปิดสิทธิ์แก้ของห้องก่อนครบกำหนด
+      if (r.status !== "approved" || r.scope !== "homeroom") fail(409, "ปิดได้เฉพาะคำขอของครูประจำชั้นที่อนุมัติแล้ว");
+      await env.DB.prepare("UPDATE gr_edit_requests SET status = 'closed', open_until = ? WHERE id = ?").bind(nowSql(), id).run();
+      await audit(env, user, "edit_request.close", { id });
+      return json({ ok: true });
+    }
+    if (r.status !== "pending") fail(409, "คำขอนี้พิจารณาแล้ว");
+    if (action === "reject") {
+      if (!note || note.length < 3) fail(400, "กรุณาระบุเหตุผลที่ไม่อนุมัติ (ครูจะเห็นข้อความนี้)");
+      await env.DB.prepare("UPDATE gr_edit_requests SET status = 'rejected', decided_by = ?, decided_at = datetime('now'), decision_note = ? WHERE id = ?").bind(user.id, note, id).run();
+      await audit(env, user, "edit_request.reject", { id, note });
+      return json({ ok: true });
+    }
+    const stmts = [];
+    if (r.scope === "course") {
+      // อนุมัติ = ส่งคืนรายวิชา (ถ้าส่งแล้ว) และให้แก้ได้แม้ปิดการกรอก จนกว่าครูจะส่งผลใหม่ → ผ่านขั้นตรวจ/อนุมัติอีกครั้ง
+      const c = await env.DB.prepare("SELECT id, locked, approved_at FROM gr_courses WHERE id = ?").bind(r.course_id).first();
+      if (!c) fail(404, "ไม่พบรายวิชา");
+      stmts.push(env.DB.prepare(`UPDATE gr_courses SET locked = 0, submitted_at = NULL, submitted_by = NULL, approved_at = NULL, approved_by = NULL, reviewed_at = NULL, reviewed_by = NULL,
+          return_note = ?, returned_at = CASE WHEN locked = 1 THEN datetime('now') ELSE returned_at END, returned_by = CASE WHEN locked = 1 THEN ? ELSE returned_by END,
+          edit_granted_at = datetime('now') WHERE id = ?`).bind(`อนุมัติคำขอแก้ไข: ${r.reason}${note ? ` — ${note}` : ""}`, user.id, c.id));
+      stmts.push(env.DB.prepare("INSERT INTO gr_course_edits (course_id, user_id, what, detail) VALUES (?,?,?,?)").bind(c.id, user.id, "อนุมัติคำขอแก้ไข", r.reason));
+    }
+    const until = new Date(Date.now() + HOMEROOM_GRANT_DAYS * 86400e3).toISOString().replace("T", " ").slice(0, 19);
+    stmts.push(env.DB.prepare("UPDATE gr_edit_requests SET status = 'approved', decided_by = ?, decided_at = datetime('now'), decision_note = ?, open_until = ? WHERE id = ?")
+      .bind(user.id, note, r.scope === "homeroom" ? until : null, id));
+    await env.DB.batch(stmts);
+    await audit(env, user, "edit_request.approve", { id, scope: r.scope, course: r.course_id, room: `${r.grade_level}/${r.classroom}` });
+    return json({ ok: true, open_until: r.scope === "homeroom" ? until : null });
+  }
+
   if (section === "courses") {
     if (method === "POST" && idPart === "generate") {
       const b = await readJson(request);
@@ -432,12 +485,18 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       if (!before) fail(404, "ไม่พบรายวิชา");
       if (!before.locked) fail(409, "รายวิชานี้ยังไม่ได้ส่ง");
       await env.DB.prepare(`UPDATE gr_courses SET locked = 0, submitted_at = NULL, submitted_by = NULL, approved_at = NULL, approved_by = NULL, reviewed_at = NULL, reviewed_by = NULL,
-        return_note = ?, returned_at = datetime('now'), returned_by = ? WHERE id = ?`).bind(note, user.id, id).run();
+        return_note = ?, returned_at = datetime('now'), returned_by = ?, edit_granted_at = datetime('now') WHERE id = ?`).bind(note, user.id, id).run(); // ส่งคืน = ให้ครูแก้ได้แม้ปิดการกรอกแล้ว
       await audit(env, user, before.approved_at ? "course.reopen_approved" : "course.return", { id, note });
       return json({ ok: true });
     }
     if (idPart && action === "lock" && method === "POST") {
       const id = intParam(idPart);
+      // บังคับส่งก็ต้องผ่านการตรวจโครงสร้าง (คะแนนเต็มตรงสัดส่วน) — ไม่อย่างนั้นระบบต้องย่อขยายคะแนนเอง ขัดกับกติกาห้ามปัดเศษ
+      const info = await env.DB.prepare("SELECT s.collect_ratio, s.grade_level FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id WHERE c.id = ?").bind(id).first();
+      if (!info) fail(404, "ไม่พบรายวิชา");
+      const { results: its } = await env.DB.prepare("SELECT term_number, kind, max_score FROM gr_items WHERE course_id = ?").bind(id).all();
+      const issues = structureIssues(its, info.collect_ratio, indicatorWord(info.grade_level));
+      if (issues.length) fail(400, `ล็อกไม่ได้: ${issues.join(" และ ")}`);
       const r = await env.DB.prepare("UPDATE gr_courses SET locked = 1, submitted_at = COALESCE(submitted_at, datetime('now')), submitted_by = COALESCE(submitted_by, ?) WHERE id = ?").bind(user.id, id).run();
       if (!r.meta?.changes) fail(404, "ไม่พบรายวิชา");
       await audit(env, user, "course.lock", { id });

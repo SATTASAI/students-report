@@ -122,6 +122,7 @@ function roleMenu(role, me) {
     { href: "/admin.html#subjects", icon: "list", label: "รายวิชา" },
     { href: "/admin.html#import", icon: "upload", label: "นำเข้าจาก Excel" },
     { href: "/admin.html#review", icon: "check", label: "ตรวจผลการเรียน" },
+    { href: "/admin.html#requests", icon: "key", label: "คำขอแก้ไข" },
     { href: "/admin.html#courses", icon: "people", label: "ครูผู้สอน" },
     { href: "/admin.html#homerooms", icon: "room", label: "ครูประจำชั้น" },
     { href: "/admin.html#students", icon: "people", label: "นักเรียน" },
@@ -363,6 +364,41 @@ window.addEventListener("scroll", () => {
   if (!tipFor.isConnected || r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) hideTip();
   else showTip(tipFor);
 }, { passive: true, capture: true });
+
+// ข้อมูลครูประจำชั้นหลังปิดการกรอก: ดูได้อย่างเดียว + ปุ่มส่งคำขอแก้ไขถึงฝ่ายวัดผล
+// state = { open, why: 'open'|'admin'|'grant'|'closed', grant_until, pending } จาก API (edit)
+// container = ส่วนที่มีช่องกรอก (ระบบปิดช่องกรอกให้เองทุกครั้งที่วาดใหม่) · requestPath = POST ส่งคำขอ (คืน { edit })
+export function editGate(container, state, requestPath) {
+  const banner = document.createElement("div");
+  container.before(banner);
+  let st = state;
+  const INPUTS = "td input, td select, .level-select, .cm-field textarea, .num-in";
+  const lock = () => {
+    if (!st || st.open) return;
+    for (const el of container.querySelectorAll(INPUTS)) if (!el.disabled) { el.disabled = true; el.title = "ปิดการกรอกแล้ว — ส่งคำขอแก้ไขถึงฝ่ายวัดผลก่อน"; }
+  };
+  const draw = () => {
+    banner.hidden = !st || (st.open && st.why !== "grant");
+    if (banner.hidden) { banner.innerHTML = ""; return; }
+    if (st.open) { banner.className = "note ok"; banner.textContent = `ฝ่ายวัดผลอนุมัติคำขอแก้ไขแล้ว แก้ได้ถึง ${thaiTime(st.grant_until)}`; return; }
+    banner.className = "note warn";
+    banner.innerHTML = st.pending
+      ? `ปิดการกรอกแล้ว ดูได้อย่างเดียว · ส่งคำขอแก้ไขแล้ว (${esc(thaiTime(st.pending.requested_at))}) รอฝ่ายวัดผลอนุมัติ`
+      : `ปิดการกรอกแล้ว ดูได้อย่างเดียว — ถ้าต้องแก้ ให้ส่งคำขอถึงฝ่ายวัดผล <button class="btn small" data-req>ขอแก้ไข</button>`;
+    banner.querySelector("[data-req]")?.addEventListener("click", ask);
+  };
+  async function ask() {
+    const r = await dialog({ title: "ขอแก้ไขข้อมูล", okText: "ส่งคำขอ",
+      body: `<p class="muted" style="margin-top:0">ฝ่ายวัดผลจะเห็นคำขอนี้ เมื่ออนุมัติแล้วจะแก้ได้ชั่วคราว</p>
+        <label class="field">ต้องการแก้อะไร เพราะอะไร<textarea name="reason" required minlength="3" maxlength="500"></textarea></label>` });
+    if (!r.ok) return;
+    try { st = (await api(requestPath, { method: "POST", body: { reason: r.data.reason } })).edit; draw(); toast("ส่งคำขอแล้ว รอฝ่ายวัดผลอนุมัติ"); }
+    catch (err) { showError(err); }
+  }
+  if (typeof MutationObserver !== "undefined") new MutationObserver(lock).observe(container, { childList: true, subtree: true });
+  draw(); lock();
+  return { update(s, path) { st = s; if (path) requestPath = path; draw(); lock(); }, get open() { return !st || st.open; } };
+}
 
 // เวลาจากฐานข้อมูล (SQLite datetime('now') เป็น UTC) → เวลาไทย เช่น "8 ต.ค. 69 04:25"
 export function thaiTime(s, withTime = true) {

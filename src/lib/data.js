@@ -204,7 +204,7 @@ export async function homeroomNames(env, yearId, grade, room) {
 export async function loadCourse(env, courseId) {
   const course = await env.DB.prepare(
     `SELECT c.id, c.classroom, c.locked, c.submitted_at, c.submitted_by, c.subject_id,
-            c.approved_at, c.approved_by, c.return_note, c.returned_at, c.reviewed_at, c.reviewed_by,
+            c.approved_at, c.approved_by, c.return_note, c.returned_at, c.reviewed_at, c.reviewed_by, c.edit_granted_at,
             (SELECT full_name FROM users WHERE id = c.reviewed_by) AS reviewed_by_name,
             (SELECT full_name FROM users WHERE id = c.submitted_by) AS submitted_by_name,
             (SELECT full_name FROM users WHERE id = c.approved_by) AS approved_by_name,
@@ -247,10 +247,11 @@ export async function assertCourseAccess(env, user, courseId, { write = false } 
   if (!canViewCourse(user, course)) fail(403, "คุณไม่ได้รับมอบหมายให้สอนรายวิชานี้");
   if (write) {
     // ฝ่ายวัดผล (ผู้ดูแลข้อมูลหลังบ้าน) แก้รายวิชาที่ส่งแล้วได้ทันที — ระบบบันทึกประวัติให้ครูเห็น (logCourseEdit)
-    if (course.locked && !user.can_import) fail(409, course.approved_at ? "รายวิชานี้อนุมัติผลแล้ว ต้องให้ฝ่ายวัดผลส่งคืนพร้อมเหตุผลก่อนแก้ไข" : "รายวิชานี้ส่งแล้ว ต้องให้ฝ่ายวัดผลส่งคืนก่อนแก้ไข");
+    if (course.locked && !user.can_import) fail(409, course.approved_at ? "รายวิชานี้อนุมัติผลแล้ว — ส่งคำขอแก้ไขถึงฝ่ายวัดผลก่อน" : "รายวิชานี้ส่งแล้ว — ส่งคำขอแก้ไขถึงฝ่ายวัดผลก่อน");
     if (course.locked) user._adminEdit = { course_id: course.id, approved: !!course.approved_at };
     const settings = await getSettings(env, course.academic_year_id);
-    if (!settings.entry_open && !user.is_admin) fail(409, "ปิดระบบการกรอกคะแนนของปีการศึกษานี้แล้ว");
+    // ปิดการกรอกแล้ว: ครูแก้ได้เฉพาะรายวิชาที่ฝ่ายวัดผลอนุมัติคำขอแก้ไข/ส่งคืนให้ (edit_granted_at)
+    if (!settings.entry_open && !user.is_admin && !course.edit_granted_at) fail(409, "ปิดการกรอกคะแนนแล้ว — ส่งคำขอแก้ไขถึงฝ่ายวัดผลก่อน");
   }
   return course;
 }

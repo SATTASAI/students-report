@@ -2,6 +2,7 @@
 // ค่าเริ่มต้นผ่าน: เก็บเฉพาะ "มผ" ในช่อง act_xxx_t (เวลาเรียน) / act_xxx_o (จุดประสงค์) ของ gr_assessments
 // ปพ.6 / ปพ.5 / ปพ.1 อ่านจากตารางเดียวกันนี้
 import { json, readJson, fail, requireUser, text, audit, batchAll } from "../lib/http.js";
+import { assertHomeroomWritable, homeroomEditState } from "../lib/edit-requests.js";
 import { resolveYear, roomRoster, listRooms, getSettings, assessmentsFor, studentName, isPrimaryGrade, compareRoom, writableIds } from "../lib/data.js";
 import { ASSESSMENT_GROUPS, ACTIVITY_PARTS } from "../../public/js/grading.js";
 
@@ -40,7 +41,7 @@ export async function handleActivities(request, env, user, parts, method, url) {
     if (!url.searchParams.get("grade")) return json(out);
     const { grade, room, roster } = await pick(url.searchParams.get("grade"), url.searchParams.get("room"));
     const ass = await assessmentsFor(env, year.id, roster.map((s) => s.id));
-    return json({ ...out, grade, room, students: roster.map((s) => ({
+    return json({ ...out, grade, room, edit: await homeroomEditState(env, user, year.id, grade, room), students: roster.map((s) => ({
       id: s.id, number: s.number, name: studentName(s), enrollment_status: s.enrollment_status,
       values: Object.fromEntries(KEYS.filter((k) => ass[s.id]?.[k]).map((k) => [k, ass[s.id][k]])),
     })) });
@@ -49,6 +50,7 @@ export async function handleActivities(request, env, user, parts, method, url) {
   if (method === "PUT") {
     const b = await readJson(request);
     const { grade, room, roster } = await pick(b.grade, b.room);
+    await assertHomeroomWritable(env, user, year.id, grade, room);
     const ids = new Set(roster.map((s) => s.id)), writable = writableIds(roster);
     const changes = Array.isArray(b.changes) ? b.changes.slice(0, 3000) : [];
     const stmts = [];

@@ -1,4 +1,4 @@
-import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear, fmt } from "/js/app.js";
+import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear, fmt, editGate } from "/js/app.js";
 import { ASSESSMENT_GROUPS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
 import { analyzeBody, ageText, levelClass, loadGrowthRefs } from "/js/growth.js";
 import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, domainSummary, overallSummary, shortCode } from "/js/kinder.js";
@@ -28,6 +28,7 @@ catch (err) {
   throw err;
 }
 document.getElementById("main").hidden = false;
+editGate(view, data.edit, `/api/homeroom/edit-request?${q}`); // ปิดการกรอกแล้ว: ดูอย่างเดียว + ขอแก้ไข
 document.title = `ครูประจำชั้น ${grade}/${room}`;
 document.getElementById("title").textContent = `ครูประจำชั้น ${grade}/${room}`;
 const active = () => data.students.filter((s) => s.enrollment_status === "enrolled");

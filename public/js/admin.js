@@ -23,9 +23,9 @@ const GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
 // ส่วนของหน้า เลือกจากเมนูซ้ายผ่าน #hash
 const SECTIONS = {
   start: "เริ่มต้นปีการศึกษา", subjects: "รายวิชา", import: "นำเข้าจาก Excel", courses: "ครูผู้สอน", homerooms: "ครูประจำชั้น",
-  students: "นักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียน", sync: "ดึงข้อมูลจากระบบทะเบียน", review: "ตรวจผลการเรียน", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน", backup: "สำรองและกู้คืนข้อมูล",
+  students: "นักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียน", sync: "ดึงข้อมูลจากระบบทะเบียน", review: "ตรวจผลการเรียน", requests: "คำขอแก้ไข", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน", backup: "สำรองและกู้คืนข้อมูล",
 };
-const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves", "students", "calendar"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super)
+const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves", "students", "calendar", "requests"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super)
   && !(["sync", "backup"].includes(k) && me.user.role !== "superadmin"));
 let tab = hashTab(allowed, me.role === "exec" && allowed.includes("approve") ? "approve" : "start");
 document.getElementById("tabs")?.classList.add("by-menu");
@@ -46,7 +46,7 @@ function renderTabs() {
 async function render() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   try {
-    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), sync: renderSync, bank: renderBank, settings: renderSettings, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit, backup: () => renderBackup(view) })[tab]();
+    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), requests: renderRequests, sync: renderSync, bank: renderBank, settings: renderSettings, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit, backup: () => renderBackup(view) })[tab]();
   } catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong>${esc(err.message)}</div>`; }
 }
 
@@ -780,9 +780,53 @@ async function renderApprove(mode = "approve") {
   };
 }
 
+// ---------- คำขอแก้ไขจากครู (หลังปิดการกรอก/ส่งผลแล้ว) ----------
+async function renderRequests() {
+  const { requests, grant_days } = await api(`/api/admin/edit-requests?${yq}`);
+  const what = (r) => r.scope === "course"
+    ? `<a href="/course.html?id=${r.course_id}&year=${Y}">${esc(r.code || "")} ${esc(r.subject_name || "")}</a> <span class="muted">${esc(r.grade_level)}/${esc(r.classroom)}</span>`
+    : `<a href="/homeroom.html?grade=${encodeURIComponent(r.grade_level)}&room=${encodeURIComponent(r.classroom)}&year=${Y}">ข้อมูลครูประจำชั้น ${esc(r.grade_level)}/${esc(r.classroom)}</a>`;
+  const STATUS = { approved: '<span class="tag ok">อนุมัติ</span>', rejected: '<span class="tag warn">ไม่อนุมัติ</span>', closed: '<span class="tag">ปิดสิทธิ์แล้ว</span>' };
+  const pending = requests.filter((r) => r.status === "pending"), done = requests.filter((r) => r.status !== "pending");
+  view.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2>รอพิจารณา <span class="tag">${pending.length}</span></h2></div>
+    <p class="muted small">อนุมัติคำขอรายวิชา = ส่งคืนรายวิชาให้ครูแก้ (แก้ได้แม้ปิดการกรอก) แล้วครูต้องส่งผลใหม่ผ่านการตรวจและอนุมัติอีกครั้ง ·
+      อนุมัติคำขอของครูประจำชั้น = เปิดให้แก้ข้อมูลของห้อง (มาเรียน คุณลักษณะฯ กิจกรรม ความเห็น น้ำหนักส่วนสูง คะแนนยกมา) ${grant_days} วัน</p>
+    ${pending.length ? `<div class="table-wrap"><table class="list"><thead><tr><th>ขอแก้</th><th>เหตุผล</th><th>ผู้ขอ</th><th>เมื่อ</th><th></th></tr></thead><tbody>
+      ${pending.map((r) => `<tr><td>${what(r)}</td><td class="small">${esc(r.reason)}</td><td class="small">${esc(r.requested_by_name || "")}</td><td class="small muted">${esc(thaiTime(r.requested_at))}</td>
+        <td class="actions"><button class="btn small primary" data-ok="${r.id}">อนุมัติ</button><button class="btn small" data-no="${r.id}">ไม่อนุมัติ</button></td></tr>`).join("")}
+    </tbody></table></div>` : `<div class="empty"><strong>ไม่มีคำขอรอพิจารณา</strong>เมื่อปิดการกรอกหรือส่งผลแล้ว ครูต้องส่งคำขอที่นี่ก่อนแก้</div>`}
+  </div>
+  ${done.length ? `<div class="panel"><div class="panel-head"><h2>พิจารณาแล้ว</h2></div>
+    <div class="table-wrap"><table class="list"><thead><tr><th>ขอแก้</th><th>เหตุผล</th><th>ผู้ขอ</th><th>ผล</th><th></th></tr></thead><tbody>
+    ${done.map((r) => `<tr><td>${what(r)}</td><td class="small">${esc(r.reason)}${r.decision_note ? `<br><span class="muted">ตอบ: ${esc(r.decision_note)}</span>` : ""}</td>
+      <td class="small">${esc(r.requested_by_name || "")}</td>
+      <td class="small">${STATUS[r.status] || ""} ${esc(r.decided_by_name || "")} ${esc(thaiTime(r.decided_at))}${r.active ? `<br>แก้ได้ถึง ${esc(thaiTime(r.open_until))}` : ""}</td>
+      <td class="actions">${r.active ? `<button class="btn small" data-close="${r.id}">ปิดสิทธิ์แก้</button>` : ""}</td></tr>`).join("")}
+    </tbody></table></div></div>` : ""}`;
+  const act = async (id, action, body) => {
+    try { await api(`/api/admin/edit-requests/${id}/${action}`, { method: "POST", body }); toast(action === "approve" ? "อนุมัติแล้ว" : action === "reject" ? "แจ้งไม่อนุมัติแล้ว" : "ปิดสิทธิ์แล้ว"); render(); }
+    catch (err) { showError(err); }
+  };
+  for (const b of view.querySelectorAll("[data-ok]")) b.onclick = async () => {
+    const r = await dialog({ title: "อนุมัติคำขอแก้ไข", okText: "อนุมัติ",
+      body: `<label class="field">หมายเหตุถึงครู (ไม่บังคับ)<textarea name="note" maxlength="500"></textarea></label>` });
+    if (r.ok) act(b.dataset.ok, "approve", { note: r.data.note });
+  };
+  for (const b of view.querySelectorAll("[data-no]")) b.onclick = async () => {
+    const r = await dialog({ title: "ไม่อนุมัติคำขอ", okText: "ไม่อนุมัติ", okClass: "danger",
+      body: `<label class="field">เหตุผล (ครูจะเห็นข้อความนี้)<textarea name="note" required minlength="3" maxlength="500"></textarea></label>` });
+    if (r.ok) act(b.dataset.no, "reject", { note: r.data.note });
+  };
+  for (const b of view.querySelectorAll("[data-close]")) b.onclick = async () => {
+    if (await confirmBox("ปิดสิทธิ์แก้", "ครูประจำชั้นจะแก้ข้อมูลของห้องนี้ไม่ได้อีก จนกว่าจะส่งคำขอใหม่", "ปิดสิทธิ์")) act(b.dataset.close, "close", {});
+  };
+}
+
 // ---------- ประวัติการใช้งาน ----------
 const ACTION_TEXT = {
-  "course.submit": "ส่งผลการเรียน", "course.return": "ส่งคืนให้ครูแก้", "course.reopen_approved": "ส่งคืนหลังอนุมัติ", "course.approve": "อนุมัติผล",
+  "course.submit": "ส่งผลการเรียน", "edit_request.course": "ขอแก้ไขรายวิชา", "edit_request.homeroom": "ขอแก้ไขข้อมูลประจำชั้น",
+  "edit_request.approve": "อนุมัติคำขอแก้ไข", "edit_request.reject": "ไม่อนุมัติคำขอแก้ไข", "edit_request.close": "ปิดสิทธิ์แก้", "course.return": "ส่งคืนให้ครูแก้", "course.reopen_approved": "ส่งคืนหลังอนุมัติ", "course.approve": "อนุมัติผล",
   "settings.update": "แก้เกณฑ์/ผู้ลงนาม", "pilot.set": "ตั้งห้องที่เปิดใช้", "import.subjects": "นำเข้ารายวิชา", "import.teachers": "นำเข้าครูผู้สอน",
   "import.homerooms": "นำเข้าครูประจำชั้น", "template.save": "บันทึกแม่แบบ", "template.apply": "ใช้แม่แบบ", "scores.remedial": "บันทึกคะแนนแก้ตัว",
   "results.update": "แก้เวลาเรียน/ผลพิเศษ", "items.add": "เพิ่มช่องคะแนน", "item.update": "แก้ช่องคะแนน", "item.delete": "ลบช่องคะแนน",

@@ -64,6 +64,7 @@ export async function sarData(env, year) {
   const logs = { basic: {}, kinder: {} }; // แบบบันทึกประจำวัน: type → {num, den}
   const stageIds = { basic: [], kinder: [] };
   let anyAttendance = { basic: false, kinder: false };
+  const passPct = Number((await getSettings(env, year.id)).attendance_pass_pct ?? 80); // เกณฑ์เวลาเรียนตามที่ตั้งไว้ (เดิมใช้ 80 ตายตัว)
 
   for (const r of rooms) {
     const stage = isPrimaryGrade(r.grade_level) ? "basic" : "kinder";
@@ -82,7 +83,7 @@ export async function sarData(env, year) {
     ]);
     for (const sid of ids) {
       const a = att[sid];
-      if (a?.days) { if (a.absent) anyAttendance[stage] = true; add(m, "att80", a.pct >= 80); }
+      if (a?.days) { if (a.absent) anyAttendance[stage] = true; add(m, "att80", a.pct >= passPct); }
       if (stage !== "basic") continue;
       for (const sub of res[sid] || []) {
         if (!FINAL.has(String(sub.grade))) continue;

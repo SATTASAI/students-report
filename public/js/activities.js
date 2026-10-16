@@ -1,5 +1,5 @@
 // กิจกรรมพัฒนาผู้เรียน (ปพ.5.1): ครูประจำชั้นและฝ่ายวิชาการบันทึก 4 กิจกรรมในหน้าเดียว — ผลขึ้น ปพ.6 อัตโนมัติ
-import { shell, api, esc, showError, params } from "/js/app.js";
+import { shell, api, esc, showError, params, editGate } from "/js/app.js";
 
 const me = await shell("activities");
 const view = document.getElementById("view");
@@ -19,12 +19,14 @@ const key = (r) => `${r.grade_level}/${r.classroom}`;
 let room = params().get("room") || sessionStorage.getItem("sr-act-room");
 if (!meta.rooms.some((r) => key(r) === room)) room = key(meta.rooms[0]);
 const pending = new Map(); // "ห้อง|sid|item_key" → "" | "มผ" (เก็บห้องไว้ในคีย์ — เปลี่ยนห้องระหว่างบันทึกแล้วไม่ส่งผิดห้อง)
-let saving = false, timer, d;
+let saving = false, timer, d, gate;
 
 async function load() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   const [g, r] = room.split("/");
   d = await api(`/api/activities?year=${Y}${SCOPE}&grade=${encodeURIComponent(g)}&room=${encodeURIComponent(r)}`);
+  const reqPath = `/api/homeroom/edit-request?year=${Y}&grade=${encodeURIComponent(g)}&room=${encodeURIComponent(r)}`;
+  if (gate) gate.update(d.edit, reqPath); else gate = editGate(view, d.edit, reqPath);
   draw();
 }
 

@@ -1,4 +1,5 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
+import { assertHomeroomWritable, homeroomEditState, reopenApprovedForRoom, HOMEROOM_GRANT_DAYS } from "../lib/edit-requests.js";
 import { isKinderGrade, resolveYear, listRooms, getSettings, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday, mirrorBody, compareRoom, compareSubject, homeroomNames, writableIds, isLeft } from "../lib/data.js";
 import { ASSESSMENT_KEYS, validAssessmentValue, clean } from "../../public/js/grading.js";
 import { KINDER_COMMENT_FIELDS } from "../../public/js/kinder.js";
@@ -51,11 +52,28 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       students: roster.map((s) => ({ id: s.id, number: s.number, student_code: s.student_code, name: studentName(s), enrollment_status: s.enrollment_status, gender: s.gender, birth_date: s.birth_date, transfer_in_term: s.transfer_in_term || null })),
       assessments, grades, absences, comments, body, body_dates: bodyDates, comment_bank: bank, teachers: hrTeachers,
       school: { name: st.school_name, area: st.school_area, director: st.director_name },
+      edit: await homeroomEditState(env, user, year.id, grade, room),
     });
+  }
+
+  // คำขอแก้ไขข้อมูลครูประจำชั้นหลังปิดการกรอก → ฝ่ายวัดผลอนุมัติแล้วแก้ได้ HOMEROOM_GRANT_DAYS วัน
+  if (sub === "edit-request" && method === "POST") {
+    const { year, grade, room } = await roomContext(env, user, url);
+    const st = await homeroomEditState(env, user, year.id, grade, room);
+    if (st.open) fail(409, st.why === "grant" ? "ห้องนี้ได้รับอนุญาตให้แก้อยู่แล้ว" : "ยังเปิดให้กรอกอยู่ ไม่ต้องส่งคำขอ");
+    if (st.pending) fail(409, "ส่งคำขอแล้ว รอฝ่ายวัดผลอนุมัติ");
+    const b = await readJson(request);
+    const reason = text(b.reason, 500);
+    if (reason.length < 3) fail(400, "กรุณาระบุเหตุผลที่ต้องการแก้ไข");
+    await env.DB.prepare("INSERT INTO gr_edit_requests (academic_year_id, scope, grade_level, classroom, reason, requested_by) VALUES (?,?,?,?,?,?)")
+      .bind(year.id, "homeroom", grade, room, reason, user.id).run();
+    await audit(env, user, "edit_request.homeroom", { grade, room, reason });
+    return json({ ok: true, edit: await homeroomEditState(env, user, year.id, grade, room), grant_days: HOMEROOM_GRANT_DAYS });
   }
 
   if (sub === "assessments" && method === "PUT") {
     const { year, grade, room } = await roomContext(env, user, url);
+    await assertHomeroomWritable(env, user, year.id, grade, room);
     const all = await roomRoster(env, year.id, grade, room);
     const roster = new Set(all.map((s) => s.id)), writable = writableIds(all);
     const b = await readJson(request);
@@ -76,12 +94,14 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
           .bind(year.id, sid, c.item_key, value, user.id));
     }
     await batchAll(env, stmts);
+    if (stmts.length) await reopenApprovedForRoom(env, user, year.id, grade, room, "ครูประจำชั้นแก้คุณลักษณะฯ / อ่าน คิด เขียน");
     return json({ ok: true, saved: stmts.length });
   }
 
   // ความคิดเห็นครูประจำชั้น: changes [{student_id, field, body}] (body ว่าง = ลบ)
   if (sub === "comments" && method === "PUT") {
     const { year, grade, room } = await roomContext(env, user, url);
+    await assertHomeroomWritable(env, user, year.id, grade, room);
     const all = await roomRoster(env, year.id, grade, room);
     const roster = new Set(all.map((s) => s.id)), writable = writableIds(all);
     const b = await readJson(request);
@@ -126,6 +146,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   // น้ำหนัก/ส่วนสูง: changes [{student_id, round, weight, height}]
   if (sub === "body" && method === "PUT") {
     const { year, grade, room } = await roomContext(env, user, url);
+    await assertHomeroomWritable(env, user, year.id, grade, room);
     const all = await roomRoster(env, year.id, grade, room);
     const roster = new Set(all.map((s) => s.id)), writable = writableIds(all);
     const b = await readJson(request);
@@ -173,9 +194,10 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
         ).bind(year.id, `${month}-%`, ...ids).all();
         for (const r of results) (records[r.student_id] ||= {})[r.att_date] = r.code;
       }
-      return json({ year, grade, room, month, months, days, today, records, codes: ATT_CODES, terms, holidays });
+      return json({ year, grade, room, month, months, days, today, records, codes: ATT_CODES, terms, holidays, edit: await homeroomEditState(env, user, year.id, grade, room) });
     }
     if (method === "PUT") {
+      await assertHomeroomWritable(env, user, year.id, grade, room);
       const b = await readJson(request);
       const changes = Array.isArray(b.changes) ? b.changes.slice(0, 3000) : [];
       const stmts = [];
@@ -194,6 +216,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       }
       await batchAll(env, stmts);
       await audit(env, user, "attendance.update", { grade, room, changes: stmts.length });
+      if (stmts.length) await reopenApprovedForRoom(env, user, year.id, grade, room, "ครูประจำชั้นแก้บันทึกการมาเรียน");
       return json({ ok: true, saved: stmts.length });
     }
   }
@@ -227,9 +250,11 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
         year, grade, room, items, scores, comments, teachers,
         students: roster.map((s) => ({ id: s.id, number: s.number, student_code: s.student_code, name: studentName(s), enrollment_status: s.enrollment_status, gender: s.gender, birth_date: s.birth_date })),
         school: { name: st.school_name, area: st.school_area, director: st.director_name },
+        edit: await homeroomEditState(env, user, year.id, grade, room),
       });
     }
     if (method === "PUT" && parts[3] === "scores") {
+      await assertHomeroomWritable(env, user, year.id, grade, room);
       const b = await readJson(request);
       const stmts = [];
       for (const c of (Array.isArray(b.changes) ? b.changes : []).slice(0, 5000)) {
@@ -250,6 +275,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       return json({ ok: true, saved: stmts.length });
     }
     if (method === "PUT" && parts[3] === "comments") {
+      await assertHomeroomWritable(env, user, year.id, grade, room);
       const b = await readJson(request);
       const term = Number(b.term);
       if (![1, 2].includes(term)) fail(400, "ภาคเรียนไม่ถูกต้อง");
@@ -368,9 +394,11 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
         students: movers.map((s) => ({ id: s.id, number: s.number, name: studentName(s), student_code: s.student_code, transfer_in_term: s.transfer_in_term,
           terms: [1, 2].filter((t) => t < s.transfer_in_term), school: from[s.id]?.school || null, move_date: from[s.id]?.move_date || null })),
         values: await carryoverFor(env, year.id, ids),
+        edit: await homeroomEditState(env, user, year.id, grade, room),
       });
     }
     if (method === "PUT") {
+      await assertHomeroomWritable(env, user, year.id, grade, room);
       const b = await readJson(request);
       const byId = new Map(movers.map((s) => [s.id, s]));
       const subj = new Map(subjects.map((x) => [x.code, x]));

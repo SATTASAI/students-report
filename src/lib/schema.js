@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-18";
+export const SCHEMA_VERSION = "gr-19";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -196,6 +196,20 @@ export const SCHEMA_SQL = [
     detail TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE INDEX IF NOT EXISTS idx_gr_course_edits ON gr_course_edits(course_id, id)`,
+  // gr-19: คำขอแก้ไขหลังปิดการกรอก/ส่งผลแล้ว — ครูขอ → ฝ่ายวัดผลอนุมัติ/ไม่อนุมัติ
+  // scope 'course' = รายวิชา (course_id) · 'homeroom' = ข้อมูลครูประจำชั้นของห้อง (grade_level, classroom) เปิดให้แก้ถึง open_until
+  `CREATE TABLE IF NOT EXISTS gr_edit_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    academic_year_id INTEGER NOT NULL,
+    scope TEXT NOT NULL CHECK (scope IN ('course','homeroom')),
+    course_id INTEGER,
+    grade_level TEXT, classroom TEXT,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','closed')),
+    requested_by INTEGER NOT NULL, requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+    decided_by INTEGER, decided_at TEXT, decision_note TEXT,
+    open_until TEXT)`,
+  `CREATE INDEX IF NOT EXISTS idx_gr_edit_requests ON gr_edit_requests(academic_year_id, status, id)`,
   // gr-9: แบบบันทึกประจำวันของครูประจำชั้น — ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ (ติ๊กรายวัน, เก็บเฉพาะวันที่ติ๊ก value '1')
   // และตรวจสุขภาพ เล็บ/ฟัน/ผม/มือ สัปดาห์ละครั้ง 4 สัปดาห์ต่อเดือน (log_date = 'YYYY-MM-w1'..'w4', value 'ok' สะอาด / 'no' ไม่สะอาด)
   `CREATE TABLE IF NOT EXISTS gr_daily_logs (
@@ -281,6 +295,8 @@ export const ADDED_COLUMNS = [
   ["gr_indicator_bank", "kind", "TEXT"],
   // gr-15: สอบปลายภาควัดตัวชี้วัดปลายทางข้อใดบ้าง (JSON [{code, title}])
   ["gr_items", "indicators", "TEXT"],
+  // gr-19: ฝ่ายวัดผลอนุมัติคำขอแก้ไข → ครูแก้รายวิชานี้ได้แม้ปิดการกรอกแล้ว จนกว่าจะส่งผลใหม่
+  ["gr_courses", "edit_granted_at", "TEXT"],
 ];
 
 async function addMissingColumns(env) {

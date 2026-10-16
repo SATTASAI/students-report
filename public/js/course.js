@@ -77,10 +77,11 @@ function renderHeader() {
     if (c.status === "approved") note.classList.add("ok");
     note.innerHTML = `${line}${c.admin_edit
       ? `<br><b>คุณแก้ไขได้ในฐานะฝ่ายวัดผล</b> — ทุกการแก้ไขจะถูกบันทึกให้ครูผู้สอนเห็น${c.status === "approved" ? " และต้องให้ผู้บริหารอนุมัติใหม่" : ""}`
-      : " — ครูแก้ไขไม่ได้จนกว่าฝ่ายวัดผลจะส่งคืน"}
+      : ` — ถ้าต้องแก้ ให้ส่งคำขอแก้ไขถึงฝ่ายวัดผล${requestBit()}`}
       ${data.is_admin ? ' <button class="btn small" id="returnLink">ส่งคืนให้ครูแก้</button>' : ""}`;
     const rl = document.getElementById("returnLink");
     if (rl) rl.onclick = returnCourse;
+    bindRequest();
   } else {
     sb.innerHTML = `${ICONS.lock} ส่งผลการเรียน`;
     sb.disabled = !c.can_edit;
@@ -91,16 +92,37 @@ function renderHeader() {
     } else {
       note.hidden = c.can_edit;
       note.classList.add("warn");
-      note.textContent = "ปิดระบบการกรอกคะแนนของปีการศึกษานี้แล้ว";
+      note.innerHTML = `ปิดการกรอกคะแนนแล้ว — ถ้าต้องแก้ ให้ส่งคำขอแก้ไขถึงฝ่ายวัดผล${requestBit()}`;
+      bindRequest();
     }
   }
+}
+
+// คำขอแก้ไข (รายวิชาส่งแล้ว / ปิดการกรอกแล้ว) → ฝ่ายวัดผลอนุมัติแล้วจึงแก้ได้
+function requestBit() {
+  if (data.is_admin) return ""; // ฝ่ายวัดผล/ผู้ดูแลใช้ปุ่มส่งคืนแทน
+  const r = data.edit_request;
+  if (r) return `<br><span class="tag">ส่งคำขอแก้ไขแล้ว ${esc(thaiTime(r.requested_at))} รอฝ่ายวัดผลอนุมัติ</span> <span class="small muted">"${esc(r.reason)}"</span>`;
+  return ' <button class="btn small" id="reqEdit">ขอแก้ไข</button>';
+}
+function bindRequest() {
+  const b = document.getElementById("reqEdit");
+  if (!b) return;
+  b.onclick = async () => {
+    const r = await dialog({ title: "ขอแก้ไขรายวิชา", okText: "ส่งคำขอ",
+      body: `<p class="muted" style="margin-top:0">ฝ่ายวัดผลจะเห็นคำขอนี้ เมื่ออนุมัติแล้วรายวิชาจะกลับมาแก้ได้ แก้เสร็จต้องกดส่งผลอีกครั้ง (ผ่านการตรวจและอนุมัติใหม่)</p>
+        <label class="field">ต้องการแก้อะไร เพราะอะไร<textarea name="reason" required minlength="3" maxlength="500"></textarea></label>` });
+    if (!r.ok) return;
+    try { data.edit_request = (await api(`/api/courses/${courseId}/edit-request`, { method: "POST", body: { reason: r.data.reason } })).edit_request; toast("ส่งคำขอแล้ว รอฝ่ายวัดผลอนุมัติ"); renderHeader(); }
+    catch (err) { showError(err); }
+  };
 }
 
 function renderEdits() {
   let box = document.getElementById("editLog");
   if (!data.edits?.length) { box?.remove(); return; }
   if (!box) { box = document.createElement("details"); box.id = "editLog"; box.className = "note"; document.getElementById("lockNote").after(box); }
-  box.innerHTML = `<summary>ฝ่ายวัดผลแก้ไขรายวิชานี้ ${data.edits.length} ครั้ง (ล่าสุด ${esc(thaiTime(data.edits[0].created_at))})</summary>
+  box.innerHTML = `<summary>ประวัติการแก้ไขหลังส่งผล ${data.edits.length} ครั้ง (ล่าสุด ${esc(thaiTime(data.edits[0].created_at))})</summary>
     <ul class="small" style="margin:8px 0 0;padding-left:20px">${data.edits.map((e) => `<li>${esc(thaiTime(e.created_at))} · ${esc(e.by_name || "")} · ${esc(e.what)}${e.detail ? ` (${esc(e.detail)})` : ""}</li>`).join("")}</ul>`;
 }
 
