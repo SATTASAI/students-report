@@ -54,7 +54,7 @@ p { margin: 0 0 .8em; }
 }
 .sidebar a { color: inherit; text-decoration: none; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 2px 6px; }
-.brand img { width: 36px; height: 36px; border-radius: 50%; background: #fff; object-fit: cover; flex: none; }
+.brand img { width: 36px; height: 40px; object-fit: contain; flex: none; }
 .brand strong { font-size: 16px; font-weight: 600; white-space: nowrap; }
 .brand span { display: block; font-size: 12px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-ctl { display: grid; gap: 8px; padding: 10px; border-radius: var(--r-md); background: rgba(255,255,255,.08); }
@@ -90,7 +90,7 @@ body.with-sidebar { padding-left: var(--side-w); }
     padding: 8px 12px; background: var(--ink); color: #fff;
   }
   .mobilebar .brand { padding: 0; color: #fff; text-decoration: none; }
-  .mobilebar .brand img { width: 30px; height: 30px; }
+  .mobilebar .brand img { width: 30px; height: 34px; }
   .mobilebar .brand strong { font-size: 15px; }
   .icon-btn { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm); background: rgba(255,255,255,.12); color: #fff; cursor: pointer; }
   .icon-btn svg { width: 22px; height: 22px; }
@@ -198,7 +198,7 @@ dialog::backdrop { background: rgba(22, 30, 80, .45); }
 .auth { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background:
   repeating-linear-gradient(0deg, transparent 0 31px, #e3e8f6 31px 32px), var(--paper); }
 .auth-card { width: min(400px, 100%); background: #fff; border: 1px solid var(--line); border-radius: var(--r-lg); padding: 30px 28px; box-shadow: 0 24px 60px rgba(30, 42, 120, .12); }
-.auth-card img { width: 64px; height: 64px; border-radius: 50%; display: block; margin-bottom: 14px; }
+.auth-card img { width: 64px; height: 80px; object-fit: contain; display: block; margin-bottom: 14px; }
 .auth-card form { display: grid; gap: 14px; margin-top: 18px; }
 .err { color: var(--bad); background: var(--bad-bg); border-radius: var(--r-sm); padding: 9px 12px; font-size: 14px; }
 

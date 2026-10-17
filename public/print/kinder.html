@@ -51,7 +51,7 @@ const lv = (v) => (v == null ? "" : td(v));
 const lvText = (x) => (x.level ? `${levelLabel(x.level)} (${fixed(x.avg, 2)})` : "");
 const teacherSigns = () => (d.teachers.length ? d.teachers : [""]).map((t) => `<div class="sign"><div class="line"></div>(${esc(t || dots)})<br>ครูประจำชั้น</div>`).join("");
 const header = (sub) => `<div style="display:grid;grid-template-columns:18mm 1fr;gap:4mm;align-items:center">
-    <img src="/logo.jpg" alt="" style="width:18mm;height:18mm;border-radius:50%;object-fit:cover">
+    <img src="/logo.png" alt="" style="width:18mm;height:18mm;object-fit:contain">
     <div><h2>${title}</h2><div>${esc(school.name || "โรงเรียนบ้านป่าเด็ง")} ${esc(school.area || "")}</div><div>${sub}</div></div></div>`;
 
 function childPage(st) {

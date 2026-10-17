@@ -36,7 +36,7 @@ function page(st) {
   return `<section class="sheet">
     <div class="form-no">ปพ.6</div>
     <div style="display:grid;grid-template-columns:18mm 1fr;gap:4mm;align-items:center">
-      <img src="/logo.jpg" alt="" style="width:18mm;height:18mm;border-radius:50%;object-fit:cover">
+      <img src="/logo.png" alt="" style="width:18mm;height:18mm;object-fit:contain">
       <div><h2>แบบรายงานผลการพัฒนาคุณภาพผู้เรียนรายบุคคล</h2><div>${esc(s.school_name || "โรงเรียนบ้านป่าเด็ง")} ${esc(s.school_area || "")}</div><div>ปีการศึกษา ${td(d.year.year_be)}</div></div>
     </div>
     <div class="info">

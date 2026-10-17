@@ -227,7 +227,7 @@ export async function shell(active) {
   side.className = "sidebar";
   side.id = "sidebar";
   side.innerHTML = `
-    <a class="brand" href="/"><img src="/logo.jpg" alt=""><div><strong>รายงานผลการเรียน</strong><span>${esc(me.settings.school_name || "โรงเรียนบ้านป่าเด็ง")}</span></div></a>
+    <a class="brand" href="/"><img src="/logo.png" alt=""><div><strong>รายงานผลการเรียน</strong><span>${esc(me.settings.school_name || "โรงเรียนบ้านป่าเด็ง")}</span></div></a>
     <div class="side-ctl">
       <label>บทบาท<select id="roleSel" ${roles.length < 2 ? "disabled" : ""}>${roles.map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${ROLES[r].label}</option>`).join("")}</select></label>
       <label>ปีการศึกษา<select id="yearSel">${me.years.map((y) => `<option value="${y.id}" ${y.id === me.year.id ? "selected" : ""}>${y.year_be}</option>`).join("")}</select></label>
@@ -239,7 +239,7 @@ export async function shell(active) {
   const mbar = document.createElement("header");
   mbar.className = "mobilebar";
   mbar.innerHTML = `<button class="icon-btn" id="menuBtn" aria-label="เปิดเมนู" aria-controls="sidebar" aria-expanded="false">${MI.menu}</button>
-    <a class="brand" href="/"><img src="/logo.jpg" alt=""><strong>รายงานผลการเรียน</strong></a>
+    <a class="brand" href="/"><img src="/logo.png" alt=""><strong>รายงานผลการเรียน</strong></a>
     <span class="role-chip">${esc(ROLES[role].short)}</span>`;
   const scrim = document.createElement("div");
   scrim.className = "scrim";
