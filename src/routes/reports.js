@@ -1,10 +1,10 @@
 import { json, fail, requireUser, requireViewer, intParam, text } from "../lib/http.js";
 import {
   resolveYear, listYears, getSettings, listRooms, roomRoster, isHomeroomTeacher, yearResultsForStudents,
-  assessmentsFor, absenceCounts, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, compareGrade, compareRoom, compareSubject, homeroomNames,
+  assessmentsFor, absenceCounts, attendanceSummary, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, compareGrade, compareRoom, compareSubject, homeroomNames,
 } from "../lib/data.js";
 import { courseOverview } from "./admin.js";
-import { listAbsences, commentsFor } from "./homeroom.js";
+import { listAbsences, commentsFor, bodyFor } from "./homeroom.js";
 import { weightedGPA, NUMERIC_GRADES, trunc } from "../../public/js/grading.js";
 
 export async function handleMe(request, env, user, url) {
@@ -47,13 +47,15 @@ async function roomReport(env, year, grade, room, onlyStudent) {
   let roster = await roomRoster(env, year.id, grade, room);
   if (onlyStudent) roster = roster.filter((s) => s.id === onlyStudent);
   const ids = roster.map((s) => s.id);
-  const [grades, assessments, absences, settings, homeroom, comments] = await Promise.all([
+  const [grades, assessments, absences, settings, homeroom, comments, attendance, body] = await Promise.all([
     yearResultsForStudents(env, year.id, grade, ids),
     assessmentsFor(env, year.id, ids),
     absenceCounts(env, year.id, ids),
     getSettings(env, year.id),
     homeroomNames(env, year.id, grade, room),
     commentsFor(env, year.id, ids),
+    attendanceSummary(env, year.id, ids),
+    bodyFor(env, year.id, ids),
   ]);
   return {
     year, grade, room, settings, homeroom_teachers: homeroom,
@@ -62,6 +64,7 @@ async function roomReport(env, year, grade, room, onlyStudent) {
       birth_date: s.birth_date, gender: s.gender, enrollment_status: s.enrollment_status, transfer_in_term: s.transfer_in_term || null,
       subjects: grades[s.id] || [], gpa: weightedGPA(grades[s.id] || []),
       assessments: assessments[s.id] || {}, absent_days: absences[s.id] || 0, comments: comments[s.id] || {},
+      attendance: attendance[s.id] || {}, body: body[s.id] || {},
     })),
   };
 }

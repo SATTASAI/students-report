@@ -26,6 +26,18 @@ const students = d.students;
 if (!students.length) { status("ไม่มีนักเรียนในห้องนี้"); throw new Error("empty"); }
 
 const levelText = (g, v) => summaryText(g, v);
+// ความเห็นครูประจำชั้น (บันทึกในหน้าครูประจำชั้น) — แต่ละด้านใช้ของภาคเรียนล่าสุดที่กรอกไว้ (ภาค 2 ก่อน ภาค 1)
+const CFIELDS = [["learn", "ด้านการเรียน"], ["habit", "ด้านอุปนิสัย"], ["health", "ด้านสุขภาพ"], ["other", "อื่น ๆ"]];
+// น้ำหนัก/ส่วนสูง: ครั้งล่าสุดที่บันทึกในหน้าครูประจำชั้น
+function bodyHtml(b = {}) {
+  const last = Object.keys(b).map(Number).sort((x, y) => y - x).map((r) => b[r]).find((v) => v && (v.weight != null || v.height != null));
+  return last ? `<div>น้ำหนัก ${last.weight == null ? "–" : fmt(last.weight)} กิโลกรัม · ส่วนสูง ${last.height == null ? "–" : fmt(last.height)} เซนติเมตร (ครั้งล่าสุด)</div>` : "";
+}
+function commentHtml(c = {}) {
+  const rows = CFIELDS.map(([f, label]) => [label, (c[2]?.[f] || c[1]?.[f] || "").trim()]).filter(([, body]) => body);
+  if (!rows.length) return '<div class="dots"></div>';
+  return `<div style="font-size:14pt;line-height:1.35;border-bottom:1px dotted #000;padding-bottom:1mm">${rows.map(([label, body]) => `<div><b>${esc(label)}:</b> ${esc(body)}</div>`).join("")}</div>`;
+}
 
 function page(st) {
   const basic = st.subjects.filter((x) => x.subject_type === "basic");
@@ -57,8 +69,9 @@ function page(st) {
         ? g.items.map(([k, label], i) => `<tr><td>${i === 0 ? `<b>${g.title}</b><br>` : ""}&nbsp;&nbsp;${esc(label)}</td><td class="c">${levelText(g, activityResult(k, st.assessments))}</td></tr>`).join("")
         : `<tr><td><b>${g.title}</b></td><td class="c">${levelText(g, summarizeGroup(g, st.assessments))}</td></tr>`).join("")}</tbody>
     </table>
-    <div style="margin-top:3mm">จำนวนวันที่ขาดเรียน (ตามที่ครูประจำชั้นบันทึก) ${td(st.absent_days)} วัน</div>
-    <div style="margin-top:2mm">ความคิดเห็นของครูประจำชั้น</div><div class="dots"></div>
+    <div style="margin-top:3mm">เวลาเรียน (ตามบันทึกการมาเรียนของครูประจำชั้น): ขาดเรียน ${td(st.attendance?.["ข"] || 0)} วัน · ลากิจ ${td(st.attendance?.["ล"] || 0)} วัน · ลาป่วย ${td(st.attendance?.["ป"] || 0)} วัน · มาสาย ${td(st.attendance?.["ส"] || 0)} วัน</div>
+    ${bodyHtml(st.body)}
+    <div style="margin-top:2mm">ความคิดเห็นของครูประจำชั้น</div>${commentHtml(st.comments)}
     <div class="signs" style="grid-template-columns:repeat(${Math.min(4, Math.max(1, d.homeroom_teachers.length) + 2)},1fr);gap:4mm;margin-top:6mm;font-size:${d.homeroom_teachers.length > 1 ? 13 : 14}pt">
       ${(d.homeroom_teachers.length ? d.homeroom_teachers : [""]).map((t) => `<div class="sign"><div class="line" style="margin:0 2mm 1mm"></div>(${esc(t || "..........................................")})<br>ครูประจำชั้น</div>`).join("")}
       <div class="sign"><div class="line" style="margin:0 2mm 1mm"></div>(${esc(s.director_name || "..........................................")})<br>ผู้อำนวยการโรงเรียน</div>
