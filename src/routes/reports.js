@@ -168,6 +168,7 @@ export async function handleReports(request, env, user, parts, method, url) {
     const grades = [...new Set(rooms.map((r) => r.grade_level))].sort(compareGrade);
     const bySubject = {};
     const byRoom = [];
+    const gpaByGrade = {}; // ระดับชั้น → [{ name, classroom, number, gpa }] สำหรับจัดอันดับ
     for (const g of grades) {
       for (const r of rooms.filter((x) => x.grade_level === g)) {
         const roster = (await roomRoster(env, year.id, g, r.classroom)).filter((s) => s.enrollment_status === "enrolled"); // สถิติไม่นับคนที่ย้ายออก/ออกกลางคัน
@@ -178,6 +179,8 @@ export async function handleReports(request, env, user, parts, method, url) {
           const list = res[sid] || [];
           const gp = weightedGPA(list);
           if (gp != null) gpas.push(gp);
+          const st = roster.find((x) => x.id === sid);
+          (gpaByGrade[g] ||= []).push({ student_id: sid, name: studentName(st), classroom: r.classroom, number: st.number ?? null, gpa: gp });
           for (const sub of list) {
             const key = `${g}|${sub.code}`;
             const row = bySubject[key] ||= { grade_level: g, code: sub.code, name: sub.name, learning_area: sub.learning_area, subject_type: sub.subject_type, sort_order: sub.sort_order, counts: {}, n: 0, sum: 0, graded: 0 };
@@ -194,7 +197,17 @@ export async function handleReports(request, env, user, parts, method, url) {
       ...r, mean: r.graded ? trunc(r.sum / r.graded, 2) : null,
       good_pct: r.graded && r.n ? (((r.counts["4"] || 0) + (r.counts["3.5"] || 0) + (r.counts["3"] || 0)) / r.n) * 100 : null, // ค่าจริง หน้าพิมพ์ตัดทศนิยมทิ้ง ไม่ปัด
     })).sort((a, b) => compareGrade(a.grade_level, b.grade_level) || compareSubject(a, b));
-    return json({ year, settings: await getSettings(env, year.id), subjects, rooms: byRoom });
+    // อันดับเกรดเฉลี่ยสูงสุด 3 อันดับแรกของแต่ละชั้น (คะแนนเท่ากันได้อันดับเดียวกัน 1, 2, 2, 4 …)
+    // นับเฉพาะนักเรียนที่มีผลครบทุกวิชา (ยังไม่มีผล / ร / มส = ยังไม่จัดอันดับ)
+    const ranking = Object.entries(gpaByGrade).map(([g, list]) => {
+      const ranked = list.filter((x) => x.gpa != null).sort((a, b) => b.gpa - a.gpa
+        || String(a.classroom).localeCompare(String(b.classroom), "th", { numeric: true }) || (a.number ?? 999) - (b.number ?? 999));
+      const top = [];
+      let rank = 0;
+      ranked.forEach((x, i) => { if (!i || x.gpa !== ranked[i - 1].gpa) rank = i + 1; if (rank <= 3) top.push({ ...x, rank }); });
+      return { grade_level: g, top, ranked: ranked.length, unranked: list.length - ranked.length };
+    }).sort((a, b) => compareGrade(a.grade_level, b.grade_level));
+    return json({ year, settings: await getSettings(env, year.id), subjects, rooms: byRoom, ranking });
   }
 
   if (kind === "progress") {

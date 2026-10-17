@@ -39,6 +39,15 @@ const pages = grades.map((g) => {
     <div style="margin-top:3mm">ผลการเรียนเฉลี่ยรายห้อง: ${rooms.map((r) => `${esc(td(r.grade_level))}/${esc(td(r.classroom))} = ${r.avg_gpa == null ? "–" : fmt(r.avg_gpa)} (${td(r.students)} คน)`).join(" &nbsp; ")}</div>
   </section>`;
 });
+// อันดับเกรดเฉลี่ยสูงสุด 3 อันดับแรกของแต่ละชั้น (หน้าแยก)
+const ranking = (d.ranking || []).filter((g) => g.top.length || g.unranked);
+if (ranking.length) pages.push(`<section class="sheet">
+  <div class="center"><b>นักเรียนที่มีผลการเรียนเฉลี่ยสูงสุด ${td(3)} อันดับแรกของแต่ละชั้น ปีการศึกษา ${td(d.year.year_be)}</b><br>${esc(s.school_name || "")}</div>
+  <table class="t small" style="margin-top:4mm"><thead><tr><th style="width:18mm">ชั้น</th><th style="width:16mm">อันดับ</th><th>ชื่อ–สกุล</th><th style="width:20mm">ห้อง</th><th style="width:24mm">ผลการเรียนเฉลี่ย</th></tr></thead>
+  <tbody>${ranking.map((g) => g.top.length ? g.top.map((x, i) => `<tr><td class="c">${i ? "" : esc(td(g.grade_level))}</td><td class="c">${td(x.rank)}</td><td>${esc(x.name)}</td><td class="c">${esc(td(`${g.grade_level}/${x.classroom}`))}</td><td class="c">${fixed(x.gpa, 2)}</td></tr>`).join("")
+    : `<tr><td class="c">${esc(td(g.grade_level))}</td><td colspan="4">ยังไม่มีนักเรียนที่มีผลการเรียนครบทุกรายวิชา</td></tr>`).join("")}</tbody></table>
+  <div style="margin-top:3mm;font-size:13pt">หมายเหตุ: จัดอันดับจากผลการเรียนเฉลี่ยทั้งปี เฉพาะนักเรียนที่มีผลการเรียนครบทุกรายวิชา (ไม่มี ร / มส / ยังไม่มีผล) ผลการเรียนเฉลี่ยเท่ากันได้อันดับเดียวกัน</div>
+</section>`);
 document.getElementById("doc").innerHTML = pages.join("") || `<div class="status">ยังไม่มีผลการเรียน</div>`;
 </script>
 </body>

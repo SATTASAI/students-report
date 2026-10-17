@@ -45,7 +45,12 @@ async function renderSummary() {
   const s = await api(`/api/reports/summary?year=${Y}`);
   const cols = [...NUMERIC_GRADES, "ร", "มส", ...(s.subjects.some((x) => x.counts["ยังไม่มีผล"]) ? ["ยังไม่มีผล"] : [])];
   const grades = [...new Set(s.subjects.map((x) => x.grade_level))];
-  view.innerHTML = `<p class="muted small">พิมพ์รายงานนี้ได้ที่เมนู <a href="/docs.html">คลังเอกสาร</a></p>
+  const medal = (r) => ["", "🥇", "🥈", "🥉"][r] || "";
+  const rankPanel = (s.ranking || []).length ? `<div class="panel"><div class="panel-head"><h2>เกรดเฉลี่ยสูงสุด 3 อันดับแรกของแต่ละชั้น</h2><span class="muted small">นับเฉพาะนักเรียนที่มีผลการเรียนครบทุกวิชา · เกรดเฉลี่ยเท่ากันได้อันดับเดียวกัน</span></div>
+    <div class="table-wrap"><table class="list"><thead><tr><th>ชั้น</th><th class="num">อันดับ</th><th>ชื่อ–สกุล</th><th>ห้อง</th><th class="num">เกรดเฉลี่ย</th></tr></thead>
+    <tbody>${s.ranking.map((g) => g.top.length ? g.top.map((x, i) => `<tr><td>${i ? "" : `<b>${esc(g.grade_level)}</b>${g.unranked ? `<br><span class="small muted">ยังไม่จัดอันดับ ${g.unranked} คน</span>` : ""}`}</td><td class="num">${medal(x.rank)} ${x.rank}</td><td>${esc(x.name)}</td><td>${esc(g.grade_level)}/${esc(x.classroom)}</td><td class="num"><b>${Number(x.gpa).toFixed(2)}</b></td></tr>`).join("")
+      : `<tr><td><b>${esc(g.grade_level)}</b></td><td colspan="4" class="muted small">ยังไม่มีนักเรียนที่มีผลครบทุกวิชา (${g.unranked} คน)</td></tr>`).join("")}</tbody></table></div></div>` : "";
+  view.innerHTML = `<p class="muted small">พิมพ์รายงานนี้ได้ที่เมนู <a href="/docs.html">คลังเอกสาร</a></p>${rankPanel}
     ${grades.map((g) => `<div class="panel"><div class="panel-head"><h2>${g}</h2>
       <span class="muted small">${s.rooms.filter((r) => r.grade_level === g).map((r) => `${esc(r.grade_level)}/${esc(r.classroom)} เฉลี่ย ${r.avg_gpa ?? "–"}`).join(" · ")}</span></div>
       <div class="table-wrap"><table class="list"><thead><tr><th>วิชา</th><th class="num">คน</th>${cols.map((c) => `<th class="num">${c === "ยังไม่มีผล" ? '<span class="small">ยังไม่มีผล</span>' : gradeBadge(c)}</th>`).join("")}<th class="num">เฉลี่ย</th><th class="num">3 ขึ้นไป</th></tr></thead>
