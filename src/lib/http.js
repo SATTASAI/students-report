@@ -35,27 +35,12 @@ export async function currentUser(request, env) {
   if (!token || !env.JWT_SECRET) return null;
   const payload = await verifyJWT(token, env.JWT_SECRET);
   if (!payload?.sub) return null;
-  const base = `SELECT u.id, u.email, u.full_name, u.role, u.status, u.session_version, r.role AS grade_role%VIEWER%
+  const user = await env.DB.prepare(
+    `SELECT u.id, u.email, u.full_name, u.role, u.status, u.session_version, r.role AS grade_role
        FROM users u LEFT JOIN gr_staff_roles r ON r.user_id = u.id
-      WHERE u.id = ? AND u.deleted_at IS NULL`;
-  let user;
-  try {
-    user = await env.DB.prepare(base.replace("%VIEWER%", `, v.user_id AS viewer_id, v.expires_at AS access_expires_at`)
-      .replace("LEFT JOIN gr_staff_roles r ON r.user_id = u.id", "LEFT JOIN gr_staff_roles r ON r.user_id = u.id LEFT JOIN viewer_accounts v ON v.user_id = u.id")).bind(payload.sub).first();
-  } catch (e) {
-    // ตาราง viewer_accounts สร้างโดยระบบบริหารโรงเรียน — ถ้ายังไม่มี ไม่มีใครเป็นผู้ชมภายนอก
-    if (!/viewer_accounts/.test(String(e?.message))) throw e;
-    user = await env.DB.prepare(base.replace("%VIEWER%", "")).bind(payload.sub).first();
-  }
+      WHERE u.id = ? AND u.deleted_at IS NULL`
+  ).bind(payload.sub).first();
   if (!user || user.status !== "active") return null;
-  // ผู้ชมภายนอก (บัญชีในตาราง viewer_accounts, users.role = NULL): ดูรายงานภาพรวมได้อย่างเดียว ไม่เห็นชื่อนักเรียน
-  if (user.viewer_id != null) {
-    user.role = "viewer";
-    user.grade_role = null;
-    const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
-    if (user.access_expires_at && today > String(user.access_expires_at).slice(0, 10)) return null;
-  }
-  delete user.viewer_id;
   if (user.session_version != null && Number(payload.sv || 1) !== Number(user.session_version)) return null;
   // ออกจากระบบรายอุปกรณ์ (จัดการได้ที่หน้าบัญชีของระบบบริหารโรงเรียน): session ที่ถูกยกเลิกใช้ต่อไม่ได้
   if (!await sessionIsActive(env, payload)) return null;
@@ -67,21 +52,7 @@ export async function currentUser(request, env) {
   user.is_super = ADMIN_ROLES.includes(user.role);
   // นำเข้าข้อมูลจำนวนมาก (Excel / คัดลอกปีก่อน / ดึงจากระบบบริหารฯ / คลังตัวชี้วัด): เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล
   user.can_import = user.role === "superadmin" || user.grade_role === "grade_admin";
-  user.is_viewer = user.role === "viewer";
   return user;
-}
-
-// รายงานภาพรวม (สรุปผลสัมฤทธิ์ / ภาพรวมการส่งผล / SAR): ผู้บริหาร ฝ่ายวัดผล และผู้ชมภายนอก
-export function requireReportViewer(user) {
-  requireUser(user);
-  if (!user.can_view_all && !user.is_viewer) fail(403, "เฉพาะผู้บริหารและผู้ดูแลงานวัดผล/วิชาการเท่านั้น");
-  return user;
-}
-
-// ผู้ชมภายนอกเรียกได้เฉพาะ API เหล่านี้ (อ่านอย่างเดียว)
-const VIEWER_ALLOWED = [/^\/api\/me$/, /^\/api\/reports\/(summary|progress)$/, /^\/api\/sar$/];
-export function viewerMayAccess(method, pathname) {
-  return (method === "GET" || method === "HEAD") && VIEWER_ALLOWED.some((r) => r.test(pathname));
 }
 
 export function requireUser(user) {

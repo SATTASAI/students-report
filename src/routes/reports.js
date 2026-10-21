@@ -1,4 +1,4 @@
-import { json, fail, requireUser, requireViewer, requireReportViewer, intParam, text } from "../lib/http.js";
+import { json, fail, requireUser, requireViewer, intParam, text } from "../lib/http.js";
 import {
   resolveYear, listYears, getSettings, listRooms, roomRoster, isHomeroomTeacher, yearResultsForStudents,
   assessmentsFor, absenceCounts, attendanceSummary, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, compareGrade, compareRoom, compareSubject, homeroomNames,
@@ -162,7 +162,7 @@ export async function handleReports(request, env, user, parts, method, url) {
   }
 
   if (kind === "summary") {
-    requireReportViewer(user);
+    requireViewer(user);
     const year = await resolveYear(env, url.searchParams.get("year"));
     const rooms = (await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level));
     const grades = [...new Set(rooms.map((r) => r.grade_level))].sort(compareGrade);
@@ -207,13 +207,11 @@ export async function handleReports(request, env, user, parts, method, url) {
       ranked.forEach((x, i) => { if (!i || x.gpa !== ranked[i - 1].gpa) rank = i + 1; if (rank <= 3) top.push({ ...x, rank }); });
       return { grade_level: g, top, ranked: ranked.length, unranked: list.length - ranked.length };
     }).sort((a, b) => compareGrade(a.grade_level, b.grade_level));
-    // ผู้ชมภายนอกไม่เห็นชื่อนักเรียน (อันดับแสดงเฉพาะห้องและเกรดเฉลี่ย)
-    if (user.is_viewer) for (const g of ranking) g.top = g.top.map(({ rank, gpa, classroom }) => ({ rank, gpa, classroom, name: "(ซ่อนชื่อนักเรียน)" }));
     return json({ year, settings: await getSettings(env, year.id), subjects, rooms: byRoom, ranking });
   }
 
   if (kind === "progress") {
-    requireReportViewer(user);
+    requireViewer(user);
     const year = await resolveYear(env, url.searchParams.get("year"));
     return json({ year, courses: await courseOverview(env, year.id) });
   }

@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-21";
+export const SCHEMA_VERSION = "gr-20";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -18,10 +18,6 @@ export const SCHEMA_SQL = [
     entry_open INTEGER NOT NULL DEFAULT 1,
     roster_order TEXT NOT NULL DEFAULT 'gender' CHECK (roster_order IN ('gender','code')),
     updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
-  // บัญชีผู้ชมภายนอก (ใช้ร่วมกับระบบบริหารโรงเรียน ซึ่งเป็นผู้สร้าง/แก้ไข) — สร้างไว้ให้ query ของระบบนี้ใช้ได้เสมอ
-  `CREATE TABLE IF NOT EXISTS viewer_accounts (
-    user_id INTEGER PRIMARY KEY REFERENCES users(id), expires_at TEXT, created_by INTEGER REFERENCES users(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS gr_staff_roles (
     user_id INTEGER PRIMARY KEY,
     role TEXT NOT NULL CHECK (role IN ('grade_admin')),
