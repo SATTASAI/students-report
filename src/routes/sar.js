@@ -1,7 +1,7 @@
 // SAR มาตรฐานที่ 1 — ดึงข้อมูลจากระบบมาคำนวณตัวชี้วัด (ผลการเรียน การประเมินของครูประจำชั้น การมาเรียน แบบบันทึกประจำวัน)
 // GET  /api/sar?year=   → ตัวชี้วัดแยกระดับ (ขั้นพื้นฐาน/ปฐมวัย) + ค่าเป้าหมาย/ค่าที่ครูกรอก + ตารางผลสัมฤทธิ์รายชั้น×กลุ่มสาระ
 // PUT  /api/sar?year=   → บันทึกค่าเป้าหมาย / ค่าที่กรอกเอง / หมายเหตุ / เกณฑ์ระดับคุณภาพ (ฝ่ายวัดผลและผู้ดูแลระบบ)
-import { json, readJson, fail, requireViewer, text, audit, batchAll } from "../lib/http.js";
+import { json, readJson, fail, requireViewer, requireReportViewer, text, audit, batchAll } from "../lib/http.js";
 import {
   resolveYear, listRooms, roomRoster, yearResultsForStudents, assessmentsFor, attendanceRates,
   isPrimaryGrade, isKinderGrade, compareGrade, getSettings,
@@ -22,7 +22,7 @@ const group = (k) => ASSESSMENT_GROUPS.find((g) => g.key === k);
 const add = (m, key, ok) => { const r = (m[key] ||= { num: 0, den: 0 }); r.den++; if (ok) r.num++; };
 
 export async function handleSar(request, env, user, parts, method, url) {
-  requireViewer(user); // ดู: ฝ่ายวิชาการ/วัดผล และผู้บริหาร
+  requireReportViewer(user); // ดู: ฝ่ายวิชาการ/วัดผล ผู้บริหาร และผู้ชมภายนอก (แก้ไขได้เฉพาะ can_import)
   const year = await resolveYear(env, url.searchParams.get("year"));
   if (method === "GET") return json(await sarData(env, year));
   if (method === "PUT") {
