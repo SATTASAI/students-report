@@ -122,7 +122,8 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       // รวมครูที่เพิ่งสมัคร (ยังไม่มีบทบาท) — ฝ่ายวัดผลมอบหมายวิชาได้เลย และได้บทบาทครูอัตโนมัติ
       `SELECT u.id, u.full_name, u.email, u.role, u.created_at, r.role AS grade_role, CASE WHEN u.role IS NULL THEN 1 ELSE 0 END AS pending
          FROM users u LEFT JOIN gr_staff_roles r ON r.user_id = u.id
-        WHERE u.status = 'active' AND u.deleted_at IS NULL`
+        WHERE u.status = 'active' AND u.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM viewer_accounts v WHERE v.user_id = u.id)`
     ).all();
     return json({ teachers: results.sort((a, b) => compareThaiName(a.full_name, b.full_name)) });
   }
@@ -775,7 +776,7 @@ async function grantTeacherRole(env, actor, ids) {
   const list = [...new Set(ids.map(Number).filter(Boolean))];
   if (!list.length) return;
   const ph = list.map(() => "?").join(",");
-  const { results } = await env.DB.prepare(`SELECT id FROM users WHERE role IS NULL AND id IN (${ph})`).bind(...list).all();
+  const { results } = await env.DB.prepare(`SELECT id FROM users WHERE role IS NULL AND id IN (${ph}) AND NOT EXISTS (SELECT 1 FROM viewer_accounts v WHERE v.user_id = users.id)`).bind(...list).all();
   if (!results.length) return;
   await env.DB.prepare(`UPDATE users SET role = 'teacher', approved_at = COALESCE(approved_at, datetime('now')), approved_by = COALESCE(approved_by, ?)
     WHERE role IS NULL AND id IN (${results.map(() => "?").join(",")})`).bind(actor.id, ...results.map((r) => r.id)).run();

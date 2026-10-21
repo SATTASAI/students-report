@@ -1,6 +1,6 @@
 // ระบบรายงานผลการเรียน โรงเรียนบ้านป่าเด็ง (ป.1–ป.6)
 // Worker เดียว + static assets; ใช้ D1 และบัญชีผู้ใช้ร่วมกับ banpadeng-school-db
-import { json, HttpError, currentUser } from "./lib/http.js";
+import { json, HttpError, currentUser, viewerMayAccess } from "./lib/http.js";
 import { ensureSchema } from "./lib/schema.js";
 import { login, logout } from "./routes/auth.js";
 import { handleAdmin } from "./routes/admin.js";
@@ -32,6 +32,9 @@ async function routeApi(request, env, url) {
   if (parts[1] === "auth" && parts[2] === "logout" && method === "POST") return logout(request, env);
 
   const user = await currentUser(request, env);
+  if (user?.role === "viewer" && !viewerMayAccess(method, url.pathname)) {
+    return json({ error: "บัญชีผู้ชมภายนอกดูได้อย่างเดียว ไม่สามารถใช้งานส่วนนี้ได้", code: "VIEWER_READ_ONLY" }, 403);
+  }
   switch (parts[1]) {
     case "me": return handleMe(request, env, user, url);
     case "admin": return handleAdmin(request, env, user, parts, method, url);
