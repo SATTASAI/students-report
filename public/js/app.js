@@ -97,12 +97,10 @@ export const ROLES = {
   measure: { label: "เจ้าหน้าที่วัดผล", short: "วัดผล" },
   exec: { label: "ผู้บริหาร", short: "ผู้บริหาร" },
   admin: { label: "ผู้ดูแลระบบ", short: "ผู้ดูแล" },
-  viewer: { label: "ผู้ชมภายนอก (ดูอย่างเดียว)", short: "ผู้ชม" },
 };
 
 // บทบาทที่ผู้ใช้เข้าได้ — ผู้ดูแลระบบ (superadmin) เข้าได้ทุกบทบาท
 export function availableRoles(user) {
-  if (user.role === "viewer") return ["viewer"];
   const out = ["teacher"];
   if (user.role === "superadmin" || user.grade_role === "grade_admin") out.push("measure");
   if (user.role === "superadmin" || user.role === "executive") out.push("exec");
@@ -137,11 +135,6 @@ function roleMenu(role, me) {
     { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
     { href: "/sar.html", icon: "award", label: "ข้อมูล SAR" },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
-  ];
-  if (role === "viewer") return [
-    { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
-    { href: "/reports.html#progress", icon: "chart", label: "ภาพรวมการส่งผล" },
-    { href: "/sar.html", icon: "award", label: "ข้อมูล SAR" },
   ];
   if (role === "exec") return [
     { href: "/reports.html#progress", icon: "chart", label: "ภาพรวมการส่งผล" },
@@ -215,7 +208,7 @@ export async function shell(active) {
   const roles = availableRoles(me.user);
   let role;
   try { role = localStorage.getItem("sr-role"); } catch { /* */ }
-  if (!roles.includes(role)) role = roles.length === 1 ? roles[0] : roles.includes("measure") && !me.courses.length ? "measure" : roles.includes("exec") && !me.courses.length ? "exec" : "teacher";
+  if (!roles.includes(role)) role = roles.includes("measure") && !me.courses.length ? "measure" : roles.includes("exec") && !me.courses.length ? "exec" : "teacher";
   const samePath = (href) => href.split(/[?#]/)[0] === location.pathname;
   if (location.pathname === "/" && role !== "teacher") {
     // หน้าแรกเป็นของบทบาทครู — บทบาทอื่นไปหน้าแรกของบทบาทตัวเอง
@@ -243,7 +236,7 @@ export async function shell(active) {
     <nav class="side-nav" id="sideNav" aria-label="เมนู">${drawMenu()}</nav>
     <div class="side-foot"><div class="who-box"><span class="avatar">${esc((me.user.full_name || "?").replace(/^(นางสาว|นาง|นาย|ครู)/, "").trim().slice(0, 1))}</span>
       <span><b>${esc(me.user.full_name)}</b><small>${esc(ROLES[role].label)}</small></span></div>
-      ${role === "viewer" ? `<div class="small muted" style="padding:6px 10px">บัญชีผู้ชมภายนอก ดูได้อย่างเดียว · ซ่อนชื่อนักเรียน</div>` : `<a class="nav-item" href="https://system.banpadengschool.ac.th/account.html#devices" target="_blank" rel="noopener" title="ดูและออกจากระบบอุปกรณ์ที่ใช้บัญชีนี้ (เปิดในระบบบริหารโรงเรียน)">${MI.lock}<span>อุปกรณ์และความปลอดภัย</span></a>`}
+      <a class="nav-item" href="https://system.banpadengschool.ac.th/account.html#devices" target="_blank" rel="noopener" title="ดูและออกจากระบบอุปกรณ์ที่ใช้บัญชีนี้ (เปิดในระบบบริหารโรงเรียน)">${MI.lock}<span>อุปกรณ์และความปลอดภัย</span></a>
       <button class="nav-item" id="logoutBtn">${MI.out}<span>ออกจากระบบ</span></button></div>`;
   const mbar = document.createElement("header");
   mbar.className = "mobilebar";
