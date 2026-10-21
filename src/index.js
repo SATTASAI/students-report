@@ -13,18 +13,10 @@ import { handleActivities } from "./routes/activities.js";
 import { handleMoves } from "./routes/moves.js";
 import { handleRoster } from "./routes/roster.js";
 import { handleCalendar } from "./routes/calendar.js";
+import { applySecurityHeaders } from "./lib/auth-sessions.js";
 
-const SECURITY_HEADERS = {
-  "X-Content-Type-Options": "nosniff",
-  "Referrer-Policy": "same-origin",
-  "X-Frame-Options": "SAMEORIGIN",
-};
-
-function withHeaders(response, extra = SECURITY_HEADERS) {
-  const r = new Response(response.body, response);
-  for (const [k, v] of Object.entries(extra)) r.headers.set(k, v);
-  return r;
-}
+// header ความปลอดภัยชุดเดียวกับระบบบริหารโรงเรียน (HSTS, CSP, nosniff, กันการฝังหน้าเว็บ) — ดู src/lib/auth-sessions.js
+const withHeaders = (response) => applySecurityHeaders(response);
 
 async function routeApi(request, env, url) {
   const method = request.method.toUpperCase();
@@ -37,7 +29,7 @@ async function routeApi(request, env, url) {
   }
 
   if (parts[1] === "auth" && parts[2] === "login" && method === "POST") return login(request, env);
-  if (parts[1] === "auth" && parts[2] === "logout" && method === "POST") return logout();
+  if (parts[1] === "auth" && parts[2] === "logout" && method === "POST") return logout(request, env);
 
   const user = await currentUser(request, env);
   switch (parts[1]) {
@@ -65,14 +57,14 @@ export default {
     }
     // ตรวจความพร้อมของการติดตั้ง (ไม่เปิดเผยค่าลับ)
     if (url.pathname === "/api/health") {
-      return json({ ok: !!env.JWT_SECRET && !!env.DB, jwt_secret_set: !!env.JWT_SECRET, database_bound: !!env.DB });
+      return withHeaders(json({ ok: !!env.JWT_SECRET && !!env.DB, jwt_secret_set: !!env.JWT_SECRET, database_bound: !!env.DB }));
     }
     try {
       if (!env.JWT_SECRET) return json({ error: "ยังไม่ได้ตั้งค่า JWT_SECRET ของ Worker" }, 500);
       await ensureSchema(env);
       return withHeaders(await routeApi(request, env, url));
     } catch (err) {
-      if (err instanceof HttpError) return json({ error: err.message }, err.status);
+      if (err instanceof HttpError) return withHeaders(json({ error: err.message }, err.status));
       const msg = String(err?.message || err);
       console.error("API error", url.pathname, msg);
       if (/D1_ERROR.*(exceeded|limit)/i.test(msg)) return json({ error: "ฐานข้อมูลใช้งานหนักชั่วคราว กรุณาลองใหม่อีกครั้ง" }, 503);

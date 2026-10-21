@@ -1,4 +1,5 @@
 import { json, readJson, fail, requireAdmin, requireViewer, intParam, text, audit, batchAll, HttpError, requireImporter } from "../lib/http.js";
+import { securityAlert, superadminIds } from "../lib/auth-sessions.js";
 import { HOMEROOM_GRANT_DAYS, nowSql } from "../lib/edit-requests.js";
 import { structureIssues, indicatorWord } from "../../public/js/grading.js";
 import { resolveYear, getSettings, listRooms, compareRoom, isPrimaryGrade, isSchoolGrade, mirrorHomerooms, compareThaiName, compareSubject, compareGrade, compareThai, ACTIVE_USER } from "../lib/data.js";
@@ -137,6 +138,12 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         await env.DB.prepare("DELETE FROM gr_staff_roles WHERE user_id = ?").bind(target).run();
       }
       await audit(env, user, "staff_role", { target, grant: !!b.grant });
+      // แจ้งเตือนความปลอดภัย: เจ้าของบัญชี + ผู้ดูแลระบบคนอื่น (ส่งผ่านกระดิ่งและ LINE ของระบบบริหารโรงเรียน)
+      const who = await env.DB.prepare("SELECT full_name FROM users WHERE id = ?").bind(target).first();
+      const change = b.grant ? "ได้รับสิทธิ์ทีมวัดและประเมินผล (แก้ไขข้อมูลส่วนกลางระบบผลการเรียน)" : "ถูกถอนสิทธิ์ทีมวัดและประเมินผล";
+      await securityAlert(env, [target], "account_changed", `${user.full_name} เปลี่ยนสิทธิ์ระบบรายงานผลการเรียนของคุณ: ${change}`).catch(() => {});
+      await securityAlert(env, (await superadminIds(env, user.id)).filter((id) => id !== target), "account_changed",
+        `${user.full_name} เปลี่ยนสิทธิ์ระบบรายงานผลการเรียนของ ${who?.full_name || "ผู้ใช้"}: ${change}`).catch(() => {});
       return json({ ok: true });
     }
   }

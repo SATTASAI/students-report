@@ -89,6 +89,7 @@ const MI = {
   clock: I('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   menu: I('<path d="M4 6h16M4 12h16M4 18h16"/>'),
   out: I('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),
+  lock: I('<path d="M12 3 4 6v6c0 4.6 3.4 8 8 9 4.6-1 8-4.4 8-9V6Z"/><path d="m9 12 2 2 4-4"/>'),
 };
 
 export const ROLES = {
@@ -235,6 +236,7 @@ export async function shell(active) {
     <nav class="side-nav" id="sideNav" aria-label="เมนู">${drawMenu()}</nav>
     <div class="side-foot"><div class="who-box"><span class="avatar">${esc((me.user.full_name || "?").replace(/^(นางสาว|นาง|นาย|ครู)/, "").trim().slice(0, 1))}</span>
       <span><b>${esc(me.user.full_name)}</b><small>${esc(ROLES[role].label)}</small></span></div>
+      <a class="nav-item" href="https://system.banpadengschool.ac.th/account.html#devices" target="_blank" rel="noopener" title="ดูและออกจากระบบอุปกรณ์ที่ใช้บัญชีนี้ (เปิดในระบบบริหารโรงเรียน)">${MI.lock}<span>อุปกรณ์และความปลอดภัย</span></a>
       <button class="nav-item" id="logoutBtn">${MI.out}<span>ออกจากระบบ</span></button></div>`;
   const mbar = document.createElement("header");
   mbar.className = "mobilebar";

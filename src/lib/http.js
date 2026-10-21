@@ -1,4 +1,5 @@
 import { AUTH_COOKIE_NAME, verifyJWT } from "./crypto.js";
+import { sessionIsActive } from "./auth-sessions.js";
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -41,6 +42,9 @@ export async function currentUser(request, env) {
   ).bind(payload.sub).first();
   if (!user || user.status !== "active") return null;
   if (user.session_version != null && Number(payload.sv || 1) !== Number(user.session_version)) return null;
+  // ออกจากระบบรายอุปกรณ์ (จัดการได้ที่หน้าบัญชีของระบบบริหารโรงเรียน): session ที่ถูกยกเลิกใช้ต่อไม่ได้
+  if (!await sessionIsActive(env, payload)) return null;
+  Object.defineProperty(user, "session_id", { value: payload.sid || null, enumerable: false });
   // is_admin = แก้ไขข้อมูลส่วนกลางได้ (ผู้ดูแลระบบ/ทีมวัดผล) — ผู้บริหารไม่มีสิทธิ์แก้ (16 ต.ค. 2569)
   // can_view_all = ดูได้ทุกรายวิชา/ทุกห้อง (รวมผู้บริหาร) · is_super = อนุมัติผลได้ (ผู้บริหาร/ผู้ดูแลระบบ)
   user.is_admin = user.role === "superadmin" || user.grade_role === "grade_admin";
