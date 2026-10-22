@@ -54,6 +54,8 @@ function book(d) {
   const c = d.course, s = d.settings;
   const W = indicatorWord(c.grade_level);
   const active = d.students.filter((x) => x.enrollment_status === "enrolled");
+  // ห้องใหญ่ (เกิน 25 คน): ตัวอักษร/ระยะบรรทัดเล็กลง ให้ตารางรายคนจบในหน้าเดียว (แนวนอนบีบมากกว่าแนวตั้ง)
+  const dense = (land) => d.students.length > 25 ? (land ? " dense-l" : " dense") : "";
   const draft = c.status !== "approved";
   const mark = draft ? `<div class="draft-mark"><span>ฉบับร่าง ยังไม่อนุมัติ</span></div>` : "";
   const head = (t) => `<div class="center"><b>${t} ปีการศึกษา ${td(c.year_be)} วิชา ${esc(c.name)} รหัสวิชา ${esc(td(c.code))} ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))}</b></div>`;
@@ -142,7 +144,7 @@ function book(d) {
     // หน้าแนวนอนเสมอ กว้างเท่าที่ใช้จริง: ตัวชี้วัดละ 30 มม. (คะแนน 12 + แก้ตัว 10 + ผล 8)
     return chunk(inds, 6).map((part) => { const tw = 84 + part.length * 30; return `<section class="sheet land">${mark}
       ${head(`ผลการประเมิน${W} ภาคเรียนที่ ${td(term)}`)}
-      <table class="t tiny fit" style="table-layout:fixed;width:${tw}mm">
+      <table class="t tiny fit${dense(true)}" style="table-layout:fixed;width:${tw}mm">
         <colgroup><col style="width:9mm"><col style="width:15mm"><col style="width:60mm">${part.map(() => '<col style="width:12mm"><col style="width:10mm"><col style="width:8mm">').join("")}</colgroup>
         <thead>
           <tr><th rowspan="4">เลขที่</th><th rowspan="4">เลข<br>ประจำตัว</th><th class="r">${W}ที่</th>${part.map((it) => `<th colspan="3">${td(order[it.id])}</th>`).join("")}</tr>
@@ -171,7 +173,7 @@ function book(d) {
     const fins = d.items.filter((i) => i.term_number === term && i.kind === "final");
     return `<section class="sheet land">${mark}
       ${head(`สรุปผลการประเมิน${W} ภาคเรียนที่ ${td(term)}`)}
-      <table class="t small fit">
+      <table class="t small fit${dense(true)}">
         <thead>
           <tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th><th colspan="5">ระหว่างภาค</th><th colspan="3">สอบปลายภาค</th><th rowspan="2" style="width:16mm">รวม</th><th rowspan="2" style="width:20mm">สถานะ<br>นักเรียน</th></tr>
           <tr><th style="width:17mm">${W}</th><th style="width:15mm">กลางภาค</th><th style="width:15mm">แก้ตัว</th><th style="width:16mm">คะแนน<br>นับได้</th><th style="width:15mm">รวม</th>
@@ -203,7 +205,7 @@ function book(d) {
   // ---------- 7b. สรุปผลการเรียนทั้งปี ----------
   const yearSummary = `<section class="sheet">${mark}
     ${head("สรุปผลการเรียนรายวิชา")}
-    <table class="t small fit">
+    <table class="t small fit${dense(false)}">
       <thead><tr><th style="width:10mm">เลขที่</th><th>ชื่อ–สกุล</th><th style="width:16mm">ภาค ${td(1)}</th><th style="width:16mm">ภาค ${td(2)}</th><th style="width:16mm">รวม</th>
         <th style="width:14mm">ผลการ<br>เรียน</th><th style="width:14mm">แก้ไข</th><th style="width:20mm">สถานะ</th></tr>
         <tr><th></th><th class="r">คะแนนเต็ม</th><th>${td(50)}</th><th>${td(50)}</th><th>${td(100)}</th><th>${td("0–4")}</th><th>${td("0–4")}</th><th></th></tr></thead>
@@ -224,7 +226,7 @@ function book(d) {
     const g = ASSESSMENT_GROUPS.find((x) => x.key === key);
     return `<section class="sheet">${mark}
       ${head(g.title)}
-      <table class="t small fit">
+      <table class="t small fit${dense(false)}">
         <thead><tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2" style="width:16mm">เลข<br>ประจำตัว</th><th rowspan="2">ชื่อ–สกุล</th><th colspan="${g.items.length}">${key === "trait" ? "คุณลักษณะอันพึงประสงค์ข้อที่" : "ตัวชี้วัดข้อที่"}</th><th rowspan="2" style="width:22mm">สรุปผล</th></tr>
           <tr>${g.items.map((_, i) => `<th style="width:9mm">${td(i + 1)}</th>`).join("")}</tr></thead>
         <tbody>${d.students.map((x) => {
@@ -272,7 +274,7 @@ function book(d) {
   // ครูผู้สอนไม่เช็กชื่อ — ใช้บันทึกการมาเรียนรายวันของครูประจำชั้น (ข ขาด · ล ลากิจ · ป ลาป่วย · ส มาสาย)
   const attendance = `<section class="sheet">${mark}
     ${head("บันทึกเวลาเรียน")}
-    <table class="t small fit">
+    <table class="t small fit${dense(false)}">
       <thead><tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2" style="width:16mm">เลข<br>ประจำตัว</th><th rowspan="2">ชื่อ–สกุล</th>
         <th colspan="5">จำนวนวัน (จากบันทึกการมาเรียนของครูประจำชั้น)</th><th rowspan="2" style="width:22mm">ผล</th><th rowspan="2" style="width:20mm">สถานะ</th></tr>
         <tr><th style="width:13mm">ขาด</th><th style="width:13mm">ลากิจ</th><th style="width:13mm">ลาป่วย</th><th style="width:13mm">มาสาย</th><th style="width:15mm">รวมขาด/ลา</th></tr></thead>
@@ -294,6 +296,27 @@ function book(d) {
 }
 
 document.getElementById("doc").innerHTML = books.map(book).join("");
+
+// ให้แต่ละหน้าจบในกระดาษแผ่นเดียว: ถ้าเนื้อหาสูงเกินพื้นที่พิมพ์ (A4 หักขอบตาม @page) ลดขนาดตัวอักษรของตาราง
+// ทีละ 0.25pt จนพอดี (ต่ำสุด 9pt) — ห้องเล็กไม่ถูกแตะ · ถ้ายังไม่พอ ตารางจะต่อหน้าถัดไปพร้อมหัวตารางซ้ำ
+await document.fonts?.ready;
+const MM = 96 / 25.4;
+for (const sheet of document.querySelectorAll(".sheet")) {
+  const table = sheet.querySelector("table.t.fit");
+  if (!table) continue;
+  const land = sheet.classList.contains("land");
+  const room = (land ? 186 : 269) - 4; // เผื่อระยะขอบบนตอนพิมพ์ (3 มม.) + ความคลาดเคลื่อน
+  const cs = getComputedStyle(sheet);
+  const used = () => (sheet.scrollHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) / MM;
+  const note = sheet.querySelector(".note");
+  let pt = parseFloat(getComputedStyle(table).fontSize) * 0.75;
+  while (used() > room && pt > 9) {
+    pt -= 0.25;
+    table.style.fontSize = `${pt}pt`;
+    table.style.lineHeight = "1";
+    if (note) { note.style.fontSize = `${Math.min(11, pt)}pt`; note.style.marginTop = "1mm"; }
+  }
+}
 </script>
 </body>
 </html>

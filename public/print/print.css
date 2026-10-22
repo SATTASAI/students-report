@@ -31,6 +31,11 @@ table.t.tiny { font-size: 12.5pt; line-height: 1.05; }
 /* ตารางข้อมูลรายคน: กว้างเท่าเนื้อหา (ไม่ยืดเต็มหน้า) จัดกึ่งกลาง — ชื่อขึ้นบรรทัดใหม่เฉพาะเมื่อพื้นที่ไม่พอ */
 table.t.struct td { overflow-wrap: anywhere; }
 table.t.struct td.c { font-size: 13pt; }
+table.t.dense { font-size: 12.5pt; line-height: 1.1; }
+table.t.dense th, table.t.dense td { padding: 0 3px; }
+table.t.dense-l { font-size: 10.5pt; line-height: 1.02; }
+table.t.dense-l th, table.t.dense-l td { padding: 0 3px; }
+table.t.dense + .note, table.t.dense-l + .note { font-size: 11pt; line-height: 1.1; margin-top: 1.5mm; }
 table.t.fit { width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
 .vert { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; max-height: 42mm; margin: 0 auto; font-weight: 400; }
 .info { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10mm; margin-top: 4mm; }
