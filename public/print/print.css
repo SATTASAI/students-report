@@ -29,6 +29,8 @@ table.t td.r { text-align: right; }
 table.t.small { font-size: 14pt; }
 table.t.tiny { font-size: 12.5pt; line-height: 1.05; }
 /* ตารางข้อมูลรายคน: กว้างเท่าเนื้อหา (ไม่ยืดเต็มหน้า) จัดกึ่งกลาง — ชื่อขึ้นบรรทัดใหม่เฉพาะเมื่อพื้นที่ไม่พอ */
+table.t.struct td { overflow-wrap: anywhere; }
+table.t.struct td.c { font-size: 13pt; }
 table.t.fit { width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
 .vert { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; max-height: 42mm; margin: 0 auto; font-weight: 400; }
 .info { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10mm; margin-top: 4mm; }

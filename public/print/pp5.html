@@ -139,8 +139,8 @@ function book(d) {
     const inds = d.items.filter((i) => i.term_number === term && i.kind === "indicator");
     if (!inds.length) return "";
     const order = Object.fromEntries(inds.map((it, k) => [it.id, k + 1]));
-    // กว้างเท่าที่ใช้จริง: ตัวชี้วัดละ 30 มม. (คะแนน 12 + แก้ตัว 10 + ผล 8) — ไม่เกิน 3 ตัวใช้หน้าแนวตั้ง
-    return chunk(inds, 6).map((part) => { const tw = 84 + part.length * 30; return `<section class="sheet${tw > 176 ? " land" : ""}">${mark}
+    // หน้าแนวนอนเสมอ กว้างเท่าที่ใช้จริง: ตัวชี้วัดละ 30 มม. (คะแนน 12 + แก้ตัว 10 + ผล 8)
+    return chunk(inds, 6).map((part) => { const tw = 84 + part.length * 30; return `<section class="sheet land">${mark}
       ${head(`ผลการประเมิน${W} ภาคเรียนที่ ${td(term)}`)}
       <table class="t tiny fit" style="table-layout:fixed;width:${tw}mm">
         <colgroup><col style="width:9mm"><col style="width:15mm"><col style="width:60mm">${part.map(() => '<col style="width:12mm"><col style="width:10mm"><col style="width:8mm">').join("")}</colgroup>
@@ -258,11 +258,12 @@ function book(d) {
         const stds = [...new Set(links.map((x) => splitCode(x.code).std).filter(Boolean))], nos = links.map((x) => splitCode(x.code).no).filter(Boolean);
         return `<tr><td></td><td>สอบปลายภาค</td><td></td><td class="c">${esc(td(stds.join(", ")))}</td><td class="c">${esc(td(nos.join(", ")))}</td><td class="c">${fmt(finMax)}</td><td>แบบทดสอบ</td><td></td></tr>`; })() : ""];
   });
-  const structure = `<section class="sheet land">${mark}
+  // หน้าแนวตั้ง: คอลัมน์แคบลง ชื่อหน่วย/ภาระงานขึ้นบรรทัดใหม่ได้
+  const structure = `<section class="sheet">${mark}
     ${head("โครงสร้างรายวิชา")}
-    <table class="t small">
-      <thead><tr><th style="width:16mm">หน่วยการ<br>เรียนรู้ที่</th><th>ชื่อหน่วยการเรียนรู้</th><th style="width:16mm">จำนวน<br>ชั่วโมง</th><th style="width:26mm">สาระ<br>มาตรฐาน</th>
-        <th style="width:24mm">${W}<br>ข้อที่</th><th style="width:15mm">คะแนน</th><th style="width:48mm">ภาระงาน/ชิ้นงาน/การประเมิน</th><th style="width:22mm">หมายเหตุ</th></tr></thead>
+    <table class="t small struct">
+      <thead><tr><th style="width:18mm">หน่วยการ<br>เรียนรู้ที่</th><th>ชื่อหน่วยการเรียนรู้</th><th style="width:13mm">จำนวน<br>ชั่วโมง</th><th style="width:19mm">สาระ<br>มาตรฐาน</th>
+        <th style="width:19mm">${W}<br>ข้อที่</th><th style="width:13mm">คะแนน</th><th style="width:33mm">ภาระงาน/ชิ้นงาน/<br>การประเมิน</th><th style="width:15mm">หมายเหตุ</th></tr></thead>
       <tbody>${structureRows.join("")}</tbody>
     </table>
   </section>`;
