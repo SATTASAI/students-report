@@ -635,7 +635,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
       }
       if (b.what === "body") {
         const rows = await regBody();
-        for (let i = 0; i < rows.length; i += 90) await env.DB.batch(rows.slice(i, i + 90).map((r) => env.DB.prepare(
+        await batchAll(env, rows.map((r) => env.DB.prepare(
           "INSERT OR IGNORE INTO gr_body (academic_year_id, student_id, round, weight, height, updated_by) VALUES (?,?,1,?,?,?)"
         ).bind(year.id, r.student_id, r.weight_kg > 0 && r.weight_kg < 200 ? r.weight_kg : null, r.height_cm > 30 && r.height_cm < 230 ? r.height_cm : null, user.id)));
         await audit(env, user, "sync.body", { year: year.id, rows: rows.length });

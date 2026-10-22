@@ -739,15 +739,29 @@ async function loadPushPanel() {
 }
 
 // ---------------- ส่งผล / ส่งคืน / อนุมัติ ----------------
+// รอให้คะแนนที่พิมพ์ไว้บันทึกเสร็จ (รวมชุดที่กำลังส่งอยู่) ก่อนส่งผล — ไม่เกินราว 15 วินาที
+async function settleSaves() {
+  clearTimeout(saveTimer);
+  for (let i = 0; i < 60 && (saving || pending.size); i++) {
+    if (!saving && pending.size) await flush();
+    else await new Promise((r) => setTimeout(r, 250));
+  }
+  return !saving && !pending.size;
+}
+
+async function reloadCourse() {
+  try { data = await api(`/api/courses/${courseId}`); renderHeader(); render(); } catch (e) { showError(e); }
+}
+
 async function submitCourse() {
-  await flush();
-  if (pending.size || saving) { toast("รอให้บันทึกคะแนนเสร็จก่อน", "bad"); return; }
+  if (!(await settleSaves())) { toast("ยังบันทึกคะแนนไม่เสร็จ ตรวจการเชื่อมต่อแล้วลองอีกครั้ง", "bad"); return; }
+  if (invalidCount()) { toast(`มีช่องคะแนนไม่ถูกต้อง ${invalidCount()} ช่อง แก้ก่อนส่งผล`, "bad"); return; }
   if (data.structure_issues?.length) { toast(`ส่งไม่ได้: ${data.structure_issues[0]}`, "bad"); tab = "setup"; renderTabs(); render(); return; }
   let res;
   try {
     res = await api(`/api/courses/${courseId}/submit`, { method: "POST", body: {} });
   } catch (err) {
-    if (!err.data?.needs_confirm) { showError(err); return; }
+    if (!err.data?.needs_confirm) { showError(err); if (err.status === 409) await reloadCourse(); return; }
     const ch = err.data.checks;
     const list = (arr, fn) => arr.slice(0, 10).map((x) => `<li>${fn(x)}</li>`).join("") + (arr.length > 10 ? `<li>… อีก ${arr.length - 10} คน</li>` : "");
     const block = (title, arr, fn, cls = "warn") => arr.length ? `<div class="note ${cls}" style="margin-top:10px"><b>${title} (${arr.length})</b><ul style="margin:4px 0 0;padding-left:20px">${list(arr, fn)}</ul></div>` : "";
@@ -761,7 +775,8 @@ async function submitCourse() {
         ${block("ได้ มส", ch.ms, (x) => esc(x.name), "bad")}`,
     });
     if (!ok.ok) return;
-    try { res = await api(`/api/courses/${courseId}/submit`, { method: "POST", body: { force: true } }); } catch (e2) { showError(e2); return; }
+    try { res = await api(`/api/courses/${courseId}/submit`, { method: "POST", body: { force: true, expect_rev: err.data.data_rev } }); }
+    catch (e2) { showError(e2); if (e2.status === 409) await reloadCourse(); return; }
   }
   data = res;
   toast("ส่งผลการเรียนแล้ว");

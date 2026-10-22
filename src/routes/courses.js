@@ -1,4 +1,4 @@
-import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
+import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, guardedBatch, decimalOf } from "../lib/http.js";
 import { assertCourseAccess, courseBundle, loadCourse, canViewCourse, studentName, isLeft } from "../lib/data.js";
 import { clean, computeStudentResult, resultWithAttendance, validateRemedial, structureIssues, indicatorWord, indicatorResult, submissionChecks } from "../../public/js/grading.js";
 import { gradeSettings, getSettings, assessmentsFor, ITEM_ORDER_SQL, ITEM_ORDER_BY, compareThai } from "../lib/data.js";
@@ -535,6 +535,8 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     const readOnly = new Set(bundle.roster.filter(isLeft).map((s) => s.id)); // ย้ายออก/ออกกลางคัน: แสดงท้ายห้อง แก้คะแนนไม่ได้
     const errors = [];
     const stmts = [];
+    const upserts = []; // [item_id, student_id, score, user_id] — รวมเป็นคำสั่งละหลายแถว ลดจำนวนคำสั่งต่อการบันทึก
+    const clears = []; // [item_id, student_id] ที่ลบคะแนนเดิม
     const rawAfter = (sid, itemId) => { // คะแนนเดิมหลังรวมการแก้ในชุดนี้
       const inBatch = changes.find((x) => "score" in x && Number(x.item_id) === itemId && Number(x.student_id) === sid);
       if (inBatch) return decimalOf(inBatch.score);
@@ -562,12 +564,8 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
           score = clean(score); // ผ่านการตรวจทศนิยมไม่เกิน 2 ตำแหน่งแล้ว — ไม่ปัด
         }
         // ลบคะแนนเดิม: ถ้ามีคะแนนแก้ตัวอยู่ เก็บแถวไว้ (score = NULL) เพื่อไม่ให้คะแนนแก้ตัวหายตาม
-        if (score == null) stmts.push(
-          env.DB.prepare("UPDATE gr_scores SET score = NULL, updated_by = ?, updated_at = datetime('now') WHERE item_id = ? AND student_id = ?").bind(user.id, item.id, sid),
-          env.DB.prepare("DELETE FROM gr_scores WHERE item_id = ? AND student_id = ? AND score IS NULL AND remedial IS NULL").bind(item.id, sid));
-        else stmts.push(env.DB.prepare(`INSERT INTO gr_scores (item_id, student_id, score, updated_by, updated_at) VALUES (?,?,?,?,datetime('now'))
-              ON CONFLICT(item_id, student_id) DO UPDATE SET score = excluded.score, updated_by = excluded.updated_by, updated_at = datetime('now')`)
-            .bind(item.id, sid, score, user.id));
+        if (score == null) clears.push([item.id, sid]);
+        else upserts.push([item.id, sid, score, user.id]);
       }
       if ("remedial" in c) {
         // คะแนนแก้ตัว: เฉพาะตัวชี้วัดที่คะแนนเดิมไม่ผ่าน, เก็บคะแนนจริง นับได้ไม่เกินเกณฑ์ผ่าน
@@ -585,7 +583,21 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
       }
     }
     if (errors.length) return json({ error: "มีคะแนนที่ไม่ถูกต้อง ระบบยังไม่ได้บันทึกชุดนี้", errors }, 400);
-    await batchAll(env, stmts);
+    // คะแนนก่อน (upsert) แล้วจึงลบ/แก้ตัว ตามลำดับเดิมของแต่ละช่อง: ช่องเดียวกันในชุดเดียวมีได้ครั้งเดียวจากหน้าเว็บ
+    const writes = [];
+    for (let i = 0; i < upserts.length; i += SCORE_ROWS_PER_STMT) {
+      const rows = upserts.slice(i, i + SCORE_ROWS_PER_STMT);
+      writes.push(env.DB.prepare(`INSERT INTO gr_scores (item_id, student_id, score, updated_by, updated_at) VALUES ${rows.map(() => "(?,?,?,?,datetime('now'))").join(",")}
+        ON CONFLICT(item_id, student_id) DO UPDATE SET score = excluded.score, updated_by = excluded.updated_by, updated_at = datetime('now')`).bind(...rows.flat()));
+    }
+    for (let i = 0; i < clears.length; i += CLEAR_ROWS_PER_STMT) {
+      const rows = clears.slice(i, i + CLEAR_ROWS_PER_STMT), keys = rows.map(() => "(?,?)").join(",");
+      writes.push(
+        env.DB.prepare(`UPDATE gr_scores SET score = NULL, updated_by = ?, updated_at = datetime('now') WHERE (item_id, student_id) IN (VALUES ${keys})`).bind(user.id, ...rows.flat()),
+        env.DB.prepare(`DELETE FROM gr_scores WHERE (item_id, student_id) IN (VALUES ${keys}) AND score IS NULL AND remedial IS NULL`).bind(...rows.flat()));
+    }
+    writes.push(...stmts);
+    await saveCourseData(env, course, writes);
     if (changes.some((c) => "remedial" in c)) {
       await audit(env, user, "scores.remedial", { course: course.id, changes: changes.filter((c) => "remedial" in c) });
       return json(serializeBundle(await courseBundle(env, course), user));
@@ -645,7 +657,7 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
         .bind(course.id, sid, next.hours_attended ?? null, next.special ?? null, next.special_note ?? null, next.remedial_type ?? null,
           next.remedial_grade ?? null, next.remedial_date ?? null, next.remedial_note ?? null, user.id));
     }
-    await batchAll(env, stmts);
+    await saveCourseData(env, course, stmts);
     await audit(env, user, "results.update", { course: course.id, changes });
     return json(serializeBundle(await courseBundle(env, course), user));
   }
@@ -668,11 +680,16 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     const checks = submissionChecks(bundle.roster.map((s) => ({ id: s.id, name: studentName(s), enrollment_status: s.enrollment_status })), bundle.computed);
     const pending = checks.blanks.filter((x) => !bundle.results[x.id]?.special);
     const warn = pending.length + checks.decimals.length + checks.borderline.length + checks.ms.length + missingTerms.length;
+    const rev = Number(course.data_rev || 0);
     if (warn && !b.force) {
-      return json({ error: "ตรวจพบรายการที่ควรดูก่อนส่ง", needs_confirm: true, checks: { ...checks, missing_terms: missingTerms }, pending: pending.map((x) => x.name) }, 409);
+      return json({ error: "ตรวจพบรายการที่ควรดูก่อนส่ง", needs_confirm: true, data_rev: rev, checks: { ...checks, missing_terms: missingTerms }, pending: pending.map((x) => x.name) }, 409);
     }
+    // ยืนยันจากรายการตรวจชุดก่อน: ถ้าคะแนนเปลี่ยนหลังจากนั้น (เช่น ครูอีกคนบันทึก) ต้องตรวจใหม่
+    if (b.force && b.expect_rev != null && Number(b.expect_rev) !== rev) fail(409, STALE_SUBMIT);
     // ส่งผลใหม่: สิทธิ์แก้จากคำขอแก้ไขสิ้นสุด (แก้อีกต้องขอใหม่)
-    await env.DB.prepare("UPDATE gr_courses SET locked = 1, submitted_at = datetime('now'), submitted_by = ?, approved_at = NULL, approved_by = NULL, reviewed_at = NULL, reviewed_by = NULL, edit_granted_at = NULL WHERE id = ?").bind(user.id, course.id).run();
+    // ล็อกเฉพาะเมื่อข้อมูลยังเป็นรุ่นเดียวกับที่เพิ่งตรวจ และยังไม่มีใครส่ง/ล็อกไปก่อน (กันการบันทึกที่แทรกระหว่างตรวจกับล็อก)
+    const locked = await env.DB.prepare("UPDATE gr_courses SET locked = 1, submitted_at = datetime('now'), submitted_by = ?, approved_at = NULL, approved_by = NULL, reviewed_at = NULL, reviewed_by = NULL, edit_granted_at = NULL WHERE id = ? AND locked = 0 AND data_rev = ?").bind(user.id, course.id, rev).run();
+    if (!locked.meta?.changes) fail(409, STALE_SUBMIT);
     await audit(env, user, "course.submit", { course: course.id, blanks: pending.length, decimals: checks.decimals.length, borderline: checks.borderline.length, ms: checks.ms.length });
     return json(serializeBundle(await courseBundle(env, await loadCourse(env, course.id)), user));
   }
@@ -690,3 +707,17 @@ async function sameSubjectFamily(env, a, b) {
 }
 
 export { getSettings };
+
+const SCORE_ROWS_PER_STMT = 20; // 4 ค่าต่อแถว × 20 = 80 ค่า (D1 จำกัด 100 ค่าต่อคำสั่ง)
+const CLEAR_ROWS_PER_STMT = 45; // 2 ค่าต่อแถว
+const STALE_SUBMIT = "มีการแก้คะแนนหรือผลการเรียนระหว่างที่กำลังส่ง ระบบยังไม่ได้ส่งผล — ตรวจอีกครั้งแล้วกดส่งใหม่";
+
+// บันทึกคะแนน/ผลของรายวิชาใน transaction เดียว: ทั้งชุดสำเร็จหรือไม่บันทึกเลย
+// และบันทึกได้เฉพาะเมื่อสถานะล็อกยังเหมือนตอนตรวจสิทธิ์ (กันกรณีส่งผล/ส่งคืนแทรกเข้ามาระหว่างบันทึก) แล้วเพิ่มเลขรุ่นข้อมูล
+async function saveCourseData(env, course, writes) {
+  if (!writes.length) return;
+  await guardedBatch(env,
+    [{ sql: "SELECT 1 FROM gr_courses WHERE id = ? AND locked IS NOT ?", values: [course.id, course.locked ? 1 : 0] }],
+    [...writes, env.DB.prepare("UPDATE gr_courses SET data_rev = data_rev + 1 WHERE id = ?").bind(course.id)],
+    "รายวิชานี้เพิ่งถูกส่งผลหรือเปลี่ยนสถานะ ระบบยังไม่ได้บันทึกชุดนี้ — โหลดหน้าใหม่");
+}

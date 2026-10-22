@@ -204,7 +204,7 @@ export async function homeroomNames(env, yearId, grade, room) {
 export async function loadCourse(env, courseId) {
   const course = await env.DB.prepare(
     `SELECT c.id, c.classroom, c.locked, c.submitted_at, c.submitted_by, c.subject_id,
-            c.approved_at, c.approved_by, c.return_note, c.returned_at, c.reviewed_at, c.reviewed_by, c.edit_granted_at,
+            c.approved_at, c.approved_by, c.return_note, c.returned_at, c.reviewed_at, c.reviewed_by, c.edit_granted_at, c.data_rev,
             (SELECT full_name FROM users WHERE id = c.reviewed_by) AS reviewed_by_name,
             (SELECT full_name FROM users WHERE id = c.submitted_by) AS submitted_by_name,
             (SELECT full_name FROM users WHERE id = c.approved_by) AS approved_by_name,
