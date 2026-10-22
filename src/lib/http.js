@@ -126,9 +126,29 @@ export async function audit(env, user, action, detail) {
   } catch { /* บันทึกประวัติไม่สำเร็จไม่ควรทำให้งานหลักล้ม */ }
 }
 
-// D1 จำกัดจำนวนคำสั่งต่อ batch — แบ่งเป็นชุด
-export async function batchAll(env, statements, size = 90) {
-  for (let i = 0; i < statements.length; i += size) await env.DB.batch(statements.slice(i, i + size));
+// batch ของ D1 = transaction เดียว: สำเร็จทั้งหมดหรือไม่บันทึกเลย
+// ส่งเป็นชุดเดียวเสมอเมื่อไม่เกิน ATOMIC_MAX คำสั่ง (งานปกติทุกงานอยู่ในเกณฑ์นี้)
+// เกินกว่านั้น (เช่น นำเข้าข้อมูลทั้งโรงเรียน) จึงแบ่งชุด — ชุดที่ล้มจะไม่บันทึก แต่ชุดก่อนหน้าบันทึกแล้ว
+export const ATOMIC_MAX = 500;
+export async function batchAll(env, statements, size = ATOMIC_MAX) {
+  if (!statements.length) return [];
+  if (statements.length <= ATOMIC_MAX) return env.DB.batch(statements);
+  const out = [];
+  for (let i = 0; i < statements.length; i += size) out.push(...await env.DB.batch(statements.slice(i, i + size)));
+  return out;
+}
+
+// บันทึกแบบมีเงื่อนไข: guards = คำสั่ง SELECT ที่ "ต้องไม่คืนแถว" ถ้าคืนแถวแปลว่าข้อมูลเปลี่ยนไประหว่างทาง
+// → ยกเลิกทั้งชุดใน transaction เดียวกัน แล้วตอบ 409 ด้วยข้อความที่กำหนด
+export async function guardedBatch(env, guards, statements, message) {
+  const all = [...guards.map(({ sql, values }) => env.DB.prepare(`INSERT INTO gr_guard (ok) SELECT 0 WHERE EXISTS (${sql})`).bind(...values)), ...statements];
+  if (all.length > ATOMIC_MAX) fail(400, "ข้อมูลชุดนี้ใหญ่เกินไป กรุณาบันทึกทีละน้อยลง");
+  try {
+    return await env.DB.batch(all);
+  } catch (err) {
+    if (/gr_guard_tripped/.test(String(err?.message || err))) fail(409, message);
+    throw err;
+  }
 }
 
 // ตัวเลขจากผู้ใช้แบบเข้มงวด (ฝั่งเซิร์ฟเวอร์ต้องเข้มเท่าหน้าเว็บ):
