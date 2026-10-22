@@ -139,10 +139,11 @@ function book(d) {
     const inds = d.items.filter((i) => i.term_number === term && i.kind === "indicator");
     if (!inds.length) return "";
     const order = Object.fromEntries(inds.map((it, k) => [it.id, k + 1]));
-    return chunk(inds, 6).map((part) => `<section class="sheet land">${mark}
+    // กว้างเท่าที่ใช้จริง: ตัวชี้วัดละ 30 มม. (คะแนน 12 + แก้ตัว 10 + ผล 8) — ไม่เกิน 3 ตัวใช้หน้าแนวตั้ง
+    return chunk(inds, 6).map((part) => { const tw = 84 + part.length * 30; return `<section class="sheet${tw > 176 ? " land" : ""}">${mark}
       ${head(`ผลการประเมิน${W} ภาคเรียนที่ ${td(term)}`)}
-      <table class="t tiny" style="table-layout:fixed">
-        <colgroup><col style="width:9mm"><col style="width:15mm"><col style="width:60mm">${part.map(() => '<col><col style="width:11mm"><col style="width:8mm">').join("")}</colgroup>
+      <table class="t tiny fit" style="table-layout:fixed;width:${tw}mm">
+        <colgroup><col style="width:9mm"><col style="width:15mm"><col style="width:60mm">${part.map(() => '<col style="width:12mm"><col style="width:10mm"><col style="width:8mm">').join("")}</colgroup>
         <thead>
           <tr><th rowspan="4">เลขที่</th><th rowspan="4">เลข<br>ประจำตัว</th><th class="r">${W}ที่</th>${part.map((it) => `<th colspan="3">${td(order[it.id])}</th>`).join("")}</tr>
           <tr><th class="r">สาระ, มาตรฐาน</th>${part.map((it) => `<th colspan="3">${esc(td(splitCode(it.code).std || "–"))}</th>`).join("")}</tr>
@@ -160,7 +161,7 @@ function book(d) {
         }).join("")}</tbody>
       </table>
       <div class="note">${part.map((it) => `<b>${td(order[it.id])}</b> ${esc(td(it.code || ""))} ${esc(it.title)}`).join(" ; ")}</div>
-    </section>`).join("");
+    </section>`; }).join("");
   }).join("");
 
   // ---------- 7a. สรุปผลการประเมิน รายภาค ----------
@@ -170,7 +171,7 @@ function book(d) {
     const fins = d.items.filter((i) => i.term_number === term && i.kind === "final");
     return `<section class="sheet land">${mark}
       ${head(`สรุปผลการประเมิน${W} ภาคเรียนที่ ${td(term)}`)}
-      <table class="t small">
+      <table class="t small fit">
         <thead>
           <tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th><th colspan="5">ระหว่างภาค</th><th colspan="3">สอบปลายภาค</th><th rowspan="2" style="width:16mm">รวม</th><th rowspan="2" style="width:20mm">สถานะ<br>นักเรียน</th></tr>
           <tr><th style="width:17mm">${W}</th><th style="width:15mm">กลางภาค</th><th style="width:15mm">แก้ตัว</th><th style="width:16mm">คะแนน<br>นับได้</th><th style="width:15mm">รวม</th>
@@ -202,7 +203,7 @@ function book(d) {
   // ---------- 7b. สรุปผลการเรียนทั้งปี ----------
   const yearSummary = `<section class="sheet">${mark}
     ${head("สรุปผลการเรียนรายวิชา")}
-    <table class="t small">
+    <table class="t small fit">
       <thead><tr><th style="width:10mm">เลขที่</th><th>ชื่อ–สกุล</th><th style="width:16mm">ภาค ${td(1)}</th><th style="width:16mm">ภาค ${td(2)}</th><th style="width:16mm">รวม</th>
         <th style="width:14mm">ผลการ<br>เรียน</th><th style="width:14mm">แก้ไข</th><th style="width:20mm">สถานะ</th></tr>
         <tr><th></th><th class="r">คะแนนเต็ม</th><th>${td(50)}</th><th>${td(50)}</th><th>${td(100)}</th><th>${td("0–4")}</th><th>${td("0–4")}</th><th></th></tr></thead>
@@ -223,7 +224,7 @@ function book(d) {
     const g = ASSESSMENT_GROUPS.find((x) => x.key === key);
     return `<section class="sheet">${mark}
       ${head(g.title)}
-      <table class="t small">
+      <table class="t small fit">
         <thead><tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2" style="width:16mm">เลข<br>ประจำตัว</th><th rowspan="2">ชื่อ–สกุล</th><th colspan="${g.items.length}">${key === "trait" ? "คุณลักษณะอันพึงประสงค์ข้อที่" : "ตัวชี้วัดข้อที่"}</th><th rowspan="2" style="width:22mm">สรุปผล</th></tr>
           <tr>${g.items.map((_, i) => `<th style="width:9mm">${td(i + 1)}</th>`).join("")}</tr></thead>
         <tbody>${d.students.map((x) => {
@@ -270,7 +271,7 @@ function book(d) {
   // ครูผู้สอนไม่เช็กชื่อ — ใช้บันทึกการมาเรียนรายวันของครูประจำชั้น (ข ขาด · ล ลากิจ · ป ลาป่วย · ส มาสาย)
   const attendance = `<section class="sheet">${mark}
     ${head("บันทึกเวลาเรียน")}
-    <table class="t small">
+    <table class="t small fit">
       <thead><tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2" style="width:16mm">เลข<br>ประจำตัว</th><th rowspan="2">ชื่อ–สกุล</th>
         <th colspan="5">จำนวนวัน (จากบันทึกการมาเรียนของครูประจำชั้น)</th><th rowspan="2" style="width:22mm">ผล</th><th rowspan="2" style="width:20mm">สถานะ</th></tr>
         <tr><th style="width:13mm">ขาด</th><th style="width:13mm">ลากิจ</th><th style="width:13mm">ลาป่วย</th><th style="width:13mm">มาสาย</th><th style="width:15mm">รวมขาด/ลา</th></tr></thead>
