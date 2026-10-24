@@ -44,7 +44,7 @@ export const IMPORT_KINDS = {
       { key: "gender", label: "เพศ", aliases: ["เพศ"], optional: true },
       { key: "national_id", label: "เลขประจำตัวประชาชน", aliases: ["เลขประจำตัวประชาชน", "เลขบัตรประชาชน"], optional: true },
       { key: "birth_date", label: "วันเกิด (ค.ศ.)", aliases: ["วันเกิด", "วันเกิด (ค.ศ.)", "วันเดือนปีเกิด"], optional: true },
-      { key: "room", label: "ห้อง", aliases: ["ห้อง", "ชั้น/ห้อง", "ห้องเรียน"], optional: true },
+      { key: "room", label: "ห้อง", aliases: ["ห้อง", "ชั้น/ห้อง", "ห้องเรียน", "ชั้นเรียน", "ชั้น", "ระดับชั้น"], optional: true },
     ],
     note: "เลขประจำตัวที่มีอยู่แล้ว = ปรับชื่อและย้ายเข้าห้องตามไฟล์ (นักเรียนที่เคยย้ายออกจะกลับเข้าเรียน ใช้ข้อมูลเดิม) · เลขใหม่ = เพิ่มนักเรียน ต้องระบุห้องแบบ ป.1/2 · วันเกิดแบบ 2018-05-31 · ห้ามเลขประจำตัวประชาชนซ้ำกับนักเรียนคนอื่น",
   },
@@ -93,6 +93,17 @@ export function gridToRows(kind, grid) {
     const width = Math.max(...grid.map((r) => r.length));
     const cols = width >= spec.columns.length ? spec.columns : required;
     cols.forEach((c, i) => { index[c.key] = i; });
+  }
+  // หัวคอลัมน์ห้องสะกดไม่ตรงแม่แบบ → หาคอลัมน์ที่ค่าเป็นห้อง (เช่น ป.1/1, อ.3/1) แทน
+  if (header && !("room" in index) && spec.columns.some((c) => c.key === "room")) {
+    const used = new Set(Object.values(index));
+    const ROOM = /^(ป|อ)\.?\s*\d\s*\/\s*\d{1,2}$/;
+    const width = Math.max(...body.map((r) => r.length), 0);
+    for (let c = 0; c < width && !("room" in index); c++) {
+      if (used.has(c)) continue;
+      const vals = body.map((r) => r[c] ?? "").filter((v) => v !== "");
+      if (vals.length && vals.filter((v) => ROOM.test(v)).length / vals.length >= 0.8) index.room = c;
+    }
   }
   const rows = body.map((r) => Object.fromEntries(spec.columns.filter((c) => c.key in index).map((c) => [c.key, r[index[c.key]] ?? ""])));
   return { rows, header };
