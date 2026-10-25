@@ -76,12 +76,13 @@ check(ab1.absences.length === 2 && ab2.absences.length === 1, `หนังส�
 // ---------- หน้าเว็บ (ครู) ----------
 const t = await login("teacher1@test.local");
 await t.goto(`${BASE}/`);
-await t.waitForSelector("#termCards .term-card");
-check(await t.locator('#termCards .term-card[aria-pressed="true"]').getAttribute("data-term") === "2", "ค่าเริ่มต้นต้องเป็นภาคปัจจุบัน (ภาค 2)");
+await t.waitForSelector(".sidebar .term-toggle");
+check(await t.locator(".sidebar .term-toggle").getAttribute("aria-checked") === "true", "ค่าเริ่มต้นต้องเป็นภาคปัจจุบัน (ภาค 2)");
+check(await t.locator(".term-card").count() === 0, "หน้าแรกไม่มีการ์ดภาคเรียนแล้ว");
 await t.screenshot({ path: `${OUT}/terms-index-t2.png` });
-await t.click('#termCards .term-card[data-term="1"]');
+await t.click(".sidebar .term-toggle");
 await t.waitForURL(/term=1/);
-await t.waitForSelector('#termCards .term-card[data-term="1"][aria-pressed="true"]');
+await t.waitForSelector('.sidebar .term-toggle[aria-checked="false"]');
 check(await t.locator("#termBand.t1").count() === 1, "หน้าแรกต้องมีแถบภาคเรียนที่ 1");
 check((await t.locator(".course-row").first().innerText()).includes("ภาค 1"), "ความคืบหน้าในหน้าแรกต้องเป็นของภาค 1");
 await t.screenshot({ path: `${OUT}/terms-index-t1.png` });
