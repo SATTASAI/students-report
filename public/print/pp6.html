@@ -55,6 +55,18 @@ function attendanceHtml(a = {}) {
     : line(`ภาคเรียนที่ ${td(1)}`, t(1)) + line(`ภาคเรียนที่ ${td(2)}`, t(2)) + line("รวมทั้งปี", a, true)}</tbody></table>`;
 }
 
+// กิจกรรมพัฒนาผู้เรียน: ภาค 1 = ผลภาค 1 · ภาค 2 = ผลภาค 1, ภาค 2 และผลทั้งปี (ผ่านเมื่อผ่านทั้ง 2 ภาค)
+const ACT = ASSESSMENT_GROUPS.find((g) => g.type === "activity");
+function activityHtml(v = {}) {
+  const cols = TERM === 1 ? [1] : [1, 2, null];
+  const head = (t) => t ? `ภาค ${td(t)}` : "ทั้งปี";
+  return `<table class="t tiny" style="font-size:${TERM === 1 ? 14 : 13}pt;margin-top:2mm">
+    <thead><tr><th style="text-align:left">${ACT.title}${TERM === 1 ? ` ภาคเรียนที่ ${td(1)}` : ""}</th>${cols.map((t) => `<th style="width:${TERM === 1 ? 42 : 24}mm">${TERM === 1 ? "ผลการประเมิน" : head(t)}</th>`).join("")}</tr></thead>
+    <tbody>${ACT.items.map(([k, label]) => `<tr><td>&nbsp;&nbsp;${esc(label)}</td>${cols.map((t) => `<td class="c">${levelText(ACT, activityResult(k, v, t))}</td>`).join("")}</tr>`).join("")}
+      <tr><td class="r"><b>สรุป</b></td>${cols.map((t) => `<td class="c"><b>${levelText(ACT, summarizeGroup(ACT, v, t))}</b></td>`).join("")}</tr></tbody>
+  </table>`;
+}
+
 function page(st) {
   const basic = st.subjects.filter((x) => x.subject_type === "basic");
   const add = st.subjects.filter((x) => x.subject_type === "additional");
@@ -87,13 +99,12 @@ function page(st) {
           : `<tr><td colspan="2" class="r"><b>รวมเวลาเรียน / ผลการเรียนเฉลี่ย</b></td><td class="c">${td(hours)}</td><td colspan="3"></td><td class="c"><b>${st.gpa == null ? "" : fmt(st.gpa)}</b></td><td></td></tr>`}
       </tbody>
     </table>
-    ${TERM === 1 ? `<div style="font-size:13pt">คะแนนภาคเรียนที่ ${td(1)} เต็มวิชาละ ${td(50)} คะแนน ไม่ปัดเศษ · ผลการเรียน (เกรด) ผลการประเมินคุณลักษณะอันพึงประสงค์ การอ่าน คิดวิเคราะห์ และเขียน สมรรถนะสำคัญ และกิจกรรมพัฒนาผู้เรียน สรุปเมื่อจบปีการศึกษาในภาคเรียนที่ ${td(2)}</div>` : `
+    ${TERM === 1 ? `<div style="font-size:13pt">คะแนนภาคเรียนที่ ${td(1)} เต็มวิชาละ ${td(50)} คะแนน ไม่ปัดเศษ · ผลการเรียน (เกรด) ผลการประเมินคุณลักษณะอันพึงประสงค์ การอ่าน คิดวิเคราะห์ และเขียน และสมรรถนะสำคัญ สรุปเมื่อจบปีการศึกษาในภาคเรียนที่ ${td(2)}</div>` : `
     <table class="t tiny" style="font-size:14pt">
       <thead><tr><th>การประเมิน</th><th style="width:42mm">ผลการประเมิน</th></tr></thead>
-      <tbody>${ASSESSMENT_GROUPS.map((g) => g.type === "activity"
-        ? g.items.map(([k, label], i) => `<tr><td>${i === 0 ? `<b>${g.title}</b><br>` : ""}&nbsp;&nbsp;${esc(label)}</td><td class="c">${levelText(g, activityResult(k, st.assessments))}</td></tr>`).join("")
-        : `<tr><td><b>${g.title}</b></td><td class="c">${levelText(g, summarizeGroup(g, st.assessments))}</td></tr>`).join("")}</tbody>
+      <tbody>${ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => `<tr><td><b>${g.title}</b></td><td class="c">${levelText(g, summarizeGroup(g, st.assessments))}</td></tr>`).join("")}</tbody>
     </table>`}
+    ${activityHtml(st.assessments)}
     ${attendanceHtml(st.attendance)}
     ${bodyHtml(st.body)}
     <div style="margin-top:2mm">ความคิดเห็นของครูประจำชั้น</div>${commentHtml(st.comments)}

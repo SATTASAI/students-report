@@ -48,18 +48,18 @@ await t.mouse.move(5, 5);
 await t.click('.side-nav a[href="/activities.html"]');
 await t.waitForSelector("#sheet");
 const r2 = t.locator("#sheet tbody tr").nth(1);
-await r2.locator('input[data-key="act_scout_t"]').uncheck();
-await r2.locator('input[data-key="act_club_o"]').uncheck();
+await r2.locator('input[data-key="act_scout_t2"]').uncheck();
+await r2.locator('input[data-key="act_club_o2"]').uncheck();
 await saved(t);
 const actSum = await r2.locator("[data-sum]").innerText();
 if (actSum !== "ไม่ผ่าน") errors.push(`กิจกรรมควรไม่ผ่าน ได้ ${actSum}`);
-if (await t.locator('#sheet input[data-key="act_club_t"]:disabled').count()) errors.push("ฐานการเรียนรู้ต้องแก้ได้");
-if (!(await t.innerText("#actCount")).includes("ไม่ผ่าน 1 คน")) errors.push("จำนวนไม่ผ่านไม่อัปเดต");
+if (await t.locator('#sheet input[data-key="act_club_t2"]:disabled').count()) errors.push("ฐานการเรียนรู้ต้องแก้ได้");
+if (!(await t.innerText("#actCount")).includes("ไม่ผ่านทั้งปี 1 คน")) errors.push("จำนวนไม่ผ่านไม่อัปเดต");
 await t.screenshot({ path: `${OUT}/h2-activity.png` });
 // ผลขึ้นในข้อมูล ปพ.6
 const rep = await api(t, `/api/reports/room?${Q}`);
 const s2 = rep.students.filter((x) => x.enrollment_status === "enrolled")[1];
-if (s2.assessments.act_club_o !== "มผ" || s2.assessments.act_scout_t !== "มผ") errors.push("ผลกิจกรรมไม่ขึ้นในข้อมูล ปพ.6");
+if (s2.assessments.act_club_o2 !== "มผ" || s2.assessments.act_scout_t2 !== "มผ") errors.push("ผลกิจกรรมไม่ขึ้นในข้อมูล ปพ.6");
 // ฝ่ายวิชาการเปิดหน้าเดียวกันได้ทุกห้อง
 await a.goto(`${BASE}/activities.html?room=${encodeURIComponent("ป.4/1")}`);
 await a.waitForSelector("#sheet");
