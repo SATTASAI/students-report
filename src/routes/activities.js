@@ -2,7 +2,7 @@
 // ค่าเริ่มต้นผ่าน: เก็บเฉพาะ "มผ" ในช่อง act_xxx_t (เวลาเรียน) / act_xxx_o (จุดประสงค์) ของ gr_assessments
 // ปพ.6 / ปพ.5 / ปพ.1 อ่านจากตารางเดียวกันนี้
 import { json, readJson, fail, requireUser, text, audit, batchAll } from "../lib/http.js";
-import { assertHomeroomWritable, homeroomEditState } from "../lib/edit-requests.js";
+import { assertHomeroomWritable, homeroomEditState, reopenApprovedForRoom } from "../lib/edit-requests.js";
 import { resolveYear, roomRoster, listRooms, getSettings, assessmentsFor, studentName, isPrimaryGrade, compareRoom, writableIds } from "../lib/data.js";
 import { ASSESSMENT_GROUPS, ACTIVITY_PARTS } from "../../public/js/grading.js";
 
@@ -67,6 +67,8 @@ export async function handleActivities(request, env, user, parts, method, url) {
     }
     await batchAll(env, stmts);
     await audit(env, user, "activity.update", { grade, room, changes: changes.length });
+    // ผลกิจกรรมพิมพ์ลง ปพ.5/ปพ.6 — แก้หลังอนุมัติให้กลับไปรอผู้บริหารอนุมัติใหม่ เหมือนคุณลักษณะฯ / อ่าน คิด เขียน
+    if (stmts.length) await reopenApprovedForRoom(env, user, year.id, grade, room, "แก้กิจกรรมพัฒนาผู้เรียน");
     return json({ ok: true, saved: stmts.length });
   }
   fail(405, "ไม่รองรับ");

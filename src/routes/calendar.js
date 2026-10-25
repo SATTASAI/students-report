@@ -2,6 +2,7 @@
 // ช่วงภาคเรียน (วันเปิด–ปิด) มาจาก academic_terms ของระบบบริหารโรงเรียน
 import { json, readJson, fail, requireAdmin, requireUser, text, audit, batchAll } from "../lib/http.js";
 import { resolveYear, schoolCalendar, ensureGovernmentHolidays } from "../lib/data.js";
+import { logLockedCourses } from "../lib/edit-requests.js";
 
 const validDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "") && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
 
@@ -23,6 +24,7 @@ export async function handleCalendar(request, env, user, parts, method, url) {
   if (method === "POST" && parts[2] === "government") {
     const added = await ensureGovernmentHolidays(env, year.id, { force: true });
     await audit(env, user, "calendar.government", { year: year.id, added });
+    if (added) await logLockedCourses(env, user, year.id, null, "ฝ่ายวัดผลแก้ปฏิทินวันหยุด", `เติมวันหยุดราชการ ${added} วัน — ร้อยละมาเรียน/มส อาจเปลี่ยน`);
     return json({ ok: true, added });
   }
   if (method === "POST") {
@@ -46,6 +48,7 @@ export async function handleCalendar(request, env, user, parts, method, url) {
       env.DB.prepare("DELETE FROM gr_daily_logs WHERE academic_year_id = ? AND log_date = ?").bind(year.id, d),
     ]));
     await audit(env, user, "calendar.add", { year: year.id, from, to, name, days: dates.length });
+    await logLockedCourses(env, user, year.id, null, "ฝ่ายวัดผลแก้ปฏิทินวันหยุด", `เพิ่มวันหยุด "${name}" ${from}${to !== from ? ` ถึง ${to}` : ""} — ร้อยละมาเรียน/มส อาจเปลี่ยน`);
     return json({ ok: true, added: dates.length });
   }
   if (method === "DELETE" && parts[2]) {
@@ -53,6 +56,7 @@ export async function handleCalendar(request, env, user, parts, method, url) {
     if (!validDate(d)) fail(400, "วันที่ไม่ถูกต้อง");
     await env.DB.prepare("DELETE FROM gr_holidays WHERE academic_year_id = ? AND holiday_date = ?").bind(year.id, d).run();
     await audit(env, user, "calendar.delete", { year: year.id, date: d });
+    await logLockedCourses(env, user, year.id, null, "ฝ่ายวัดผลแก้ปฏิทินวันหยุด", `ลบวันหยุด ${d} — ร้อยละมาเรียน/มส อาจเปลี่ยน`);
     return json({ ok: true });
   }
   fail(405, "ไม่รองรับ");

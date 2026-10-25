@@ -87,7 +87,7 @@ test("ครูประจำชั้น: ปิดการกรอกแล
   await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, att, { expect: 409 });
 });
 
-test("ครูประจำชั้นแก้การมาเรียนหลังอนุมัติ → รายวิชาของห้องกลับไปรอผู้บริหารอนุมัติใหม่ + มีประวัติ", async () => {
+test("ครูประจำชั้นแก้การมาเรียนหลังอนุมัติ → สถานะรายวิชาไม่เปลี่ยน แต่มีประวัติให้เห็น", async () => {
   const { call, c, d } = await setup();
   const kids = d.students.filter((s) => s.enrollment_status === "enrolled");
   await call("t1", "PUT", `/api/courses/${c.id}/scores`, { changes: kids.flatMap((k) => d.items.map((i) => ({ item_id: i.id, student_id: k.id, score: i.kind === "final" ? 10 : 30 }))) }, { expect: 200 });
@@ -97,8 +97,13 @@ test("ครูประจำชั้นแก้การมาเรีย�
   assert.equal((await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data.course.status, "approved");
   await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, { changes: [{ student_id: kids[0].id, date: "2026-11-03", code: "ข" }] }, { expect: 200 });
   const cd = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
-  assert.equal(cd.course.status, "reviewed");
+  assert.equal(cd.course.status, "approved");
   assert.ok(cd.edits.some((e) => /มาเรียน/.test(e.what)));
+  // แก้ปฏิทินวันหยุดหลังส่งผล → มีประวัติในรายวิชาที่ส่งแล้วด้วย
+  await call("admin", "POST", "/api/calendar", { name: "หยุดพิเศษ", from: "2026-11-04" }, { expect: 200 });
+  const cd2 = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
+  assert.equal(cd2.course.status, "approved");
+  assert.ok(cd2.edits.some((e) => /ปฏิทินวันหยุด/.test(e.what)));
 });
 
 test("บังคับส่ง (ล็อก) ไม่ได้ถ้าโครงสร้างคะแนนไม่ตรงสัดส่วน", async () => {

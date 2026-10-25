@@ -339,7 +339,7 @@ export function activityResult(key, values) {
 // คุณลักษณะ 8 ข้อ: มีข้อใด 0 → ไม่ผ่าน; ดีเยี่ยม 5–8 ข้อและไม่มีข้อใดต่ำกว่าดี → ดีเยี่ยม;
 //   ดีเยี่ยม 1–4 ข้อและไม่มีต่ำกว่าดี / ดีทั้งหมด / ดีเยี่ยม 4 ข้อและที่เหลือไม่ต่ำกว่าผ่าน → ดี; นอกนั้น → ผ่าน
 // อ่าน คิดวิเคราะห์ เขียน 5 ข้อ: รวมคะแนน 13–15 ดีเยี่ยม, 9–12 ดี, 5–8 ผ่าน, 0–4 ไม่ผ่าน
-// สมรรถนะ 5 ด้าน: นับด้านที่ผ่าน (ระดับ 1 ขึ้นไป) 5 = ดีเยี่ยม, 4 = ดี, 3 = พอใช้, 0–2 = ปรับปรุง
+// สมรรถนะ 5 ด้าน: รวมคะแนน 13–15 ดีเยี่ยม, 9–12 ดี, 5–8 พอใช้, 0–4 ปรับปรุง
 export function summarizeGroup(group, values) {
   if (group.type === "activity") return group.items.some(([k]) => activityResult(k, values) === "มผ") ? "มผ" : "ผ";
   const vals = group.items.map(([k]) => values?.[k]);
@@ -351,8 +351,11 @@ export function summarizeGroup(group, values) {
     return sum >= scale(13) ? "3" : sum >= scale(9) ? "2" : sum >= scale(5) ? "1" : "0";
   }
   if (group.rule === "comp") {
-    const pass = n.filter((v) => v >= 1).length;
-    return pass >= 5 ? "3" : pass === 4 ? "2" : pass === 3 ? "1" : "0";
+    // รวมคะแนน 5 ด้าน (เต็ม 15) แบบเดียวกับอ่าน คิด เขียน: 13–15 ดีเยี่ยม, 9–12 ดี, 5–8 พอใช้, 0–4 ปรับปรุง (ผู้ใช้กำหนด 25 ต.ค. 2569)
+    // เดิมนับเฉพาะจำนวนด้านที่ได้ 1 ขึ้นไป ทำให้ได้ "ผ่าน" ทุกด้านสรุปเป็นดีเยี่ยมเท่ากับได้ 3 ทุกด้าน
+    const sum = n.reduce((a, b) => a + b, 0), max = n.length * 3;
+    const scale = (x) => Math.round((x / 15) * max);
+    return sum >= scale(13) ? "3" : sum >= scale(9) ? "2" : sum >= scale(5) ? "1" : "0";
   }
   if (n.some((v) => v === 0)) return "0";
   const c3 = n.filter((v) => v === 3).length, low = n.some((v) => v < 2);

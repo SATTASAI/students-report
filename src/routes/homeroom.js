@@ -1,5 +1,5 @@
 import { json, readJson, fail, requireUser, intParam, text, audit, batchAll, decimalOf } from "../lib/http.js";
-import { assertHomeroomWritable, homeroomEditState, reopenApprovedForRoom, HOMEROOM_GRANT_DAYS } from "../lib/edit-requests.js";
+import { assertHomeroomWritable, homeroomEditState, reopenApprovedForRoom, logLockedCourses, HOMEROOM_GRANT_DAYS } from "../lib/edit-requests.js";
 import { isKinderGrade, resolveYear, listRooms, getSettings, roomRoster, isHomeroomTeacher, assessmentsFor, yearResultsForStudents, studentName, isSchoolGrade, carryoverFor, schoolCalendar, thaiToday, mirrorBody, compareRoom, compareSubject, homeroomNames, writableIds, isLeft } from "../lib/data.js";
 import { ASSESSMENT_KEYS, validAssessmentValue, clean } from "../../public/js/grading.js";
 import { KINDER_COMMENT_FIELDS } from "../../public/js/kinder.js";
@@ -232,7 +232,11 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       }
       await batchAll(env, stmts);
       await audit(env, user, "attendance.update", { grade, room, changes: stmts.length });
-      if (stmts.length) await reopenApprovedForRoom(env, user, year.id, grade, room, "ครูประจำชั้นแก้บันทึกการมาเรียน");
+      if (stmts.length) {
+        const days = [...new Set(changes.map((c) => String(c.date || "")))].sort();
+        await logLockedCourses(env, user, year.id, { grade, room }, "ครูประจำชั้นแก้บันทึกการมาเรียน",
+          `หลังส่งผล ${stmts.length} รายการ (${days[0]}${days.length > 1 ? ` ถึง ${days.at(-1)}` : ""}) — ผลเวลาเรียน/มส อาจเปลี่ยน`);
+      }
       return json({ ok: true, saved: stmts.length });
     }
   }
@@ -393,7 +397,12 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   if (sub === "carryover") {
     const { year, grade, room } = await roomContext(env, user, url, method);
     const roster = await roomRoster(env, year.id, grade, room);
-    const movers = roster.filter((s) => s.transfer_in_term > 1 && !isLeft(s));
+    // นักเรียน "รับกลับเข้าเรียน" ที่เคยเรียนที่นี่ในภาคก่อน มีคะแนนในระบบอยู่แล้ว → กรอกคะแนนยกมาได้เฉพาะภาคที่ยังไม่มีคะแนนในระบบ
+    // (ผู้ใช้กำหนด 25 ต.ค. 2569 — เดิมคะแนนยกมาทับคะแนนจริงทั้งภาค)
+    const scored = await scoredTerms(env, year.id, roster.filter((s) => s.transfer_in_term > 1).map((s) => s.id));
+    const openTerms = (s) => [1, 2].filter((t) => t < s.transfer_in_term && !scored[s.id]?.has(t));
+    const allMovers = roster.filter((s) => s.transfer_in_term > 1 && !isLeft(s));
+    const movers = allMovers.filter((s) => openTerms(s).length);
     const { results: subjects } = await env.DB.prepare(
       `SELECT s.code, s.name, s.subject_type, s.sort_order, s.collect_ratio, c.locked FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
         WHERE s.academic_year_id = ? AND s.grade_level = ? AND c.classroom = ?`
@@ -408,7 +417,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       return json({
         year, grade, room, subjects: subjects.map((x) => ({ ...x, locked: !!x.locked })),
         students: movers.map((s) => ({ id: s.id, number: s.number, name: studentName(s), student_code: s.student_code, transfer_in_term: s.transfer_in_term,
-          terms: [1, 2].filter((t) => t < s.transfer_in_term), school: from[s.id]?.school || null, move_date: from[s.id]?.move_date || null })),
+          terms: openTerms(s), school: from[s.id]?.school || null, move_date: from[s.id]?.move_date || null })),
         values: await carryoverFor(env, year.id, ids),
         edit: await homeroomEditState(env, user, year.id, grade, room),
       });
@@ -416,7 +425,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     if (method === "PUT") {
       await assertHomeroomWritable(env, user, year.id, grade, room);
       const b = await readJson(request);
-      const byId = new Map(movers.map((s) => [s.id, s]));
+      const byId = new Map(allMovers.map((s) => [s.id, s]));
       const subj = new Map(subjects.map((x) => [x.code, x]));
       const changes = Array.isArray(b.changes) ? b.changes.slice(0, 500) : [];
       const num = (v, label) => {
@@ -441,6 +450,8 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
         if (total == null && collect != null && final != null) total = clean(collect + final);
         if (collect != null && final != null && Math.abs(collect + final - total) > 1e-6) fail(400, `${label}: ระหว่างภาค + ปลายภาค ต้องเท่ากับคะแนนรวม`);
         if (total == null && (collect != null || final != null)) fail(400, `${label}: กรอกคะแนนรวมของภาค (เต็ม 50)`);
+        // ลบคะแนนยกมาเดิมได้เสมอ แต่กรอกใหม่ได้เฉพาะภาคที่ยังไม่มีคะแนนในระบบ
+        if (total != null && !openTerms(st).includes(term)) fail(409, `${label}: ภาคเรียนที่ ${term} มีคะแนนของนักเรียนคนนี้ในระบบแล้ว ไม่ต้องกรอกคะแนนยกมา`);
         stmts.push(total == null
           ? env.DB.prepare("DELETE FROM gr_carryover WHERE academic_year_id = ? AND student_id = ? AND subject_code = ? AND term_number = ?").bind(year.id, st.id, sj.code, term)
           : env.DB.prepare(`INSERT INTO gr_carryover (academic_year_id, student_id, subject_code, term_number, collect, final, total, updated_by, updated_at)
@@ -455,6 +466,21 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
   }
 
   fail(404, "ไม่พบเส้นทาง API");
+}
+
+// ภาคเรียนที่นักเรียนมีคะแนนในระบบแล้ว (รายวิชาใดก็ได้ของปีนั้น): { student_id: Set(term) }
+async function scoredTerms(env, yearId, ids) {
+  const out = {};
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    const { results } = await env.DB.prepare(
+      `SELECT DISTINCT sc.student_id, i.term_number FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id
+         JOIN gr_courses c ON c.id = i.course_id JOIN gr_subjects s ON s.id = c.subject_id
+        WHERE s.academic_year_id = ? AND sc.score IS NOT NULL AND sc.student_id IN (${chunk.map(() => "?").join(",")})`
+    ).bind(yearId, ...chunk).all();
+    for (const r of results) (out[r.student_id] ||= new Set()).add(Number(r.term_number));
+  }
+  return out;
 }
 
 // วันขาด/ลา (สำหรับหนังสือแจ้งผู้ปกครอง) จากบันทึกการมาเรียน — ไม่รวมมาสาย

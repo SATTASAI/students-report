@@ -473,6 +473,11 @@ export async function attendanceRates(env, yearId, studentIds, today = thaiToday
   if (!studentIds.length) return out;
   const cal = await schoolCalendar(env, yearId);
   const elapsed = cal.days.filter((d) => d <= today);
+  // นับวันเรียนตั้งแต่ภาคเรียนแรกที่โรงเรียนเริ่มบันทึกการมาเรียนในระบบนี้ (ผู้ใช้กำหนด 25 ต.ค. 2569):
+  // ห้องนำร่องภาค 2/2569 มีการมาเรียนภาค 1 อยู่ใน Q-Info — ถ้านับวันภาค 1 ด้วย ระบบจะถือว่ามาเรียนครบทุกวันของภาค 1 ร้อยละจึงสูงเกินจริง
+  const first = await env.DB.prepare("SELECT MIN(att_date) AS d FROM gr_attendance WHERE academic_year_id = ?").bind(yearId).first();
+  const startTerm = first?.d ? cal.terms.find((t) => first.d <= t.end_date) : null;
+  const countFrom = startTerm?.start_date || "";
   const absent = {}, since = {};
   for (let i = 0; i < studentIds.length; i += 90) {
     const chunk = studentIds.slice(i, i + 90), ph = chunk.map(() => "?").join(",");
@@ -484,7 +489,7 @@ export async function attendanceRates(env, yearId, studentIds, today = thaiToday
     for (const m of moves) since[m.student_id] = m.d;
   }
   for (const sid of studentIds) {
-    const from = since[sid] || "";
+    const from = [since[sid] || "", countFrom].sort().at(-1);
     const days = elapsed.filter((d) => d >= from);
     const set = new Set(days);
     const a = (absent[sid] || []).filter((d) => set.has(d)).length;
