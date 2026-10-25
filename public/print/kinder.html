@@ -35,6 +35,9 @@ const p = params();
 const q = new URLSearchParams({ grade: p.get("grade") || "", room: p.get("room") || "" });
 if (p.get("year")) q.set("year", p.get("year"));
 const mode = p.get("mode") === "room" ? "room" : "child";
+// ?term=1 = เฉพาะภาคเรียนที่ 1 · ภาค 2/ไม่ระบุ = ภาค 1 + ภาค 2 + สรุปสิ้นปี
+const T1 = p.get("term") === "1";
+const TERMS = T1 ? [1] : [1, 2];
 let d;
 try { d = await get(`/api/homeroom/kinder?${q}`); } catch (e) { status(e.message); throw e; }
 const school = d.school || {};
@@ -43,7 +46,7 @@ if (p.get("student")) students = students.filter((s) => String(s.id) === p.get("
 if (!students.length) { status("ไม่มีนักเรียนในห้องนี้"); throw new Error("empty"); }
 if (!d.items.length) { status("ยังไม่มีรายการประเมินพัฒนาการของชั้นนี้"); throw new Error("empty"); }
 const title = mode === "room" ? "สรุปผลการประเมินพัฒนาการ" : "สมุดรายงานพัฒนาการเด็กปฐมวัย";
-toolbar(`${title} ชั้น ${d.grade}/${d.room} ปีการศึกษา ${d.year.year_be}`);
+toolbar(`${title} ชั้น ${d.grade}/${d.room} ${T1 ? "ภาคเรียนที่ 1 " : ""}ปีการศึกษา ${d.year.year_be}`);
 document.title = `${title} ${d.grade}-${d.room} ${d.year.year_be}`;
 
 const dots = "..........................................";
@@ -59,33 +62,34 @@ function childPage(st) {
   let lastSub = "";
   const rows = KINDER_DOMAINS.map((dom, di) => {
     const items = d.items.filter((i) => i.domain === dom);
-    return `<tr class="dom"><td colspan="4">${td(di + 1)}. ${esc(dom)}</td></tr>` + items.map((it) => {
-      const subHead = it.sub.includes("—") && it.sub !== lastSub ? `<tr class="sub"><td colspan="4">${esc(it.sub.split("—")[1].trim())}</td></tr>` : "";
+    const span = 2 + TERMS.length;
+    return `<tr class="dom"><td colspan="${span}">${td(di + 1)}. ${esc(dom)}</td></tr>` + items.map((it) => {
+      const subHead = it.sub.includes("—") && it.sub !== lastSub ? `<tr class="sub"><td colspan="${span}">${esc(it.sub.split("—")[1].trim())}</td></tr>` : "";
       lastSub = it.sub;
       return `${subHead}<tr><td class="c it">${esc(td(it.code.replace(/^ด้าน\s*[\d.]+\s*ข้อ\s*/, "")))}</td>
         <td class="it">${it.comp ? `<b>${esc(it.comp)}</b> — ` : ""}${esc(it.title)}</td>
-        <td class="c">${lv(termResult(sc[it.code], 1))}</td><td class="c">${lv(termResult(sc[it.code], 2))}</td></tr>`;
+        ${TERMS.map((t) => `<td class="c">${lv(termResult(sc[it.code], t))}</td>`).join("")}</tr>`;
     }).join("");
   }).join("");
-  const sum = [1, 2, "year"].map((t) => ({ t, doms: domainSummary(d.items, sc, t), all: overallSummary(d.items, sc, t) }));
+  const sum = (T1 ? [1] : [1, 2, "year"]).map((t) => ({ t, doms: domainSummary(d.items, sc, t), all: overallSummary(d.items, sc, t) }));
   const cm = (term, f) => d.comments?.[st.id]?.[term]?.[f] || "";
   return `<section class="sheet kd">
-    ${header(`ชั้น ${esc(d.grade)}/${esc(d.room)} · ปีการศึกษา ${td(d.year.year_be)}`)}
+    ${header(`ชั้น ${esc(d.grade)}/${esc(d.room)} · ${T1 ? `ภาคเรียนที่ ${td(1)} ` : ""}ปีการศึกษา ${td(d.year.year_be)}`)}
     <p style="margin:3mm 0 0">ชื่อ–สกุล <b>${esc(st.name)}</b> &nbsp; เลขที่ ${td(st.number ?? "")} &nbsp; เลขประจำตัว ${td(st.student_code ?? "")}</p>
-    <table class="t"><colgroup><col style="width:14mm"><col><col style="width:16mm"><col style="width:16mm"></colgroup>
-      <thead><tr><th class="c">ข้อ</th><th>ความสามารถผู้เรียนเมื่อจบชั้นปี (หลักสูตรการศึกษาปฐมวัย พ.ศ. ๒๕๖๙)</th><th class="c">ภาค ${td(1)}</th><th class="c">ภาค ${td(2)}</th></tr></thead>
+    <table class="t"><colgroup><col style="width:14mm"><col>${TERMS.map(() => '<col style="width:16mm">').join("")}</colgroup>
+      <thead><tr><th class="c">ข้อ</th><th>ความสามารถผู้เรียนเมื่อจบชั้นปี (หลักสูตรการศึกษาปฐมวัย พ.ศ. ๒๕๖๙)</th>${TERMS.map((t) => `<th class="c">ภาค ${td(t)}</th>`).join("")}</tr></thead>
       <tbody>${rows}</tbody></table>
     <div class="legend">ระดับคุณภาพ ${KINDER_LEVELS.map(([n, l]) => `${td(n)} = ${l}`).join(" · ")} · ผลของภาคเรียน = ผลการประเมินครั้งล่าสุดในภาคนั้น</div>
     <div class="keep"><h3 style="margin:4mm 0 0">สรุปผลพัฒนาการ</h3>
-    <table class="t"><colgroup><col><col style="width:38mm"><col style="width:38mm"><col style="width:38mm"></colgroup>
-      <thead><tr><th>ด้าน</th><th class="c">ภาคเรียนที่ ${td(1)}</th><th class="c">ภาคเรียนที่ ${td(2)}</th><th class="c">สรุปสิ้นปี</th></tr></thead>
+    <table class="t"><colgroup><col>${sum.map(() => '<col style="width:38mm">').join("")}</colgroup>
+      <thead><tr><th>ด้าน</th>${sum.map((x) => `<th class="c">${x.t === "year" ? "สรุปสิ้นปี" : `ภาคเรียนที่ ${td(x.t)}`}</th>`).join("")}</tr></thead>
       <tbody>${KINDER_DOMAINS.map((dom, di) => `<tr><td>${esc(dom)}</td>${sum.map((x) => `<td class="c">${lvText(x.doms[di])}</td>`).join("")}</tr>`).join("")}
         <tr><td><b>รวม ${td(4)} ด้าน</b></td>${sum.map((x) => `<td class="c"><b>${lvText(x.all)}</b></td>`).join("")}</tr></tbody></table>
     <div class="legend">ค่าเฉลี่ย ${td("2.50–3.00")} = ดี · ${td("1.50–2.49")} = พอใช้ · ต่ำกว่า ${td("1.50")} = ควรส่งเสริม</div></div>
     <div class="keep"><h3 style="margin:4mm 0 0">ความคิดเห็นของครู</h3>
-    <table class="t cm"><colgroup><col style="width:52mm"><col><col></colgroup>
-      <thead><tr><th>ด้าน</th><th>ภาคเรียนที่ ${td(1)}</th><th>ภาคเรียนที่ ${td(2)}</th></tr></thead>
-      <tbody>${KINDER_COMMENT_FIELDS.map(([f, l]) => `<tr><td>${esc(l)}</td><td>${esc(cm(1, f))}</td><td>${esc(cm(2, f))}</td></tr>`).join("")}</tbody></table></div>
+    <table class="t cm"><colgroup><col style="width:52mm">${TERMS.map(() => "<col>").join("")}</colgroup>
+      <thead><tr><th>ด้าน</th>${TERMS.map((t) => `<th>ภาคเรียนที่ ${td(t)}</th>`).join("")}</tr></thead>
+      <tbody>${KINDER_COMMENT_FIELDS.map(([f, l]) => `<tr><td>${esc(l)}</td>${TERMS.map((t) => `<td>${esc(cm(t, f))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
     <div class="signs">${teacherSigns()}
       <div class="sign"><div class="line"></div>(${esc(school.director || dots)})<br>ผู้อำนวยการโรงเรียน</div>
       <div class="sign"><div class="line"></div>(${dots})<br>ผู้ปกครอง</div></div>
@@ -93,13 +97,13 @@ function childPage(st) {
 }
 
 function roomPage() {
-  const terms = [[1, "ภาคเรียนที่ 1"], [2, "ภาคเรียนที่ 2"], ["year", "สรุปสิ้นปี"]];
+  const terms = T1 ? [[1, "ภาคเรียนที่ 1"]] : [[1, "ภาคเรียนที่ 1"], [2, "ภาคเรียนที่ 2"], ["year", "สรุปสิ้นปี"]];
   const short = ["กาย", "อารมณ์ฯ", "พลเมืองฯ", "สติปัญญา", "รวม"];
   const rows = students.map((st) => ({ st, x: terms.map(([t]) => { const sc = d.scores[st.id] || {}; return [...domainSummary(d.items, sc, t), overallSummary(d.items, sc, t)]; }) }));
   const cell = (x) => `<td>${x.level ? td(x.level) : ""}</td>`;
   const count = (ti, k, lvl) => rows.filter((r) => r.x[ti][k].level === lvl).length;
   return `<section class="sheet land kd room">
-    ${header(`ชั้น ${esc(d.grade)}/${esc(d.room)} · ปีการศึกษา ${td(d.year.year_be)} · นักเรียน ${td(students.length)} คน`)}
+    ${header(`ชั้น ${esc(d.grade)}/${esc(d.room)} · ${T1 ? `ภาคเรียนที่ ${td(1)} ` : ""}ปีการศึกษา ${td(d.year.year_be)} · นักเรียน ${td(students.length)} คน`)}
     <table class="t"><thead>
       <tr><th rowspan="2">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th>${terms.map(([, l]) => `<th colspan="5">${l}</th>`).join("")}</tr>
       <tr>${terms.map(() => short.map((s) => `<th>${s}</th>`).join("")).join("")}</tr></thead>

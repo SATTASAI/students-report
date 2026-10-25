@@ -1,13 +1,22 @@
 // บันทึกประจำวันของครูประจำชั้น 5 เล่ม: ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ (ติ๊กรายวัน) + ตรวจสุขภาพ (สัปดาห์ละครั้ง)
 // หน้าละ 1 เดือน วันในตารางมาจากปฏิทินวันหยุด · ส่งออก Excel (.xlsx) และพิมพ์/บันทึกเป็น PDF ได้ทั้งเดือนนี้และทั้งปีการศึกษา
-import { shell, api, esc, toast, showError, params, dialog } from "/js/app.js";
+import { shell, api, esc, toast, showError, params, dialog, monthsOfTerm, TERM_LABEL } from "/js/app.js";
 import { loadXlsx } from "/js/export.js";
 import { LOG_FORMS, LOG_TITLE, ABS_LABEL, monthLabel, dayShort, weekdayOf, dayNum, dailyModel, healthModel, weekRange, sheetForMonth } from "/js/logbook-data.js";
 
 const me = await shell("logs");
 const view = document.getElementById("view");
 document.getElementById("main").hidden = false;
-const Y = me.year.id;
+const Y = me.year.id, T = me.term;
+// เฉพาะเดือนในภาคเรียนที่เลือก
+const TR = (me.terms || []).find((t) => t.term_number === T);
+const termMonth = (m) => {
+  if (!TR) return m;
+  const a = TR.start_date.slice(0, 7), b = TR.end_date.slice(0, 7);
+  if (m && m >= a && m <= b) return m;
+  const now = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
+  return now >= a && now <= b ? now : a;
+};
 document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} · ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ และตรวจสุขภาพ — วันในตารางตามปฏิทินวันหยุด`;
 
 let meta;
@@ -31,8 +40,10 @@ const roomQ = (r = room) => { const [g, c] = r.split("/"); return `year=${Y}&gra
 
 async function load() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
+  month = termMonth(month);
   d = await api(`/api/homeroom/logs?${roomQ()}&type=${logType}${month ? `&month=${month}` : ""}`);
   month = d.month;
+  d.months = monthsOfTerm(d.months, me, T);
   draw();
 }
 
@@ -233,7 +244,7 @@ async function pickScope(title) {
     title,
     body: `<div style="display:grid;gap:10px">
       <label class="check"><input type="radio" name="scope" value="month" checked> เดือนนี้ (${monthLabel(d.month)})</label>
-      <label class="check"><input type="radio" name="scope" value="year"> ทั้งปีการศึกษา (${d.months.length} เดือน)</label>
+      <label class="check"><input type="radio" name="scope" value="year"> ทั้ง${TERM_LABEL[T]} (${d.months.length} เดือน)</label>
       <label class="check"><input type="checkbox" name="all"> ทั้ง 5 แบบบันทึก (ไม่ใช่เฉพาะ${LOG_TITLE[logType].replace("แบบบันทึก", "")})</label></div>`,
     okText: "ตกลง",
   });
@@ -258,7 +269,7 @@ async function exportXlsx() {
     XLSX.utils.book_append_sheet(wb, ws, name || `${mm}`);
   }
   const what = s.types.length > 1 ? "บันทึกประจำวัน" : LOG_TITLE[s.types[0]];
-  XLSX.writeFile(wb, `${what} ${room.replace("/", "-")} ${s.months.length > 1 ? `ปี ${d.year.year_be}` : monthLabel(d.month)}.xlsx`);
+  XLSX.writeFile(wb, `${what} ${room.replace("/", "-")} ${s.months.length > 1 ? `ภาค ${T} ปี ${d.year.year_be}` : monthLabel(d.month)}.xlsx`);
 }
 async function fetchAll(s) {
   const jobs = [];

@@ -15,6 +15,7 @@
       <p id="yearLine"></p>
     </div>
   </div>
+  <div class="term-cards" id="termCards" role="group" aria-label="เลือกภาคเรียนที่จะทำงาน"></div>
   <div class="note warn" id="closedNote" hidden>ปิดระบบการกรอกคะแนนของปีการศึกษานี้แล้ว ดูผลได้แต่แก้ไขไม่ได้</div>
   <div class="dash" style="margin-top:14px">
     <section class="panel">
@@ -30,30 +31,37 @@
   </div>
 </main>
 <script type="module">
-import { shell, esc, withYear } from "/js/app.js";
+import { shell, esc, withYear, withTerm, switchTerm, termRange, TERM_LABEL } from "/js/app.js";
 const me = await shell("home");
 document.getElementById("main").hidden = false;
-const y = me.year.id;
+const y = me.year.id, T = me.term;
+// คลิกเลือกภาคเรียนก่อน แล้วทุกหน้า (สมุดคะแนน ประจำชั้น เอกสาร) ทำงานกับภาคนั้น
+document.getElementById("termCards").innerHTML = [1, 2].map((t) => `<button type="button" class="term-card t${t}" data-term="${t}" aria-pressed="${t === T}">
+  <b>${TERM_LABEL[t]}</b><span class="sub">${esc(termRange(me, t) || `ปีการศึกษา ${me.year.year_be}`)}</span>
+  <span class="sub">${t === 1 ? "กรอก/พิมพ์ข้อมูลภาคเรียนที่ 1" : "กรอกภาคเรียนที่ 2 · สรุปผลทั้งปี ปพ.5 ปพ.6"}</span>
+  ${t === me.current_term ? '<span class="now">● ภาคเรียนปัจจุบัน</span>' : ""}</button>`).join("");
+for (const b of document.querySelectorAll("#termCards [data-term]")) b.onclick = () => { if (Number(b.dataset.term) !== T) switchTerm(Number(b.dataset.term)); };
+const link = (path) => withTerm(withYear(path, y), T);
 document.getElementById("yearLine").textContent = `สวัสดี ${me.user.full_name} · ปีการศึกษา ${me.year.year_be}`;
 document.getElementById("closedNote").hidden = !!me.settings.entry_open;
 
 const cbox = document.getElementById("courses");
 document.getElementById("courseCount").textContent = me.courses.length ? `${me.courses.length} รายวิชา` : "";
 cbox.innerHTML = me.courses.length ? me.courses.map((c) => `
-  <a class="course-row" href="${withYear(`/course.html?id=${c.id}`, y)}">
+  <a class="course-row" href="${link(`/course.html?id=${c.id}`)}">
     <span class="room-chip">${esc(c.grade_level)}/${esc(c.classroom)}</span>
     <span><span class="title">${esc(c.code)} ${esc(c.name)}</span><span class="sub"> · ${c.hours_per_year} ชม./ปี · ${c.students} คน</span>
       ${c.status === "approved" ? '<br><span class="tag ok">อนุมัติแล้ว</span>' : c.status === "submitted" ? '<br><span class="tag">ส่งแล้ว รออนุมัติ</span>'
         : c.return_note ? '<br><span class="tag warn">ส่งคืนให้แก้</span>' : c.item_count ? "" : '<br><span class="tag warn">ยังไม่ได้ตั้งโครงสร้างคะแนน</span>'}</span>
-    <span class="meter-cell"><span class="small muted">กรอกแล้ว ${c.progress}%</span><div class="meter ${c.progress >= 100 ? "done" : ""}"><i style="width:${c.progress}%"></i></div></span>
+    <span class="meter-cell"><span class="small muted">${c[`t${T}_items`] ? `ภาค ${T} กรอกแล้ว ${c[`progress_t${T}`]}%` : `ภาค ${T} ยังไม่มีช่องคะแนน`}</span><div class="meter term ${c[`progress_t${T}`] >= 100 ? "done" : ""}"><i style="width:${c[`progress_t${T}`] || 0}%"></i></div></span>
     <span class="go btn small">เปิดสมุดคะแนน</span>
   </a>`).join("") : `<div class="empty"><strong>ยังไม่มีรายวิชาที่ได้รับมอบหมาย</strong>ให้ฝ่ายวิชาการกำหนดครูผู้สอนในหน้าตั้งค่ารายวิชา</div>`;
 
 const hbox = document.getElementById("homerooms");
 hbox.innerHTML = me.homerooms.length ? me.homerooms.map((h) => `
-  <a class="course-row" style="grid-template-columns:74px 1fr" href="${withYear(`/homeroom.html?grade=${encodeURIComponent(h.grade_level)}&room=${encodeURIComponent(h.classroom)}`, y)}">
+  <a class="course-row" style="grid-template-columns:74px 1fr" href="${link(`/homeroom.html?grade=${encodeURIComponent(h.grade_level)}&room=${encodeURIComponent(h.classroom)}`)}">
     <span class="room-chip">${esc(h.grade_level)}/${esc(h.classroom)}</span>
-    <span><span class="title">ประเมินและ ปพ.6</span><span class="sub"> · ${h.students} คน</span></span>
+    <span><span class="title">${T === 1 ? "งานประจำชั้น ภาคเรียนที่ 1" : "งานประจำชั้น ภาคเรียนที่ 2 และ ปพ.6"}</span><span class="sub"> · ${h.students} คน</span></span>
   </a>`).join("") : `<p class="muted small">ยังไม่ได้เป็นครูประจำชั้นของห้องใดในปีนี้</p>`;
 
 </script>

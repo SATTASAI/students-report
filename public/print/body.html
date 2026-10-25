@@ -37,10 +37,13 @@ let d, refs;
 try { [d, refs] = await Promise.all([get(`/api/homeroom?${q}`), loadGrowthRefs()]); } catch (e) { status(e.message); throw e; }
 const students = d.students.filter((s) => s.enrollment_status === "enrolled");
 if (!students.length) { status("ไม่มีนักเรียนในห้องนี้"); throw new Error("empty"); }
-toolbar(`น้ำหนัก ส่วนสูง และภาวะโภชนาการ ชั้น ${d.grade}/${d.room} ปีการศึกษา ${d.year.year_be}`);
+toolbar(`น้ำหนัก ส่วนสูง และภาวะโภชนาการ ชั้น ${d.grade}/${d.room} ${p.get("term") === "1" ? "ภาคเรียนที่ 1 " : p.get("term") === "2" ? "ภาคเรียนที่ 2 " : ""}ปีการศึกษา ${d.year.year_be}`);
 document.title = `น้ำหนักส่วนสูง ${d.grade}-${d.room} ${d.year.year_be}`;
 const school = d.school || {};
-const ROUNDS = [1, 2, 3, 4];
+// ?term=1 = ครั้งที่ 1–2 (ภาคเรียนที่ 1) · ภาค 2/ไม่ระบุ = ครั้งที่ 1–4 ทั้งปี (ภาค 2 สรุปรวมภาค 1)
+const TERM = p.get("term") === "1" ? 1 : p.get("term") === "2" ? 2 : null;
+const ROUNDS = TERM === 1 ? [1, 2] : [1, 2, 3, 4];
+const termText = TERM ? `ภาคเรียนที่ ${td(TERM)} ` : "";
 const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 const rows = students.map((s) => ({ s, sex: sexOf(s), r: ROUNDS.map((r) => {
   const b = d.body?.[s.id]?.[r] || {};
@@ -60,7 +63,7 @@ const criteria = `เกณฑ์ของกรมอนามัย: อาย
 
 const main = `<section class="sheet land bd">
   <h1>แบบบันทึกน้ำหนัก ส่วนสูง และภาวะโภชนาการ</h1>
-  <div class="sub">${esc(school.name || "โรงเรียนบ้านป่าเด็ง")} · ชั้น ${esc(d.grade)}/${esc(d.room)} · ปีการศึกษา ${td(d.year.year_be)} · นักเรียน ${td(students.length)} คน</div>
+  <div class="sub">${esc(school.name || "โรงเรียนบ้านป่าเด็ง")} · ชั้น ${esc(d.grade)}/${esc(d.room)} · ${termText}ปีการศึกษา ${td(d.year.year_be)} · นักเรียน ${td(students.length)} คน</div>
   <table class="t"><colgroup><col style="width:8mm"><col style="width:44mm"><col style="width:7mm"><col style="width:19mm">${ROUNDS.map(() => '<col style="width:10mm"><col style="width:10mm"><col style="width:16mm"><col style="width:16mm">').join("")}</colgroup>
     <thead><tr><th rowspan="2">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th><th rowspan="2">เพศ</th><th rowspan="2">อายุ<br>(ณ วันนี้)</th>
       ${ROUNDS.map((r, i) => `<th colspan="4" class="r">ครั้งที่ ${td(r)}${dates(i).length ? `<br><span style="font-weight:400;font-size:11pt">${dates(i).length === 1 ? thaiDate(dates(i)[0], true) : `${thaiDate(dates(i)[0], true)} – ${thaiDate(dates(i).at(-1), true)}`}</span>` : ""}</th>`).join("")}</tr>
@@ -84,7 +87,7 @@ const latest = rows.map((x) => ({ ...x, last: [...x.r].reverse().find((y) => y.a
 const watch = latest.filter((x) => flagW(x.last.a.wfh?.label) || flagH(x.last.a.hfa?.label));
 const summary = `<section class="sheet bd">
   <h1>สรุปภาวะโภชนาการ</h1>
-  <div class="sub">${esc(school.name || "โรงเรียนบ้านป่าเด็ง")} · ชั้น ${esc(d.grade)}/${esc(d.room)} · ปีการศึกษา ${td(d.year.year_be)}</div>
+  <div class="sub">${esc(school.name || "โรงเรียนบ้านป่าเด็ง")} · ชั้น ${esc(d.grade)}/${esc(d.room)} · ${termText}ปีการศึกษา ${td(d.year.year_be)}</div>
   ${block("รูปร่าง (น้ำหนักตามเกณฑ์ส่วนสูง)", WFH_LEVELS, "wfh")}
   ${block("ส่วนสูงตามเกณฑ์อายุ", HFA_LEVELS, "hfa")}
   <table class="t keep"><thead><tr><th style="width:40mm">สูงดีสมส่วน</th>${used.map((r) => `<th>ครั้งที่ ${td(r)}</th>`).join("")}</tr></thead>

@@ -7,7 +7,7 @@ const { chromium } = require("playwright-core");
 const BASE = "http://localhost:8787";
 const OUT = process.argv[2] || "/tmp";
 const errors = [];
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
+const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
 
 async function newPage(viewport = { width: 1366, height: 860 }) {
   const ctx = await browser.newContext({ viewport, locale: "th-TH" });

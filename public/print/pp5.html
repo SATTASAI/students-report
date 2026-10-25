@@ -14,10 +14,13 @@
 // → 5 คุณลักษณะอันพึงประสงค์ → 6 ผลการประเมินตัวชี้วัด (รายภาค) → 7 สรุปผลการประเมิน (รายภาค + ทั้งปี)
 // ตัวเลขทุกตัวอ่านจากผลที่เซิร์ฟเวอร์คำนวณแล้ว (computed) — ไม่คำนวณคะแนนใหม่ในหน้านี้
 // ?course=ID = 1 วิชา, ?courses=1,2,3 หรือ ?grade=ป.4&room=2&year=ID = ทุกวิชาของห้องเป็นไฟล์เดียว
+// ?term=1 = เล่มภาคเรียนที่ 1: ปก (สรุปคะแนนภาค 1) → โครงสร้างภาค 1 → เวลาเรียนภาค 1 → ตัวชี้วัดภาค 1 → สรุปผลภาค 1
+// ?term=2 (หรือไม่ระบุ) = เล่มภาคเรียนที่ 2 สรุปทั้งปี: ทุกส่วนข้างต้นของทั้งสองภาค + อ่านคิดฯ คุณลักษณะ และสรุปผลการเรียนทั้งปี
 import { fixed, esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDateUtc } from "/print/print.js";
 import { indicatorResult, effectiveScore, indicatorWord, ASSESSMENT_GROUPS, summarizeGroup, summaryText, NUMERIC_GRADES } from "/js/grading.js";
 
 const q = params();
+const TERM = q.get("term") === "1" ? 1 : 2;
 let ids = [];
 try {
   if (q.get("course")) ids = [q.get("course")];
@@ -36,9 +39,10 @@ for (const [i, id] of ids.entries()) {
   try { books.push(await get(`/api/courses/${encodeURIComponent(id)}`)); } catch (e) { status(e.message); throw e; }
 }
 const first = books[0].course;
-const title = books.length === 1 ? `ปพ.5 ${first.code} ${first.name} ${first.grade_level}/${first.classroom}` : `ปพ.5 ทุกวิชา ${first.grade_level}/${first.classroom} (${books.length} วิชา)`;
+const termTitle = TERM === 1 ? "ภาคเรียนที่ 1" : "ภาคเรียนที่ 2 (สรุปทั้งปี)";
+const title = books.length === 1 ? `ปพ.5 ${first.code} ${first.name} ${first.grade_level}/${first.classroom} ${termTitle}` : `ปพ.5 ทุกวิชา ${first.grade_level}/${first.classroom} (${books.length} วิชา) ${termTitle}`;
 toolbar(title);
-document.title = books.length === 1 ? `ปพ.5 ${first.code} ${first.grade_level}-${first.classroom}` : `ปพ.5 ${first.grade_level}-${first.classroom} ทุกวิชา`;
+document.title = books.length === 1 ? `ปพ.5 ${first.code} ${first.grade_level}-${first.classroom} ภาค${TERM}` : `ปพ.5 ${first.grade_level}-${first.classroom} ทุกวิชา ภาค${TERM}`;
 
 const statusNote = (x) => x.transfer_in_term ? `ย้ายเข้า` : x.enrollment_status === "transferred" ? "ย้ายออก" : x.enrollment_status === "withdrawn" ? "ออกกลางคัน" : x.enrollment_status === "moved" ? "ย้ายห้อง" : "ปกติ";
 const pctOf = (n, all) => all ? fixed((n / all) * 100, 2) : td("0.00"); // ร้อยละ ตัดทศนิยมตำแหน่งที่ 3 ทิ้ง ไม่ปัด
@@ -56,11 +60,12 @@ function book(d) {
   const active = d.students.filter((x) => x.enrollment_status === "enrolled");
   // ห้องใหญ่ (เกิน 25 คน): ตัวอักษร/ระยะบรรทัดเล็กลง ให้ตารางรายคนจบในหน้าเดียว (แนวนอนบีบมากกว่าแนวตั้ง)
   const dense = (land) => d.students.length > 25 ? (land ? " dense-l" : " dense") : "";
-  const draft = c.status !== "approved";
+  // ลายน้ำฉบับร่าง: ผลทั้งปี (ภาค 2) ที่ยังไม่อนุมัติ — เล่มภาค 1 ไม่มีขั้นอนุมัติแยก (อนุมัติผลทั้งปีที่ภาค 2)
+  const draft = TERM === 2 && c.status !== "approved";
   const mark = draft ? `<div class="draft-mark"><span>ฉบับร่าง ยังไม่อนุมัติ</span></div>` : "";
-  const head = (t) => `<div class="center"><b>${t} ปีการศึกษา ${td(c.year_be)} วิชา ${esc(c.name)} รหัสวิชา ${esc(td(c.code))} ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))}</b></div>`;
+  const head = (t) => `<div class="center"><b>${t}${TERM === 1 && !/ภาคเรียนที่/.test(t) ? ` ภาคเรียนที่ ${td(1)}` : ""} ปีการศึกษา ${td(c.year_be)} วิชา ${esc(c.name)} รหัสวิชา ${esc(td(c.code))} ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))}</b></div>`;
   const band = /^ป\.[123]$/.test(c.grade_level) ? "ประถมศึกษาตอนต้น" : "ประถมศึกษาตอนปลาย";
-  const terms = [1, 2].filter((t) => d.items.some((i) => i.term_number === t));
+  const terms = (TERM === 1 ? [1] : [1, 2]).filter((t) => d.items.some((i) => i.term_number === t));
 
   // ---------- 1. ปก + สรุปผล + การอนุมัติ ----------
   const cols = ["4", "3.5", "3", "2.5", "2", "1.5", "1", "0", "ร", "มส"];
@@ -86,6 +91,24 @@ function book(d) {
   const decision = (role, name, dt) => `<div class="box">
       <div class="checks"><span>☐ อนุมัติ</span><span>☐ ไม่อนุมัติ/ให้นำไปปรับปรุงแก้ไข</span></div>
       ${signLine(role, name)}<div class="sign-name">${dt || "........../........../.........."}</div></div>`;
+  // ปกเล่มภาคเรียนที่ 1: สรุปคะแนนภาค 1 (เต็ม 50) แทนการกระจายผลการเรียน ซึ่งออกเมื่อครบ 2 ภาค
+  const t1Ids = new Set(d.items.filter((i) => i.term_number === 1 && i.kind === "indicator").map((i) => i.id));
+  const t1 = active.map((x) => ({ x, t: d.computed[x.id].term_scores?.[1], failed: d.computed[x.id].failed_indicators.filter((id) => t1Ids.has(id)).length }));
+  const t1Done = t1.filter((r) => r.t?.complete);
+  const t1Totals = t1Done.map((r) => Number(r.t.total));
+  const t1Mean = t1Totals.length ? t1Totals.reduce((a, b) => a + b, 0) / t1Totals.length : null;
+  const t1Pass = t1Done.filter((r) => !r.failed).length, t1Fail = t1Done.filter((r) => r.failed).length;
+  const term1Cover = `<table class="t small">
+      <tr><th rowspan="2" style="width:20mm">จำนวน<br>นักเรียน<br>ทั้งหมด</th><th colspan="2">การกรอกคะแนน ภาค ${td(1)}</th><th colspan="3">คะแนนรวมภาค ${td(1)} (เต็ม ${td(50)})</th><th colspan="2">ผลการประเมิน${W} ภาค ${td(1)}</th></tr>
+      <tr><th>ครบ</th><th>ยังไม่ครบ</th><th>เฉลี่ย</th><th>สูงสุด</th><th>ต่ำสุด</th><th>ผ่านทุก${W}</th><th>มี${W}ไม่ผ่าน</th></tr>
+      <tr><td class="c">${td(active.length)}</td><td class="c">${td(t1Done.length)}</td><td class="c">${td(active.length - t1Done.length)}</td>
+        <td class="c">${t1Mean == null ? "–" : fixed(t1Mean, 2)}</td><td class="c">${t1Totals.length ? fmt(Math.max(...t1Totals)) : "–"}</td><td class="c">${t1Totals.length ? fmt(Math.min(...t1Totals)) : "–"}</td>
+        <td class="c">${td(t1Pass)}</td><td class="c">${td(t1Fail)}</td></tr>
+      <tr><td class="c">คิดเป็นร้อยละ</td><td class="c">${pctOf(t1Done.length, active.length)}</td><td class="c">${pctOf(active.length - t1Done.length, active.length)}</td><td colspan="3"></td>
+        <td class="c">${pctOf(t1Pass, active.length)}</td><td class="c">${pctOf(t1Fail, active.length)}</td></tr>
+    </table>
+    <div class="note" style="margin-top:1mm">เล่มภาคเรียนที่ ${td(1)}: คะแนนไม่ปัดเศษ · ค่าเฉลี่ย/สูงสุด/ต่ำสุดคิดจากนักเรียนที่กรอกคะแนนครบ · ${W}ไม่ผ่านนับหลังรวมคะแนนแก้ตัว
+      · ผลการเรียน (เกรด) และผลการประเมินคุณลักษณะฯ อ่าน คิด วิเคราะห์ และเขียน สรุปในเล่มภาคเรียนที่ ${td(2)}</div>`;
   const cover = `<section class="sheet pp5">${mark}
     <div class="form-no">ปพ.5</div>
     <img class="garuda" src="/logo.png" alt="">
@@ -93,7 +116,7 @@ function book(d) {
     <h2 class="center">โรงเรียน${esc(s.school_name?.replace(/^โรงเรียน/, "") || "บ้านป่าเด็ง")} ${esc(s.school_address || "")}</h2>
     <h2 class="center">สังกัด ${esc(s.affiliation || "สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน")}</h2>
     ${s.school_area ? `<h2 class="center">${esc(s.school_area)}</h2>` : ""}
-    <div class="center" style="margin-top:2mm"><b>ปีการศึกษา ${td(c.year_be)}</b></div>
+    <div class="center" style="margin-top:2mm"><b>ภาคเรียนที่ ${td(TERM)} ปีการศึกษา ${td(c.year_be)}${TERM === 2 ? " (สรุปผลทั้งปี)" : ""}</b></div>
     <div class="center"><b>ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))} ระดับชั้น ${band}</b></div>
     <div class="info2">
       <div>กลุ่มสาระการเรียนรู้${esc(c.learning_area)}</div><div>สาระการเรียนรู้${c.subject_type === "basic" ? "พื้นฐาน" : "เพิ่มเติม"}</div>
@@ -102,7 +125,7 @@ function book(d) {
       <div style="grid-column:1/-1">ครูผู้สอน ${dots(teacherNames.join(", "))}</div>
       <div style="grid-column:1/-1">ครูประจำชั้น ${dots((c.homeroom_teachers || []).join(", "))}</div>
     </div>
-    <table class="t small">
+    ${TERM === 1 ? term1Cover : `<table class="t small">
       <tr><th rowspan="3" style="width:20mm">จำนวน<br>นักเรียน<br>ทั้งหมด</th><th colspan="10">สรุปผลการพัฒนาผู้เรียน</th><th rowspan="3" style="width:18mm">หมายเหตุ</th></tr>
       <tr><th colspan="10">จำนวนนักเรียนที่ได้รับผลการเรียน</th></tr>
       <tr>${cols.map((g) => `<th>${gradeOut(g === "มส" ? "มส." : g)}</th>`).join("")}</tr>
@@ -119,7 +142,7 @@ function book(d) {
       <tr><td class="c">จำนวนที่ได้</td>${assessRow(tr)}${assessRow(rw)}</tr>
       <tr><td class="c">คิดเป็นร้อยละ</td>${assessPct(tr)}${assessPct(rw)}</tr>
     </table>
-    ${tr.none || rw.none ? `<div class="note" style="margin-top:1mm">ยังประเมินไม่ครบ: คุณลักษณะฯ ${td(tr.none || 0)} คน · อ่าน คิด วิเคราะห์ และเขียน ${td(rw.none || 0)} คน</div>` : ""}
+    ${tr.none || rw.none ? `<div class="note" style="margin-top:1mm">ยังประเมินไม่ครบ: คุณลักษณะฯ ${td(tr.none || 0)} คน · อ่าน คิด วิเคราะห์ และเขียน ${td(rw.none || 0)} คน</div>` : ""}`}
     <div class="center" style="margin-top:3mm"><b>การอนุมัติผลการพัฒนาคุณภาพผู้เรียน</b></div>
     <div class="grid2">
       <div>${signLine("ครูผู้สอน", teacherNames[0])}</div><div>${signLine("หัวหน้ากลุ่มสาระการเรียนรู้", "")}</div>
@@ -131,7 +154,8 @@ function book(d) {
         return `<div class="box"><div class="checks"><span>☐ อนุมัติ</span><span>☐ ไม่อนุมัติ/ให้นำไปปรับปรุงแก้ไข</span></div>${ds.map((n) => signLine("รองผู้อำนวยการสถานศึกษา", n)).join("")}<div class="sign-name">........../........../..........</div></div>`; })()}</div>
       <div><b>การพิจารณา/สั่งการ</b>${decision(`ผู้อำนวยการโรงเรียน${esc((s.school_name || "บ้านป่าเด็ง").replace(/^โรงเรียน/, ""))}`, s.director_name)}</div>
     </div>
-    ${c.status === "approved" ? `<div class="sys-note">อนุมัติในระบบ${c.approved_by_name ? ` โดย ${esc(c.approved_by_name)}` : ""} เมื่อ ${esc(thaiDateUtc(c.approved_at))}</div>`
+    ${TERM === 1 ? `<div class="sys-note">เล่มภาคเรียนที่ ${td(1)} — ผลการเรียน (เกรด) การส่งผลและการอนุมัติผลทั้งปีอยู่ในเล่มภาคเรียนที่ ${td(2)}</div>`
+      : c.status === "approved" ? `<div class="sys-note">อนุมัติในระบบ${c.approved_by_name ? ` โดย ${esc(c.approved_by_name)}` : ""} เมื่อ ${esc(thaiDateUtc(c.approved_at))}</div>`
       : c.status === "reviewed" ? `<div class="sys-note">ฝ่ายวัดผลตรวจแล้ว${c.reviewed_by_name ? ` (${esc(c.reviewed_by_name)})` : ""} รอผู้บริหารอนุมัติ</div>`
       : c.status === "submitted" ? `<div class="sys-note">ส่งผลในระบบแล้ว รอฝ่ายวัดผลตรวจ</div>` : ""}
   </section>`;
@@ -272,25 +296,29 @@ function book(d) {
 
   // ---------- 3. บันทึกเวลาเรียน ----------
   // ครูผู้สอนไม่เช็กชื่อ — ใช้บันทึกการมาเรียนรายวันของครูประจำชั้น (ข ขาด · ล ลากิจ · ป ลาป่วย · ส มาสาย)
+  // ภาค 1 = จำนวนวันของภาค 1 · ภาค 2 = จำนวนวันทั้งปี + รวมขาด/ลาแยกภาค 1 / ภาค 2 และสิทธิ์สอบ (มส) ทั้งปี
+  const offOf = (a) => (a["ข"] || 0) + (a["ล"] || 0) + (a["ป"] || 0);
   const attendance = `<section class="sheet">${mark}
     ${head("บันทึกเวลาเรียน")}
     <table class="t small fit${dense(false)}">
       <thead><tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2" style="width:16mm">เลข<br>ประจำตัว</th><th rowspan="2">ชื่อ–สกุล</th>
-        <th colspan="5">จำนวนวัน (จากบันทึกการมาเรียนของครูประจำชั้น)</th><th rowspan="2" style="width:22mm">ผล</th><th rowspan="2" style="width:20mm">สถานะ</th></tr>
-        <tr><th style="width:13mm">ขาด</th><th style="width:13mm">ลากิจ</th><th style="width:13mm">ลาป่วย</th><th style="width:13mm">มาสาย</th><th style="width:15mm">รวมขาด/ลา</th></tr></thead>
+        <th colspan="${TERM === 1 ? 5 : 4}">${TERM === 1 ? `จำนวนวัน ภาคเรียนที่ ${td(1)} (จากบันทึกการมาเรียนของครูประจำชั้น)` : "จำนวนวันทั้งปี (บันทึกการมาเรียน)"}</th>${TERM === 1 ? "" : `<th colspan="3">รวมขาด/ลา (วัน)</th><th rowspan="2" style="width:18mm">ผล</th>`}<th rowspan="2" style="width:18mm">สถานะ</th></tr>
+        <tr><th style="width:12mm">ขาด</th><th style="width:12mm">ลากิจ</th><th style="width:12mm">ลาป่วย</th><th style="width:12mm">มาสาย</th>${TERM === 1 ? '<th style="width:15mm">รวมขาด/ลา</th>' : `<th style="width:12mm">ภาค ${td(1)}</th><th style="width:12mm">ภาค ${td(2)}</th><th style="width:13mm">ทั้งปี</th>`}</tr></thead>
       <tbody>${d.students.map((x) => {
-        const k = d.computed[x.id], a = d.attendance?.[x.id] || {}, n = (c) => a[c] ? td(a[c]) : "";
-        const off = (a["ข"] || 0) + (a["ล"] || 0) + (a["ป"] || 0);
+        const k = d.computed[x.id], all = d.attendance?.[x.id] || {}, a = TERM === 1 ? (all.by_term?.[1] || {}) : all, n = (c) => a[c] ? td(a[c]) : "";
+        const off = offOf(a), v = (m) => m ? td(m) : "";
         const ms = k.low_attendance || (d.results[x.id] || {}).special === "มส";
         return `<tr><td class="c">${td(x.number ?? "")}</td><td class="c">${esc(td(x.student_code))}</td><td class="nm">${esc(x.name)}</td>
-          <td class="c">${n("ข")}</td><td class="c">${n("ล")}</td><td class="c">${n("ป")}</td><td class="c">${n("ส")}</td><td class="c">${off ? td(off) : ""}</td>
-          <td class="c">${ms ? "มส" : "มีสิทธิ์"}</td><td class="c">${statusNote(x)}</td></tr>`;
+          <td class="c">${n("ข")}</td><td class="c">${n("ล")}</td><td class="c">${n("ป")}</td><td class="c">${n("ส")}</td>
+          ${TERM === 1 ? `<td class="c">${v(off)}</td>` : `<td class="c">${v(offOf(all.by_term?.[1] || {}))}</td><td class="c">${v(offOf(all.by_term?.[2] || {}))}</td><td class="c">${v(off)}</td><td class="c">${ms ? "มส" : "มีสิทธิ์"}</td>`}
+          <td class="c">${statusNote(x)}</td></tr>`;
       }).join("")}</tbody>
     </table>
-    <div class="note">เวลาเรียนรายวิชา ${td(c.hours_per_year)} ชั่วโมงต่อปี · ต้องมีเวลาเรียนไม่น้อยกว่าร้อยละ ${td(s.attendance_pass_pct)} จึงมีสิทธิ์รับการประเมิน · ช่องว่าง = มาเรียนปกติ</div>
+    <div class="note">เวลาเรียนรายวิชา ${td(c.hours_per_year)} ชั่วโมงต่อปี · ต้องมีเวลาเรียนไม่น้อยกว่าร้อยละ ${td(s.attendance_pass_pct)} จึงมีสิทธิ์รับการประเมิน${TERM === 1 ? ` (ตัดสินสิทธิ์สอบเมื่อจบปีในเล่มภาคเรียนที่ ${td(2)})` : ""} · ช่องว่าง = มาเรียนปกติ</div>
   </section>`;
 
-  const all = cover + structure + attendance + assessPage("rtw") + assessPage("trait") + indicatorPages + termSummary + yearSummary;
+  const all = TERM === 1 ? cover + structure + attendance + indicatorPages + termSummary
+    : cover + structure + attendance + assessPage("rtw") + assessPage("trait") + indicatorPages + termSummary + yearSummary;
   // ฉบับร่าง: ท้ายทุกส่วนมีข้อความกำกับด้วย — หน้าสุดท้ายของตารางยาวที่มีเนื้อหาน้อยจะยังเห็นคำว่าฉบับร่างเต็มคำ
   return draft ? all.replaceAll("</section>", `<div class="draft-foot">ฉบับร่าง ยังไม่อนุมัติ — ใช้ตรวจทานเท่านั้น</div></section>`) : all;
 }

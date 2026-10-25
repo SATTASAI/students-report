@@ -1,14 +1,16 @@
-import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, fmt, ICONS, params, withYear, thaiTime } from "/js/app.js";
+import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, fmt, ICONS, params, withYear, withTerm, thaiTime, TERM_LABEL } from "/js/app.js";
 import { computeStudentResult, resultWithAttendance, NUMERIC_GRADES, indicatorWord, indicatorResult, structureIssues, indicatorPassPct, remedialCap } from "/js/grading.js";
 import { parseIndicatorLines } from "/js/indicators.js";
 
 const me = await shell("home");
+const T = me.term; // ภาคเรียนที่เลือก: กรอก/แก้ตัว/โครงสร้างเฉพาะภาคนี้ · สรุปผลภาค 2 = ทั้งปี (รวมภาค 1)
 const courseId = params().get("id");
 const view = document.getElementById("view");
 let data;              // ข้อมูลจาก /api/courses/:id
 let bankCache = null;  // คลังตัวชี้วัดของรายวิชานี้ [{id, code, title, kind}]
 let builder = null;    // หน้าสร้างโครงสร้างรายวิชาที่เปิดอยู่ {term, units, loose, finals, dirty}
-let tab = sessionStorage.getItem(`sr-tab-${courseId}`) || "t1";
+let tab = sessionStorage.getItem(`sr-tab-${courseId}`) || "sheet";
+if (tab === "t1" || tab === "t2") tab = "sheet"; // แท็บรายภาคเดิม → ใช้ภาคเรียนที่เลือกแทน
 // ร่างโครงสร้างรายวิชาในเบราว์เซอร์ (ประกาศก่อนแสดงผลครั้งแรก)
 const draftKey = (term) => `sr-draft-${courseId}-${term}`;
 const openKey = `sr-building-${courseId}`;
@@ -28,7 +30,7 @@ try {
 }
 document.getElementById("main").hidden = false;
 const W = indicatorWord(data.course.grade_level); // ป.1–3 = ผลการเรียนรู้, ป.4–6 = ตัวชี้วัด
-if (!data.items.length && tab !== "setup") tab = "setup";
+if (!data.items.some((i) => i.term_number === T) && (tab === "sheet" || tab === "rem")) tab = "setup";
 window.addEventListener("beforeunload", (e) => {
   if (pending.size || saving || invalidCount()) { e.preventDefault(); e.returnValue = ""; }
 });
@@ -58,11 +60,13 @@ function renderHeader() {
   else if (me.role === "measure" || me.role === "admin") { back.textContent = "ตรวจผลการเรียน"; back.href = "/admin.html#review"; }
   else back.href = withYear("/", c.academic_year_id);
   const pb = document.getElementById("printBtn");
-  pb.innerHTML = `${ICONS.print} ปพ.5 ในคลังเอกสาร`;
-  pb.href = `/docs.html?room=${encodeURIComponent(`${c.grade_level}/${c.classroom}`)}`;
+  pb.innerHTML = `${ICONS.print} ปพ.5 ภาค ${T} ในคลังเอกสาร`;
+  pb.href = withTerm(`/docs.html?room=${encodeURIComponent(`${c.grade_level}/${c.classroom}`)}`, T);
   const sb = document.getElementById("submitBtn");
   const note = document.getElementById("lockNote");
   const when = (t) => t ? ` เมื่อ ${thaiTime(t)}` : "";
+  // ส่งผล/ตรวจ/อนุมัติเป็นผลทั้งปี → ทำที่ภาคเรียนที่ 2 เท่านั้น
+  sb.hidden = T !== 2;
   note.className = "note";
   if (c.locked) {
     // ครูส่ง → ฝ่ายวัดผลตรวจ → ผู้บริหารอนุมัติ
@@ -128,7 +132,9 @@ function renderEdits() {
 }
 
 function renderTabs() {
+  const LABEL = { sheet: `กรอกคะแนน ภาค ${T}`, rem: `แก้ตัว ภาค ${T}`, setup: `โครงสร้างคะแนน ภาค ${T}`, sum: T === 1 ? "สรุปผล ภาค 1" : "สรุปผลทั้งปี" };
   for (const b of document.querySelectorAll("#tabs button")) {
+    b.textContent = LABEL[b.dataset.tab] || b.textContent;
     b.setAttribute("aria-selected", String(b.dataset.tab === tab));
     b.onclick = () => { tab = b.dataset.tab; sessionStorage.setItem(`sr-tab-${courseId}`, tab); renderTabs(); render(); };
   }
@@ -136,8 +142,8 @@ function renderTabs() {
 
 function render() {
   reapplyPending();
-  if (tab === "t1" || tab === "t2") renderSheet(tab === "t1" ? 1 : 2);
-  else if (tab === "sum") renderSummary();
+  if (tab === "sheet") renderSheet(T);
+  else if (tab === "sum") { if (T === 1) renderTermSummary(1); else renderSummary(); }
   else if (tab === "rem") renderRemedial();
   else if (builder) drawBuilder();
   else renderSetup();
@@ -187,11 +193,11 @@ function renderSheet(term) {
           ${items.map((it) => `<th class="col-head ${it.kind === "final" ? "final" : ""}" title="${esc(it.title)}">
             <button data-edit-item="${it.id}" ${can ? "" : "disabled"}>${unitOf(it) ? `<span class="unitno">หน่วยที่ ${unitOf(it).unit_no}</span>` : ""}<span class="code">${esc(it.kind === "final" ? "ปลายภาค" : it.code || "เก็บ")}</span><span class="t">${esc(it.title)}</span><span class="max">เต็ม ${fmt(it.max_score)}</span></button></th>`).join("")}
           <th class="col-head">รวมภาค ${term}<span class="max">เต็ม ${fmt(termMax)}</span></th>
-          <th class="col-head">รวมทั้งปี<span class="max">เต็ม 100</span></th>
-          <th class="col-head">ผล</th>
+          ${term === 1 ? '<th class="col-head">สถานะ<span class="max">ภาค 1</span></th>'
+            : '<th class="col-head">ภาค 1<span class="max">เต็ม 50</span></th><th class="col-head">รวมทั้งปี<span class="max">เต็ม 100</span></th><th class="col-head">ผล</th>'}
         </tr></thead>
         <tbody>${data.students.map((s) => rowHtml(s, items, term)).join("")}</tbody>
-        <tfoot><tr><td class="stick no"></td><td class="stick name" style="text-align:left">ค่าเฉลี่ย</td>${items.map((it) => `<td data-avg="${it.id}"></td>`).join("")}<td></td><td></td><td></td></tr></tfoot>
+        <tfoot><tr><td class="stick no"></td><td class="stick name" style="text-align:left">ค่าเฉลี่ย</td>${items.map((it) => `<td data-avg="${it.id}"></td>`).join("")}<td></td>${term === 1 ? "<td></td>" : "<td></td><td></td><td></td>"}</tr></tfoot>
       </table>
     </div>
     <div class="legend"><span><b style="color:var(--warn)">ตัวเลขสีส้ม</b> = ต่ำกว่าเกณฑ์ผ่าน${W} ${indicatorPassPct(data.settings, term)}% (บันทึกแก้ตัวได้ที่แท็บ "แก้ตัว")</span><span><b style="color:var(--ok)">แก้</b> = มีคะแนนแก้ตัว</span><span>ช่องว่าง = ยังไม่ได้กรอก</span></div>`;
@@ -219,9 +225,30 @@ function rowHtml(s, items, term) {
         data-item="${it.id}" data-max="${it.max_score}" value="${v == null ? "" : fmt(v)}" ${editable() ? "" : "readonly"}></td>`;
     }).join("")}
     <td class="calc" data-termsum>${termSumText(calc, items, sc)}</td>
-    <td class="calc" data-total>${yearTotalText(calc)}</td>
-    <td class="calc grade-col" data-grade>${sheetGrade(calc)}</td>
+    ${term === 1 ? `<td class="calc" data-tstate>${termStateText(calc, 1)}</td>`
+      : `<td class="calc" data-t1>${otherTermText(calc, 1)}</td><td class="calc" data-total>${yearTotalText(calc)}</td><td class="calc grade-col" data-grade>${sheetGrade(calc)}</td>`}
   </tr>`;
+}
+// ภาค 1: ยังไม่ตัดเกรด (ผลการเรียนออกเมื่อครบ 2 ภาคที่ภาคเรียนที่ 2) — แสดงว่ากรอกครบหรือยัง
+function termStateText(calc, t) {
+  const x = calc.term_scores?.[t];
+  if (!x) return "–";
+  if (x.carried) return '<span class="tag">ยกมา</span>';
+  return x.complete ? '<span class="tag ok">ครบ</span>' : `<span class="muted small">ยังไม่ครบ ${x.missing} ช่อง</span>`;
+}
+// คะแนนรวมภาคอื่น (ภาค 2 แสดงคะแนนภาค 1 ประกอบการสรุปทั้งปี)
+function otherTermText(calc, t) {
+  const x = calc.term_scores?.[t];
+  if (!x) return "–";
+  if (x.carried) return `${fmt(x.total)} <span class="tag" title="ยกมาจาก ปพ.6 โรงเรียนเดิม">ยกมา</span>`;
+  return x.complete ? fmt(x.total) : `<span class="muted small" title="ภาค ${t} คะแนนยังไม่ครบ ${x.missing} ช่อง">ไม่ครบ</span>`;
+}
+// อัปเดตช่องสรุปท้ายแถว (ใช้หลังพิมพ์คะแนน)
+function refreshRowTail(tr, calc, items, sc) {
+  tr.querySelector("[data-termsum]").innerHTML = termSumText(calc, items, sc);
+  const st = tr.querySelector("[data-tstate]"); if (st) st.innerHTML = termStateText(calc, 1);
+  const tot = tr.querySelector("[data-total]"); if (tot) tot.textContent = yearTotalText(calc);
+  const gr = tr.querySelector("[data-grade]"); if (gr) gr.innerHTML = sheetGrade(calc);
 }
 
 // รวมภาค: ว่างถ้ายังไม่กรอกเลย; รวมทั้งปี: แสดงเมื่อมีโครงสร้างครบ 2 ภาค (ภาคเดียวยังไม่ใช่คะแนนทั้งปี)
@@ -384,9 +411,7 @@ function acceptCell(input, items, term) {
       pending.set(key, start.pend === undefined ? (start.val ?? null) : start.pend);
       scheduleSave();
       const calc0 = recompute(sid);
-      tr.querySelector("[data-termsum]").textContent = termSumText(calc0, items, sc0);
-      tr.querySelector("[data-total]").textContent = yearTotalText(calc0);
-      tr.querySelector("[data-grade]").innerHTML = sheetGrade(calc0);
+      refreshRowTail(tr, calc0, items, sc0);
     }
     showSaveState();
     return false;
@@ -399,9 +424,7 @@ function acceptCell(input, items, term) {
   input.parentElement.classList.toggle("low", item.kind === "indicator" && studentRemedials(sid)[itemId] == null && indicatorResult(item, p.value, data.settings) === "มผ");
   pending.set(`${itemId}:${sid}`, p.value);
   const calc = recompute(sid);
-  tr.querySelector("[data-termsum]").textContent = termSumText(calc, items, sc);
-  tr.querySelector("[data-total]").textContent = yearTotalText(calc);
-  tr.querySelector("[data-grade]").innerHTML = sheetGrade(calc);
+  refreshRowTail(tr, calc, items, sc);
   updateAverages(items);
   scheduleSave();
   return true;
@@ -474,6 +497,43 @@ function attText(sid) {
   return `<span data-tip="${esc(tip)}" tabindex="0" ${low ? 'style="color:var(--bad);font-weight:700"' : ""}>${fmt(rate.pct, 2)}%</span>`;
 }
 
+// ---------------- สรุปผลภาคเรียนที่ 1 (ยังไม่ตัดเกรด) ----------------
+function renderTermSummary(term) {
+  const c = data.course;
+  const cT = c.collect_ratio / 2, fT = 50 - cT;
+  const termItems = data.items.filter((i) => i.term_number === term);
+  const ids = new Set(termItems.map((i) => i.id));
+  const active = data.students.filter((s) => s.enrollment_status === "enrolled");
+  const tOf = (s) => data.computed[s.id]?.term_scores?.[term];
+  const done = active.filter((s) => tOf(s)?.complete);
+  const avg = done.length ? done.reduce((a, s) => a + Number(tOf(s).total), 0) / done.length : null;
+  const absent = (sid) => { const a = data.attendance?.[sid]?.by_term?.[term] || {}; return { off: (a["ข"] || 0) + (a["ล"] || 0) + (a["ป"] || 0), detail: [["ข", "ขาด"], ["ล", "ลากิจ"], ["ป", "ลาป่วย"], ["ส", "มาสาย"]].filter(([k]) => a[k]).map(([k, l]) => `${l} ${a[k]}`).join(" · ") }; };
+  view.innerHTML = `
+    <div class="panel" style="margin-bottom:14px">
+      <div class="actions"><span>นักเรียน <b class="num">${active.length}</b> คน</span><span>กรอกคะแนนครบ <b class="num">${done.length}</b> คน</span>
+        <span>คะแนนเฉลี่ยภาค ${term} <b class="num">${avg == null ? "–" : fmt(avg, 2)}</b> / 50</span></div>
+      <p class="muted small" style="margin:10px 0 0">${TERM_LABEL[term]}เต็ม 50 คะแนน (ระหว่างภาค ${fmt(cT)} + ปลายภาค ${fmt(fT)}) · ไม่ปัดเศษ
+        · ผลการเรียน (เกรด) ร/มส และการส่งผลการเรียน สรุปทั้งปีที่<b>ภาคเรียนที่ 2</b></p>
+    </div>
+    ${termItems.length ? `<div class="table-wrap">
+      <table class="list">
+        <thead><tr><th class="num">เลขที่</th><th>ชื่อ–สกุล</th><th class="num">ระหว่างภาค (${fmt(cT)})</th><th class="num">ปลายภาค (${fmt(fT)})</th>
+          <th class="num">รวมภาค ${term} (50)</th><th class="num">ขาด/ลา ภาค ${term} (วัน)</th><th>หมายเหตุ</th></tr></thead>
+        <tbody>${data.students.map((s) => {
+          const k = data.computed[s.id], t = tOf(s), a = absent(s.id);
+          const failed = k.failed_indicators.filter((id) => ids.has(id)).length;
+          const note = t?.carried ? "ยกมาจาก ปพ.6 โรงเรียนเดิม" : !t ? "ยังไม่มีคะแนน" : t.complete ? "" : `คะแนนยังไม่ครบ ${t.missing} ช่อง`;
+          return `<tr class="${s.enrollment_status !== "enrolled" ? "muted" : ""} ${s.enrollment_status === "transferred" || s.enrollment_status === "withdrawn" ? "inactive" : ""}">
+            <td class="num">${s.number ?? ""}</td><td>${esc(s.name)}${statusTag(s)}</td>
+            <td class="num">${t && t.collect != null ? fmt(t.collect) : "–"}</td><td class="num">${t && t.final != null ? fmt(t.final) : "–"}</td>
+            <td class="num"><b>${t && t.complete ? fmt(t.total) : "–"}</b></td>
+            <td class="num">${a.detail ? `<span data-tip="${esc(a.detail)} (วัน)" tabindex="0">${a.off}</span>` : "–"}</td>
+            <td class="small muted">${[note, failed ? `ไม่ผ่าน ${failed} ${W}` : ""].filter(Boolean).map(esc).join(" · ")}</td></tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>` : `<div class="panel empty"><strong>ภาคเรียนที่ ${term} ยังไม่มีช่องคะแนน</strong>ตั้งโครงสร้างคะแนนก่อน</div>`}`;
+}
+
 // ---------------- สรุปผล / ร มส / แก้ตัว ----------------
 function renderSummary() {
   const c = data.course;
@@ -484,18 +544,20 @@ function renderSummary() {
   view.innerHTML = `
     <div class="panel" style="margin-bottom:14px">
       <div class="actions">${[...NUMERIC_GRADES, "ร", "มส"].map((g) => `<span>${gradeBadge(g)} <span class="num">${counts[g] || 0}</span></span>`).join("")}</div>
-      <p class="muted small" style="margin:10px 0 0">การมาเรียนคิดจากบันทึกของครูประจำชั้นและปฏิทินวันหยุด (ครูผู้สอนไม่ต้องเช็กชื่อ) — มาเรียนต่ำกว่า ${data.settings.attendance_pass_pct}% ระบบให้ผล มส อัตโนมัติ
+      <p class="muted small" style="margin:10px 0 0">สรุปผลทั้งปี = ภาคเรียนที่ 1 + ภาคเรียนที่ 2 (เต็ม 100) แล้วตัดเกรดครั้งเดียว ·
+        การมาเรียนคิดจากบันทึกของครูประจำชั้นและปฏิทินวันหยุด (ครูผู้สอนไม่ต้องเช็กชื่อ) — มาเรียนต่ำกว่า ${data.settings.attendance_pass_pct}% ระบบให้ผล มส อัตโนมัติ
         · คะแนนรวมไม่ปัดเศษ เช่น 79.99 ได้เกรด 3.5</p>
     </div>
     <div class="table-wrap">
       <table class="list">
-        <thead><tr><th class="num">เลขที่</th><th>ชื่อ–สกุล</th><th class="num">ระหว่างภาค (${c.collect_ratio})</th><th class="num">ปลายภาค (${100 - c.collect_ratio})</th>
-          <th class="num">รวม</th><th class="num">มาเรียน</th><th>ผลพิเศษ</th><th>ผลเดิม</th><th>แก้ไข/ซ่อม</th><th>ผลการเรียน</th><th>หมายเหตุ</th></tr></thead>
+        <thead><tr><th class="num">เลขที่</th><th>ชื่อ–สกุล</th><th class="num">ภาค 1 (50)</th><th class="num">ภาค 2 (50)</th><th class="num">ระหว่างภาค (${c.collect_ratio})</th><th class="num">ปลายภาค (${100 - c.collect_ratio})</th>
+          <th class="num">รวมทั้งปี</th><th class="num">มาเรียน</th><th>ผลพิเศษ</th><th>ผลเดิม</th><th>แก้ไข/ซ่อม</th><th>ผลการเรียน</th><th>หมายเหตุ</th></tr></thead>
         <tbody>${data.students.map((s) => {
           const k = data.computed[s.id], r = data.results[s.id] || {};
           const failed = k.failed_indicators.length;
           return `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "muted" : ""} ${s.enrollment_status === "transferred" || s.enrollment_status === "withdrawn" ? "inactive" : ""}">
             <td class="num">${s.number ?? ""}</td><td>${esc(s.name)}${statusTag(s)}</td>
+            <td class="num">${otherTermText(k, 1)}</td><td class="num">${otherTermText(k, 2)}</td>
             <td class="num">${fmt(k.collect_scaled)}</td><td class="num">${fmt(k.final_scaled)}</td><td class="num"><b>${yearTotalText(k)}</b></td>
             <td class="num">${attText(s.id)}</td>
             <td><select data-special style="width:80px" ${can ? "" : "disabled"} aria-label="ผลพิเศษ ${esc(s.name)}"><option value="">–</option><option ${r.special === "ร" ? "selected" : ""}>ร</option><option ${r.special === "มส" ? "selected" : ""}>มส</option></select></td>
@@ -554,7 +616,7 @@ async function remedialDialog(sid) {
 function renderRemedial() {
   const can = editable();
   const rows = [];
-  for (const term of [1, 2]) for (const it of data.items.filter((i) => i.term_number === term && i.kind === "indicator")) {
+  for (const term of [T]) for (const it of data.items.filter((i) => i.term_number === term && i.kind === "indicator")) {
     for (const s of data.students) {
       const raw = studentScores(s.id)[it.id];
       const rem = studentRemedials(s.id)[it.id];
@@ -562,8 +624,8 @@ function renderRemedial() {
     }
   }
   view.innerHTML = `<div class="panel">
-    <div class="panel-head"><h2>สอบแก้ตัวราย${W}</h2><span class="muted small">${rows.length} รายการ</span></div>
-    <p class="muted small" style="margin-top:0">กรอกคะแนนที่นักเรียนทำได้จริงจากการแก้ตัว ระบบนับให้ไม่เกินเกณฑ์ผ่าน (ภาค 1: ${indicatorPassPct(data.settings, 1)}%, ภาค 2: ${indicatorPassPct(data.settings, 2)}% ของคะแนนเต็ม)
+    <div class="panel-head"><h2>สอบแก้ตัวราย${W} ${TERM_LABEL[T]}</h2><span class="muted small">${rows.length} รายการ</span></div>
+    <p class="muted small" style="margin-top:0">กรอกคะแนนที่นักเรียนทำได้จริงจากการแก้ตัว ระบบนับให้ไม่เกินเกณฑ์ผ่าน (${TERM_LABEL[T]}: ${indicatorPassPct(data.settings, T)}% ของคะแนนเต็ม)
       และใช้คะแนนที่สูงกว่าระหว่างคะแนนเดิมกับคะแนนที่นับได้ · เว้นว่างเพื่อลบคะแนนแก้ตัว</p>
     ${rows.length ? `<div class="rem-row small muted" style="font-weight:600"><span>ภาค</span><span>นักเรียน</span><span>${W}</span><span>คะแนนเดิม</span><span>คะแนนแก้ตัว</span><span>นับได้</span></div>
       ${rows.map((r) => {
@@ -633,7 +695,7 @@ function renderSetup() {
   const termEmpty = (t) => !data.items.some((i) => i.term_number === t);
   const tplPanel = (c.has_template || data.is_admin) ? `<div class="panel"><div class="panel-head"><h2>แม่แบบโครงสร้างของวิชา ${esc(c.code)} ${esc(c.grade_level)}</h2></div>
       ${c.has_template ? `<p class="muted small" style="margin-top:0">${c.template_inherited ? "ใช้แม่แบบจากปีการศึกษาก่อน (ฝ่ายวิชาการตั้งไว้ ยังไม่ได้ตั้งใหม่ปีนี้)" : `ฝ่ายวิชาการตั้งแม่แบบไว้แล้ว${c.template_updated_at ? ` (ปรับล่าสุด ${esc(c.template_updated_at.slice(0, 10))})` : ""}`} ใช้กับภาคที่ยังไม่มีช่องคะแนนได้ แล้วปรับคะแนนเต็มต่อได้อิสระ</p>
-        ${can ? `<div class="actions">${[1, 2].map((t) => `<button class="btn ${termEmpty(t) ? "primary" : ""}" data-tpl="${t}" ${termEmpty(t) ? "" : "disabled title=\"ภาคนี้มีช่องคะแนนแล้ว\""}>ใช้แม่แบบ ภาค ${t}</button>`).join("")}</div>` : ""}`
+        ${can ? `<div class="actions">${[T].map((t) => `<button class="btn ${termEmpty(t) ? "primary" : ""}" data-tpl="${t}" ${termEmpty(t) ? "" : "disabled title=\"ภาคนี้มีช่องคะแนนแล้ว\""}>ใช้แม่แบบ ภาค ${t}</button>`).join("")}</div>` : ""}`
         : `<p class="muted small" style="margin-top:0">ยังไม่มีแม่แบบ</p>`}
       ${data.is_admin ? `<div class="actions" style="margin-top:10px"><button class="btn" id="tplSave" ${data.items.length ? "" : "disabled"}>บันทึกโครงสร้างนี้เป็นแม่แบบของวิชา</button>${c.has_template && !c.template_inherited ? '<button class="btn danger" id="tplDel">ลบแม่แบบ</button>' : ""}</div>
         <p class="muted small">เฉพาะฝ่ายวิชาการ/ทีมวัดผล — ครูทุกห้องของวิชานี้จะกดใช้แม่แบบได้ ห้องที่ใช้ไปแล้วไม่เปลี่ยนตาม</p>` : ""}</div>` : "";
@@ -645,7 +707,7 @@ function renderSetup() {
         ระบบใช้คะแนนจริงตามที่กรอก ไม่ย่อขยายและไม่ปัดเศษ · ฝ่ายวิชาการเป็นผู้กำหนดสัดส่วนของแต่ละวิชา</p>
       ${issues.length ? `<p class="note warn" style="margin-top:8px">${issues.map(esc).join("<br>")}<br>แก้ให้ตรงก่อนยืนยันผล</p>` : ""}
     </div>
-    ${[1, 2].map((t) => `<div class="panel">
+    ${[T].map((t) => `<div class="panel">
       ${can && readDraft(t) ? `<div class="note warn" style="margin:0 0 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">มีร่างโครงสร้างภาคเรียนที่ ${t} ที่ยังไม่บันทึก (${esc(whenText(readDraft(t).at))})
         <button class="btn small primary" data-resume="${t}">เปิดร่างทำต่อ</button><button class="btn small" data-dropdraft="${t}">ทิ้งร่าง</button></div>` : ""}
       <div class="panel-head"><h2>ภาคเรียนที่ ${t} ${termLine(t)}</h2>${can ? `<div class="actions">
@@ -655,8 +717,8 @@ function renderSetup() {
     ${can ? `<div class="panel"><div class="panel-head"><h2>ใช้โครงสร้างจากห้องอื่น / ปีการศึกษาก่อน</h2></div>
       <p class="muted small">ดึงหน่วยการเรียนรู้ ภาระงาน ${W} และคะแนนเต็มของวิชาเดียวกัน (รหัสวิชาและชั้นเดียวกัน) มาเป็นร่าง ปรับได้ก่อนกดบันทึก — ไม่คัดลอกคะแนนนักเรียน</p>
       <div id="siblings" class="muted small">กำลังค้นหา…</div></div>
-    <div class="panel" id="pushPanel" hidden><div class="panel-head"><h2>นำโครงสร้างนี้ไปใช้กับห้องอื่นที่สอน</h2>
-      <button class="btn" id="pushBtn" ${data.items.length ? "" : "disabled"}>${ICONS.copy} เลือกห้อง</button></div>
+    <div class="panel" id="pushPanel" hidden><div class="panel-head"><h2>นำโครงสร้าง ภาค ${T} นี้ไปใช้กับห้องอื่นที่สอน</h2>
+      <button class="btn" id="pushBtn" ${data.items.some((i) => i.term_number === T) ? "" : "disabled"}>${ICONS.copy} เลือกห้อง</button></div>
       <p class="muted small" id="pushInfo" style="margin:0"></p></div>` : ""}`;
   for (const b of view.querySelectorAll("[data-build]")) b.onclick = () => openBuilder(Number(b.dataset.build));
   for (const b of view.querySelectorAll("[data-tpl]")) b.onclick = () => applyTemplate(Number(b.dataset.tpl));
@@ -720,7 +782,7 @@ async function loadSiblings() {
     const Y = data.course.year_be;
     const group = (label, list) => list.length ? `<div style="margin-top:6px"><b class="small">${label}</b>${list.map((s) => `<div class="actions" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line-soft)">
       <span>${esc(s.grade_level)}/${esc(s.classroom)} ปีการศึกษา ${s.year_be} — ${s.item_count} ช่องคะแนน</span>
-      <span class="actions">${[1, 2].map((t) => `<button class="btn small" data-pull="${s.id}:${t}" ${s[`t${t}_items`] ? "" : "disabled"}>${ICONS.copy} ใช้ภาค ${t}</button>`).join("")}</span></div>`).join("")}</div>` : "";
+      <span class="actions">${[T].map((t) => `<button class="btn small" data-pull="${s.id}:${t}" ${s[`t${t}_items`] ? "" : "disabled"}>${ICONS.copy} ใช้ภาค ${t}</button>`).join("")}</span></div>`).join("")}</div>` : "";
     box.innerHTML = group("ปีการศึกษานี้ (ห้องอื่น)", courses.filter((s) => s.year_be === Y)) + group("ปีการศึกษาก่อน ๆ", courses.filter((s) => s.year_be !== Y));
     for (const b of box.querySelectorAll("[data-pull]")) b.onclick = () => { const [sid, t] = b.dataset.pull.split(":").map(Number); pullStructure(sid, t); };
   } catch (err) { box.textContent = err.message; }
@@ -734,7 +796,7 @@ async function loadPushPanel() {
     if (!targets.length || !document.body.contains(panel)) return;
     panel.hidden = false;
     document.getElementById("pushInfo").textContent = `ห้องอื่นของ ${data.course.code || data.course.name} ที่คุณสอน: ${targets.map((c) => `${c.grade_level}/${c.classroom}`).join(", ")}`;
-    document.getElementById("pushBtn").onclick = () => applyToRooms([1, 2].filter((t) => data.items.some((i) => i.term_number === t)));
+    document.getElementById("pushBtn").onclick = () => applyToRooms([T].filter((t) => data.items.some((i) => i.term_number === t)));
   } catch { /* ไม่แสดงแผงนี้ */ }
 }
 
@@ -915,15 +977,15 @@ async function applyToRooms(defaultTerms = [1, 2], { afterSave = false } = {}) {
   try { targets = await loadTargets(); } catch (err) { showError(err); return; }
   if (!targets.length) { if (!afterSave) toast("ไม่มีห้องอื่นของวิชานี้ที่คุณสอน", "bad"); return; }
   const has = (t) => data.items.some((i) => i.term_number === t);
-  const terms = [1, 2].filter(has);
-  if (!terms.length) { toast("ห้องนี้ยังไม่มีโครงสร้าง", "bad"); return; }
+  const terms = [T].filter(has); // ทำงานทีละภาค: คัดลอกเฉพาะภาคเรียนที่เลือก
+  if (!terms.length) { toast(`ห้องนี้ยังไม่มีโครงสร้าง ภาค ${T}`, "bad"); return; }
   const st = (c, t) => c.terms[t].scores ? `<span class="tag warn">มีคะแนนแล้ว</span>` : c.terms[t].items ? `<span class="tag">มีโครงสร้างแล้ว</span>` : `<span class="tag ok">ยังว่าง</span>`;
   const res = await dialog({
     title: afterSave ? "ใช้โครงสร้างนี้กับห้องอื่นด้วยไหม" : "นำโครงสร้างไปใช้กับห้องอื่น", okText: "นำไปใช้", cancelText: afterSave ? "ไม่ใช้" : "ยกเลิก", wide: true,
     body: `<p class="muted small" style="margin-top:0">คัดลอกหน่วยการเรียนรู้ ภาระงาน ${W} คะแนนเต็ม และสอบปลายภาคของ ${esc(data.course.grade_level)}/${esc(data.course.classroom)} ไปแทนที่ของห้องที่เลือก
         · ช่องที่ชื่อตรงกันคงคะแนนนักเรียนไว้ · คะแนนนักเรียนไม่ถูกคัดลอก</p>
       <div class="actions" style="margin-bottom:8px">${terms.map((t) => `<label class="check"><input type="checkbox" name="term${t}" ${defaultTerms.includes(t) ? "checked" : ""}> ภาคเรียนที่ ${t}</label>`).join("")}</div>
-      <div style="display:grid;gap:6px">${targets.map((c) => `<label class="check pick-row"><input type="checkbox" name="c${c.id}" ${c.locked ? "disabled" : ""} ${!c.locked && !c.terms[1].scores && !c.terms[2].scores ? "checked" : ""}>
+      <div style="display:grid;gap:6px">${targets.map((c) => `<label class="check pick-row"><input type="checkbox" name="c${c.id}" ${c.locked ? "disabled" : ""} ${!c.locked && !c.terms[T].scores ? "checked" : ""}>
         <span><b>${esc(c.grade_level)}/${esc(c.classroom)}</b> ${c.locked ? '<span class="tag">ส่งผลแล้ว แก้ไม่ได้</span>' : terms.map((t) => `ภาค ${t} ${st(c, t)}`).join(" ")}</span></label>`).join("")}</div>`,
   });
   if (!res.ok) return;
@@ -1131,4 +1193,4 @@ async function saveBuilder(confirm = false) {
 
 // รีเฟรชระหว่างอยู่ในหน้าสร้างโครงสร้าง → เปิดร่างเดิมต่อทันที
 { let t = null; try { t = Number(sessionStorage.getItem(openKey)) || null; } catch { /* */ }
-  if (t && editable() && readDraft(t)) openBuilder(t, { resume: true }); }
+  if (t && t === T && editable() && readDraft(t)) openBuilder(t, { resume: true }); }

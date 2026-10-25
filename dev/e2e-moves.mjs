@@ -5,7 +5,7 @@ const require = createRequire("/opt/npm-tools/node_modules/");
 const { chromium } = require("playwright-core");
 const BASE = "http://localhost:8787", OUT = process.argv[2] || "/tmp";
 const errors = [];
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
+const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
 async function login(email, viewport = { width: 1366, height: 900 }) {
   const p = await (await browser.newContext({ viewport, locale: "th-TH" })).newPage();
   p.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
@@ -90,12 +90,12 @@ await t.waitForFunction(() => document.body.innerText.includes("บันทึ�
 await t.screenshot({ path: `${OUT}/m3-carry.png`, fullPage: true });
 
 // ---------- ครูผู้สอน: ภาค 1 แสดง "ยกมา" ภาค 2 กรอกต่อ แล้วได้เกรด ----------
-await t.goto(`${BASE}/course.html?id=${c.id}`);
+await t.goto(`${BASE}/course.html?id=${c.id}&term=2`);
 await t.waitForSelector("#tabs");
 const cd = await api(t, `/api/courses/${c.id}`);
 const kid = cd.students.find((s) => s.transfer_in_term === 2 && s.id !== leaver.id);
 if (!kid || kid.number !== cd.students.filter((s) => s.number).length) errors.push("นักเรียนย้ายเข้าต้องอยู่ท้ายห้อง");
-await t.click('#tabs button[data-tab=t2]');
+await t.click('#tabs button[data-tab=sheet]');
 await t.waitForSelector("#sheet");
 const kr = t.locator(`#sheet tr[data-sid="${kid.id}"]`);
 await kr.locator("input").first().fill("30");

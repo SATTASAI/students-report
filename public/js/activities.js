@@ -1,9 +1,16 @@
 // กิจกรรมพัฒนาผู้เรียน (ปพ.5.1): ครูประจำชั้นและฝ่ายวิชาการบันทึก 4 กิจกรรมในหน้าเดียว — ผลขึ้น ปพ.6 อัตโนมัติ
-import { shell, api, esc, showError, params, editGate } from "/js/app.js";
+import { shell, api, esc, showError, params, editGate, switchTerm } from "/js/app.js";
 
 const me = await shell("activities");
 const view = document.getElementById("view");
 document.getElementById("main").hidden = false;
+// ผลกิจกรรมพัฒนาผู้เรียนเป็นผลทั้งปี (ผ/มผ ครั้งเดียว) → บันทึกและสรุปที่ภาคเรียนที่ 2
+if (me.term !== 2) {
+  view.innerHTML = `<div class="panel empty term-only"><strong>กิจกรรมพัฒนาผู้เรียนสรุปผลทั้งปีที่ภาคเรียนที่ 2</strong>
+    ผลกิจกรรม (ผ/มผ) ประเมินครั้งเดียวต่อปีและขึ้นใน ปพ.5.1 / ปพ.6 ของภาคเรียนที่ 2<br><br><button class="btn primary" id="toT2">ไปภาคเรียนที่ 2</button></div>`;
+  document.getElementById("toT2").onclick = () => switchTerm(2);
+  throw new Error("term 1");
+}
 const Y = me.year.id;
 const SCOPE = me.role === "teacher" ? "&scope=teacher" : ""; // บทบาทครู: เห็นเฉพาะห้องที่เป็นครูประจำชั้น
 document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} · ทุกคนผ่านเป็นค่าเริ่มต้น เอาเครื่องหมายออกเฉพาะคนที่ไม่ผ่าน · ผลขึ้นใน ปพ.5.1 และ ปพ.6 อัตโนมัติ`;
