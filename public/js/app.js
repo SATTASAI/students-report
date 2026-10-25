@@ -255,7 +255,8 @@ export async function shell(active) {
   const termPage = ["home", "activities", "logs", "docs"].includes(active);
   me.term = selectedTerm(me);
   rememberTerm(me.term);
-  document.documentElement.dataset.term = String(me.term);
+  // สีทั้งหน้าเปลี่ยนตามภาค (ภาค 1 คราม · ภาค 2 เขียว) เฉพาะหน้าที่ทำงานรายภาค
+  if (termPage) document.documentElement.dataset.term = String(me.term);
   const roles = availableRoles(me.user);
   let role;
   try { role = localStorage.getItem("sr-role"); } catch { /* */ }
@@ -278,13 +279,16 @@ export async function shell(active) {
   const side = document.createElement("aside");
   side.className = "sidebar";
   side.id = "sidebar";
+  // สวิตช์ภาคเรียน (ปิด = ภาค 1 · เปิด = ภาค 2) อยู่บนสุดของเมนู
+  const termToggle = (cls = "") => `<button type="button" class="term-toggle ${cls}" role="switch" aria-checked="${me.term === 2}"
+      aria-label="ภาคเรียน: ตอนนี้ภาคเรียนที่ ${me.term} — กดเพื่อสลับไปภาคเรียนที่ ${me.term === 1 ? 2 : 1}">
+      <span class="tt-label ${me.term === 1 ? "on" : ""}">ภาค 1</span><span class="tt-track" aria-hidden="true"><span class="tt-knob"></span></span><span class="tt-label ${me.term === 2 ? "on" : ""}">ภาค 2</span></button>`;
   side.innerHTML = `
+    ${termPage ? `<div class="term-top"><span class="term-top-title">ภาคเรียน</span>${termToggle()}</div>` : ""}
     <a class="brand" href="/"><img src="/logo.png" alt=""><div><strong>รายงานผลการเรียน</strong><span>${esc(me.settings.school_name || "โรงเรียนบ้านป่าเด็ง")}</span></div></a>
     <div class="side-ctl">
       <label>บทบาท<select id="roleSel" ${roles.length < 2 ? "disabled" : ""}>${roles.map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${ROLES[r].label}</option>`).join("")}</select></label>
       <label>ปีการศึกษา<select id="yearSel">${me.years.map((y) => `<option value="${y.id}" ${y.id === me.year.id ? "selected" : ""}>${y.year_be}</option>`).join("")}</select></label>
-      ${termPage ? `<div class="term-switch" role="group" aria-label="ภาคเรียน"><span>ภาคเรียน</span>
-        <div>${[1, 2].map((t) => `<button type="button" class="term-btn t${t}" data-term="${t}" aria-pressed="${t === me.term}">ภาค ${t}</button>`).join("")}</div></div>` : ""}
     </div>
     <nav class="side-nav" id="sideNav" aria-label="เมนู">${drawMenu()}</nav>
     <div class="side-foot"><div class="who-box"><span class="avatar">${esc((me.user.full_name || "?").replace(/^(นางสาว|นาง|นาย|ครู)/, "").trim().slice(0, 1))}</span>
@@ -322,7 +326,8 @@ export async function shell(active) {
     location.href = u.pathname === "/course.html" ? "/" : u.toString();
   };
   side.querySelector("#logoutBtn").onclick = logout;
-  for (const b of side.querySelectorAll(".term-btn")) b.onclick = () => { if (Number(b.dataset.term) !== me.term) switchTerm(Number(b.dataset.term)); };
+  // กดสวิตช์: เลื่อนปุ่มให้เห็นก่อน แล้วโหลดหน้าเดิมในภาคเรียนใหม่
+  const flip = (el) => { el.setAttribute("aria-checked", String(me.term === 1)); el.classList.add("moving"); setTimeout(() => switchTerm(me.term === 1 ? 2 : 1), 180); };
   if (termPage) {
     // แถบสีบอกภาคเรียนที่กำลังทำงาน (สีเดียวกับการ์ดภาคเรียนในหน้าแรก)
     document.body.classList.add("term-mode");
@@ -336,11 +341,9 @@ export async function shell(active) {
     band.querySelector("button").onclick = () => switchTerm(other);
     const main = document.getElementById("main");
     (main || document.body).prepend(band);
-    const mt = document.createElement("span");
-    mt.className = `role-chip term-chip t${me.term}`;
-    mt.textContent = `ภาค ${me.term}`;
-    mbar.querySelector(".role-chip").before(mt);
+    mbar.querySelector(".role-chip").insertAdjacentHTML("beforebegin", termToggle("mini"));
   }
+  for (const el of document.querySelectorAll(".term-toggle")) el.onclick = () => flip(el);
   return me;
 }
 

@@ -553,19 +553,11 @@ details.panel > summary { cursor: pointer; }
   --term: var(--t1); --term-ink: var(--t1-ink); --term-bg: var(--t1-bg); --term-line: var(--t1-line);
 }
 :root[data-term="2"] { --term: var(--t2); --term-ink: var(--t2-ink); --term-bg: var(--t2-bg); --term-line: var(--t2-line); }
-.term-switch { display: grid; gap: 4px; font-size: 12px; }
-.term-switch > div { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.term-btn { min-height: 36px; border-radius: var(--r-sm); border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.08); color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
-.term-btn:hover { background: rgba(255,255,255,.18); }
-.term-btn.t1[aria-pressed="true"] { background: #fff; color: var(--t1-ink); border-color: #fff; box-shadow: inset 0 -3px 0 var(--t1); }
-.term-btn.t2[aria-pressed="true"] { background: #fff; color: var(--t2-ink); border-color: #fff; box-shadow: inset 0 -3px 0 var(--t2); }
 .term-band { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin: 0 0 16px; border-radius: var(--r-md); border: 1px solid var(--term-line); border-left: 6px solid var(--term); background: var(--term-bg); color: var(--term-ink); }
 .term-band > span:nth-child(2) { flex: 1; min-width: 200px; }
 .term-band .term-dates { font-size: 13px; opacity: .85; }
 .term-band .term-note { display: block; font-size: 13px; opacity: .9; }
 .term-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--term); flex: none; }
-.term-chip.t1 { background: var(--t1-bg); color: var(--t1-ink); }
-.term-chip.t2 { background: var(--t2-bg); color: var(--t2-ink); }
 body.term-mode .tabs button[aria-selected="true"], body.term-mode .tabs .tab-link[aria-selected="true"] { color: var(--term-ink); border-bottom-color: var(--term); }
 body.term-mode .tabs { border-bottom-color: var(--term-line); }
 /* หน้าแรก: การ์ดเลือกภาคเรียน */
@@ -584,3 +576,43 @@ body.term-mode .tabs { border-bottom-color: var(--term-line); }
 @media (max-width: 520px) { .term-cards { grid-template-columns: 1fr; } }
 .meter.term i { background: var(--term); }
 .term-only { border: 1px dashed var(--term-line); background: var(--term-bg); color: var(--term-ink); }
+
+/* ภาคเรียนที่ 2: เปลี่ยนสีทั้งหน้าเป็นโทนเขียว (เมนู ปุ่ม หัวข้อ พื้น เส้น) — ภาคเรียนที่ 1 ใช้โทนครามเดิม */
+:root[data-term="2"] {
+  --ink: #0f5235; --ink-2: #17734b; --ink-3: #5a9e7c;
+  --paper: #f3f9f5; --wash: #e1f2e8; --line: #cfe3d7; --line-soft: #e3f0e8;
+  --text: #16291f; --muted: #57695f;
+}
+:root[data-term="2"] body { background: var(--paper); }
+/* สวิตช์ภาคเรียน บนสุดของเมนูซ้าย */
+.term-top { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--r-md); background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); }
+.term-top-title { font-size: 12px; opacity: .85; }
+.term-toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 4px 2px; border: 0; background: none; color: #fff; font: inherit; cursor: pointer; }
+.term-toggle .tt-label { font-size: 15px; font-weight: 600; opacity: .55; transition: opacity .15s; }
+.term-toggle .tt-label.on { opacity: 1; }
+.tt-track { position: relative; flex: none; width: 58px; height: 32px; border-radius: 999px; background: var(--t1); border: 2px solid rgba(255,255,255,.85); transition: background .18s; }
+.tt-knob { position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .18s; }
+.term-toggle[aria-checked="true"] .tt-track { background: #2fa36b; }
+.term-toggle[aria-checked="true"] .tt-knob { transform: translateX(26px); }
+.term-toggle.moving .tt-label { opacity: .55; }
+.term-toggle:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: var(--r-sm); }
+.term-toggle.mini { width: auto; gap: 6px; padding: 0; margin-left: auto; }
+.term-toggle.mini .tt-label { font-size: 12px; }
+.term-toggle.mini .tt-track { width: 44px; height: 24px; }
+.term-toggle.mini .tt-knob { width: 16px; height: 16px; }
+.term-toggle.mini[aria-checked="true"] .tt-knob { transform: translateX(20px); }
+.mobilebar .term-toggle.mini + .role-chip { margin-left: 0; }
+@media (prefers-reduced-motion: reduce) { .tt-track, .tt-knob { transition: none; } }
+/* ภาค 2: พื้นตาราง/การ์ดที่เคยเป็นโทนฟ้าให้เป็นโทนเขียวอ่อน */
+:root[data-term="2"] table.list th, :root[data-term="2"] .sheet thead th, :root[data-term="2"] .sheet thead .stick,
+:root[data-term="2"] .sheet tfoot td, :root[data-term="2"] .log-sheet tfoot td { background: #f2f8f4; }
+:root[data-term="2"] .col-head.final { background: #e6f3eb; }
+:root[data-term="2"] .sheet td.cell.final, :root[data-term="2"] .item.final { background: #f1f8f3; }
+:root[data-term="2"] .sheet td.calc { background: #f8fbf9; }
+:root[data-term="2"] .sheet td.cell input:focus { background: #edf7f1; }
+:root[data-term="2"] .sheet tbody tr:hover td.stick, :root[data-term="2"] .course-row:hover { background: #f0f8f3; }
+:root[data-term="2"] .doc-item { background: #f9fcfa; }
+:root[data-term="2"] .log-sheet .tick:hover { background: #ebf6ef; }
+.term-toggle .tt-label { white-space: nowrap; }
+.term-toggle.mini { flex: none; }
+@media (max-width: 430px) { body.term-mode .mobilebar .brand strong { display: none; } }
