@@ -75,7 +75,7 @@ test("ครูประจำชั้น: ปิดการกรอกแล
   const att = { changes: [{ student_id: kid.id, date: "2026-11-03", code: "ข" }] };
   await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, att, { expect: 409 });
   await call("t1", "PUT", `/api/homeroom/assessments?${Q}`, { changes: [{ student_id: kid.id, item_key: "trait_1", value: "3" }] }, { expect: 409 });
-  await call("t1", "PUT", "/api/activities", { grade: "ป.4", room: "1", changes: [{ student_id: kid.id, item_key: "act_scout_t", value: "มผ" }] }, { expect: 409 });
+  await call("t1", "PUT", "/api/activities", { grade: "ป.4", room: "1", term: 2, changes: [{ student_id: kid.id, item_key: "act_scout_t2", value: "มผ" }] }, { expect: 409 });
   const r = (await call("t1", "POST", `/api/homeroom/edit-request?${Q}`, { reason: "ลืมบันทึกขาดเรียน" }, { expect: 200 })).data;
   assert.ok(r.edit.pending);
   const id = (await call("admin", "GET", "/api/admin/edit-requests", null, { expect: 200 })).data.requests[0].id;

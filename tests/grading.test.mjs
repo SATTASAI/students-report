@@ -64,7 +64,7 @@ test("สรุปการประเมินของครูประจ�
   assert.equal(summarizeGroup(trait, { ...all("3"), trait_8: "2" }), "3");
   assert.equal(summarizeGroup(trait, { ...all("3"), trait_8: undefined }), null);
   const act = ASSESSMENT_GROUPS.find((g) => g.key === "act");
-  assert.equal(summarizeGroup(act, { act_social_t: "มผ" }), "มผ");
+  assert.equal(summarizeGroup(act, { act_social_t2: "มผ" }), "มผ");
 });
 
 test("ห้ามปัดเศษ: คะแนนรวม ตัดเกรด เกณฑ์แก้ตัว เวลาเรียน และการแสดงผล ใช้ค่าจริง", async () => {

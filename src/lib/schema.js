@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-22";
+export const SCHEMA_VERSION = "gr-23";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -363,6 +363,15 @@ export async function migrateLateCode(env) {
   ].map((sql) => env.DB.prepare(sql)));
 }
 
+// gr-23: กิจกรรมพัฒนาผู้เรียนบันทึกรายภาค — คีย์เดิมก่อนแยกภาค (act_scout_t) ย้ายเป็นภาคเรียนที่ 1 (act_scout_t1)
+// ผลทั้งปีไม่เปลี่ยน (มผ เดิมยังเป็นมผ) · ทำซ้ำได้: ไม่มีคีย์เดิมเหลือก็ไม่มีอะไรเปลี่ยน
+export async function migrateActivityTerms(env) {
+  await env.DB.batch([
+    "UPDATE OR IGNORE gr_assessments SET item_key = item_key || '1' WHERE item_key GLOB 'act_*_[to]'",
+    "DELETE FROM gr_assessments WHERE item_key GLOB 'act_*_[to]'",
+  ].map((sql) => env.DB.prepare(sql)));
+}
+
 const ensured = new WeakMap();
 
 export async function ensureSchema(env) {
@@ -374,6 +383,7 @@ export async function ensureSchema(env) {
     await env.DB.batch(SCHEMA_SQL.map((sql) => env.DB.prepare(sql)));
     await addMissingColumns(env);
     await migrateLateCode(env);
+    await migrateActivityTerms(env);
     await seedIndicatorBank(env);
     await env.DB.prepare(`INSERT INTO system_settings (setting_key, setting_value, updated_at)
       VALUES ('students_report_schema', ?, datetime('now'))

@@ -74,3 +74,20 @@ test("API รายภาค: /api/me, การมาเรียนแยก�
   const t2 = await call("t1", "GET", `/api/reports/absence?${Q}&student=${a.id}&term=2`);
   assert.deepEqual([all.absences.length, t1.absences.length, t2.absences.length, all.term, t1.term], [3, 2, 1, null, 1]);
 });
+
+test("gr-23: กิจกรรมพัฒนาผู้เรียนคีย์เดิม (ก่อนแยกภาค) ย้ายเป็นภาคเรียนที่ 1 ผลทั้งปีไม่เปลี่ยน", async () => {
+  const { migrateActivityTerms, ensureSchema } = await import("../src/lib/schema.js");
+  const { summarizeGroup, ASSESSMENT_GROUPS } = await import("../public/js/grading.js");
+  const env = await makeEnv();
+  await ensureSchema(env);
+  const ins = (sid, key) => env.DB.prepare("INSERT INTO gr_assessments (academic_year_id, student_id, item_key, value, updated_at) VALUES (1, ?, ?, 'มผ', datetime('now'))").bind(sid, key).run();
+  await ins(901, "act_scout_t"); await ins(901, "act_club_o");
+  await ins(902, "act_scout_t"); await ins(902, "act_scout_t1"); // ซ้ำกับคีย์ใหม่ → เหลือแถวเดียว
+  await ins(903, "act_social_o2"); await ins(903, "trait_1");
+  await migrateActivityTerms(env);
+  await migrateActivityTerms(env); // ทำซ้ำได้
+  const { results } = await env.DB.prepare("SELECT student_id, item_key FROM gr_assessments WHERE student_id > 900 ORDER BY student_id, item_key").all();
+  assert.deepEqual(results.map((r) => `${r.student_id}:${r.item_key}`), ["901:act_club_o1", "901:act_scout_t1", "902:act_scout_t1", "903:act_social_o2", "903:trait_1"]);
+  const act = ASSESSMENT_GROUPS.find((g) => g.key === "act");
+  assert.deepEqual([summarizeGroup(act, { act_scout_t1: "มผ" }, 1), summarizeGroup(act, { act_scout_t1: "มผ" }, 2), summarizeGroup(act, { act_scout_t1: "มผ" })], ["มผ", "ผ", "มผ"]);
+});

@@ -144,11 +144,31 @@ await t.click('#tabs button[data-tab="comments"]');
 await t.waitForSelector(".cm-row");
 check(await t.locator(`.cm-row[data-sid="${s1.id}"] textarea[data-f="learn"]`).inputValue() === "ความเห็นภาคสอง", "ความคิดเห็นภาค 2");
 await t.screenshot({ path: `${OUT}/terms-homeroom-t2.png` });
-// กิจกรรม: ภาค 1 แจ้งให้ไปภาค 2
+// กิจกรรม: บันทึกได้ทั้ง 2 ภาค · ภาค 2 แสดงผลภาค 1 และสรุปทั้งปี (ต้องผ่านทั้ง 2 ภาค)
+const actSaved = async () => { await t.waitForFunction(() => document.getElementById("saveState")?.textContent === "บันทึกแล้ว"); };
+const actRow = (sid) => t.locator(`#sheet tbody tr[data-sid="${sid}"]`);
 await t.goto(`${BASE}/activities.html?term=1`);
-await t.waitForSelector("#toT2");
+await t.waitForSelector("#sheet");
+check(await t.locator('#sheet input[data-key$="2"]').count() === 0, "กิจกรรมภาค 1 ต้องไม่มีช่องของภาค 2");
+await actRow(s1.id).locator('input[data-key="act_scout_t1"]').uncheck();
+await actSaved();
+check(await actRow(s1.id).locator("[data-sum]").innerText() === "ไม่ผ่าน", "กิจกรรมภาค 1: s1 ไม่ผ่านภาค 1");
+check((await t.innerText("#actCount")).includes("ไม่ผ่านภาค 1 1 คน"), `กิจกรรมภาค 1 นับไม่ผ่าน: ${await t.innerText("#actCount")}`);
+await t.screenshot({ path: `${OUT}/terms-activities-t1.png` });
 await t.goto(`${BASE}/activities.html?term=2`);
 await t.waitForSelector("#sheet");
+check(await t.locator('#sheet input[data-key$="1"]').count() === 0, "กิจกรรมภาค 2 ต้องไม่มีช่องให้แก้ภาค 1");
+await actRow(s2.id).locator('input[data-key="act_club_o2"]').uncheck();
+await actSaved();
+{
+  const cells = async (sid) => (await actRow(sid).locator("td").allInnerTexts()).slice(2).map((x) => x.trim());
+  // ต่อกิจกรรม: ภาค 1 | เวลาเรียน | จุดประสงค์ | ทั้งปี  แล้วสรุป ภาค 1 | ภาค 2 | ทั้งปี
+  const c1 = await cells(s1.id), c2 = await cells(s2.id);
+  check(c1[4] === "มผ" && c1[7] === "มผ" && c1.slice(-3).join() === "ไม่ผ่าน,ผ่าน,ไม่ผ่าน", `กิจกรรมภาค 2 s1 (ไม่ผ่านลูกเสือภาค 1): ${c1}`);
+  check(c2[8] === "ผ" && c2[11] === "มผ" && c2.slice(-3).join() === "ผ่าน,ไม่ผ่าน,ไม่ผ่าน", `กิจกรรมภาค 2 s2 (ไม่ผ่านฐานการเรียนรู้ภาค 2): ${c2}`);
+  check((await t.innerText("#actCount")).includes("ไม่ผ่านทั้งปี 2 คน"), `กิจกรรมภาค 2 นับไม่ผ่านทั้งปี: ${await t.innerText("#actCount")}`);
+}
+await t.screenshot({ path: `${OUT}/terms-activities-t2.png` });
 // บันทึกประจำวัน: เฉพาะเดือนของภาค
 await t.goto(`${BASE}/logs.html?term=1`);
 await t.waitForSelector("#mSel");
@@ -169,7 +189,8 @@ const grade = (x) => x == null ? "" : String(x);
 for (const term of [1, 2]) {
   await t.goto(`${BASE}/print/pp6.html?year=1&${Q}&term=${term}`);
   await t.waitForSelector("section.sheet");
-  const pages = await t.locator("section.sheet").evaluateAll((ss) => ss.map((s) => ({ text: s.innerText, rows: [...s.querySelectorAll("table")[0].querySelectorAll("tbody tr")].map((tr) => [...tr.children].map((td) => td.innerText.trim())) })));
+  const pages = await t.locator("section.sheet").evaluateAll((ss) => ss.map((s) => ({ text: s.innerText, rows: [...s.querySelectorAll("table")[0].querySelectorAll("tbody tr")].map((tr) => [...tr.children].map((td) => td.innerText.trim())),
+    act: [...[...s.querySelectorAll("table")].find((tb) => tb.querySelector("thead").innerText.includes("กิจกรรมพัฒนาผู้เรียน")).querySelectorAll("tbody tr")].map((tr) => [...tr.children].map((td) => td.innerText.trim())) })));
   check(pages.length === rep.students.length, `ปพ.6 ภาค ${term} ต้องมี ${rep.students.length} หน้า (ได้ ${pages.length})`);
   rep.students.forEach((st, i) => {
     const pg = pages[i];
@@ -188,6 +209,18 @@ for (const term of [1, 2]) {
         check(row[6] === grade(sj.grade), `ปพ.6 ภาค 2 ${st.name} ${sj.code} เกรด ${row[6]} ≠ ${grade(sj.grade)}`);
         if (row[3] && row[4] && row[5]) check(Math.abs(Number(row[3]) + Number(row[4]) - Number(row[5])) < 1e-9, `ปพ.6 ภาค 2 ${st.name} ${sj.code} ภาค 1 + ภาค 2 ≠ รวม`);
       }
+    }
+    {
+      // กิจกรรมพัฒนาผู้เรียน: s1 ไม่ผ่านลูกเสือภาค 1 · s2 ไม่ผ่านฐานการเรียนรู้ภาค 2 · คนอื่นผ่านทั้งหมด
+      const want = { // [ภาค 1, ภาค 2, ทั้งปี] ของ ลูกเสือ / ฐาน / สรุป
+        scout: st.id === s1.id ? ["ไม่ผ่าน", "ผ่าน", "ไม่ผ่าน"] : ["ผ่าน", "ผ่าน", "ผ่าน"],
+        club: st.id === s2.id ? ["ผ่าน", "ไม่ผ่าน", "ไม่ผ่าน"] : ["ผ่าน", "ผ่าน", "ผ่าน"],
+      };
+      want.sum = [0, 1, 2].map((i) => want.scout[i] === "ผ่าน" && want.club[i] === "ผ่าน" ? "ผ่าน" : "ไม่ผ่าน");
+      const cols = term === 1 ? [0] : [0, 1, 2];
+      const exp = [["กิจกรรมแนะแนว", cols.map(() => "ผ่าน")], ["ลูกเสือ-เนตรนารี", cols.map((i) => want.scout[i])], ["ฐานการเรียนรู้", cols.map((i) => want.club[i])],
+        ["กิจกรรมเพื่อสังคมและสาธารณประโยชน์", cols.map(() => "ผ่าน")], ["สรุป", cols.map((i) => want.sum[i])]].map(([l, v]) => [l, ...v]);
+      check(JSON.stringify(pg.act) === JSON.stringify(exp), `ปพ.6 ภาค ${term} ${st.name} กิจกรรม: ${JSON.stringify(pg.act)} ≠ ${JSON.stringify(exp)}`);
     }
     if (st.id === s1.id) {
       if (term === 1) {

@@ -38,14 +38,24 @@ test("เกณฑ์สรุป: กรณีขอบ", () => {
   assert.equal(summaryText(t, "2"), "ดี");
 });
 
-test("ปพ.5.1: ค่าเริ่มต้นผ่าน ติ๊กเฉพาะคนไม่ผ่าน (เวลาเรียน/จุดประสงค์)", () => {
+test("ปพ.5.1: ค่าเริ่มต้นผ่าน ติ๊กเฉพาะคนไม่ผ่าน (เวลาเรียน/จุดประสงค์) รายภาค ทั้งปีต้องผ่านทั้ง 2 ภาค", () => {
   const a = G("act");
   assert.equal(summarizeGroup(a, {}), "ผ");
-  assert.equal(activityResult("act_scout", { act_scout_t: "มผ" }), "มผ");
-  assert.equal(activityResult("act_scout", { act_guidance_o: "มผ" }), "ผ");
-  assert.equal(summarizeGroup(a, { act_club_o: "มผ" }), "มผ");
-  assert.equal(validAssessmentValue("act_club_o", "มผ"), true);
-  assert.equal(validAssessmentValue("act_club_o", "ผ"), false);
+  assert.equal(activityResult("act_scout", { act_scout_t1: "มผ" }), "มผ");
+  assert.equal(activityResult("act_scout", { act_scout_t1: "มผ" }, 1), "มผ");
+  assert.equal(activityResult("act_scout", { act_scout_t1: "มผ" }, 2), "ผ");
+  assert.equal(activityResult("act_scout", { act_scout_o2: "มผ" }, 1), "ผ");
+  assert.equal(activityResult("act_scout", { act_scout_o2: "มผ" }), "มผ"); // ผ่านภาค 1 ไม่ผ่านภาค 2 → ทั้งปีไม่ผ่าน
+  assert.equal(activityResult("act_scout", { act_guidance_o1: "มผ" }), "ผ");
+  assert.equal(activityResult("act_scout", { act_scout_t: "มผ" }), "ผ"); // คีย์เดิมก่อนแยกภาคไม่นับ (ย้ายเป็นภาค 1 แล้ว)
+  assert.equal(summarizeGroup(a, { act_club_o2: "มผ" }), "มผ");
+  assert.equal(summarizeGroup(a, { act_club_o2: "มผ" }, 1), "ผ");
+  assert.equal(summarizeGroup(a, { act_club_o2: "มผ" }, 2), "มผ");
+  assert.equal(summarizeGroup(a, { act_club_t1: "มผ", act_social_o2: "มผ" }, 1), "มผ");
+  for (const k of ["act_club_o1", "act_club_o2", "act_scout_t1", "act_scout_t2"]) assert.equal(validAssessmentValue(k, "มผ"), true);
+  assert.equal(validAssessmentValue("act_club_o1", "ผ"), false);
+  assert.equal(validAssessmentValue("act_club_o", "มผ"), false);
+  assert.equal(validAssessmentValue("act_club_o3", "มผ"), false);
   assert.equal(validAssessmentValue("act_club", "มผ"), false);
   assert.equal(validAssessmentValue("rtw_5", "3"), true);
   assert.equal(validAssessmentValue("rtw_read", "3"), false);
@@ -111,7 +121,7 @@ test("ครูประจำชั้น: ความคิดเห็น 4 
   d = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data;
   assert.equal(d.body[s[0].id], undefined);
   // กิจกรรมพัฒนาผู้เรียนบันทึกที่หน้ากิจกรรมเท่านั้น
-  await call("t1", "PUT", `/api/homeroom/assessments?${Q}`, { changes: [{ student_id: s[0].id, item_key: "act_scout_t", value: "มผ" }] }, { expect: 400 });
+  await call("t1", "PUT", `/api/homeroom/assessments?${Q}`, { changes: [{ student_id: s[0].id, item_key: "act_scout_t1", value: "มผ" }] }, { expect: 400 });
   await call("t1", "PUT", `/api/homeroom/assessments?${Q}`, { changes: [{ student_id: s[0].id, item_key: "rtw_5", value: "2" }] }, { expect: 200 });
 });
 
@@ -122,25 +132,34 @@ test("กิจกรรมพัฒนาผู้เรียน: ครูป
   const meta = (await call("t1", "GET", "/api/activities", null, { expect: 200 })).data;
   assert.equal(meta.activities.length, 4);
   assert.ok(meta.rooms.some((r) => r.grade_level === "ป.4" && r.classroom === "1"));
-  const body = { grade: "ป.4", room: "1" };
+  const body = { grade: "ป.4", room: "1", term: 1 };
+  assert.deepEqual(meta.terms, [1, 2]);
   // ครูที่ไม่ใช่ครูประจำชั้นห้องนี้บันทึกไม่ได้
-  await call("t2", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_t", value: "มผ" }] }, { expect: 403 });
-  const keys = ["act_guidance_t", "act_scout_o", "act_club_t", "act_social_o"];
+  await call("t2", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_t1", value: "มผ" }] }, { expect: 403 });
+  const keys = ["act_guidance_t1", "act_scout_o1", "act_club_t1", "act_social_o1"];
   await call("t1", "PUT", "/api/activities", { ...body, changes: keys.map((item_key) => ({ student_id: sid, item_key, value: "มผ" })) }, { expect: 200 });
-  await call("t1", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_o", value: "ผ" }] }, { expect: 400 });
+  await call("t1", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_o1", value: "ผ" }] }, { expect: 400 });
   await call("t1", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "rtw_1", value: "มผ" }] }, { expect: 400 });
-  await call("t1", "PUT", "/api/activities", { ...body, changes: [{ student_id: 9999, item_key: "act_club_o", value: "มผ" }] }, { expect: 400 });
+  await call("t1", "PUT", "/api/activities", { ...body, changes: [{ student_id: 9999, item_key: "act_club_o1", value: "มผ" }] }, { expect: 400 });
+  // บันทึกได้เฉพาะคีย์ของภาคที่เลือก · ต้องระบุภาค · คีย์เดิมก่อนแยกภาคใช้ไม่ได้
+  await call("t1", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_o2", value: "มผ" }] }, { expect: 400 });
+  await call("t1", "PUT", "/api/activities", { grade: "ป.4", room: "1", changes: [{ student_id: sid, item_key: "act_club_o1", value: "มผ" }] }, { expect: 400 });
+  await call("t1", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_o", value: "มผ" }] }, { expect: 400 });
+  // ภาค 2: ไม่ผ่านจุดประสงค์ลูกเสือ
+  await call("t1", "PUT", "/api/activities", { ...body, term: 2, changes: [{ student_id: sid, item_key: "act_scout_o2", value: "มผ" }] }, { expect: 200 });
   const g = (await call("t1", "GET", `/api/activities?${Q}`, null, { expect: 200 })).data;
-  assert.deepEqual(Object.keys(g.students.find((x) => x.id === sid).values).sort(), [...keys].sort());
+  assert.deepEqual(Object.keys(g.students.find((x) => x.id === sid).values).sort(), [...keys, "act_scout_o2"].sort());
   const rep = (await call("t1", "GET", `/api/reports/room?${Q}`, null, { expect: 200 })).data;
-  assert.equal(rep.students.find((x) => x.id === sid).assessments.act_club_t, "มผ");
+  const ra = rep.students.find((x) => x.id === sid).assessments;
+  assert.equal(ra.act_club_t1, "มผ");
+  assert.equal(ra.act_scout_o2, "มผ");
   // ฝ่ายวิชาการแก้ได้ทุกห้อง
-  await call("admin", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_t", value: "" }] }, { expect: 200 });
-  assert.equal((await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.assessments[sid].act_club_t, undefined);
+  await call("admin", "PUT", "/api/activities", { ...body, changes: [{ student_id: sid, item_key: "act_club_t1", value: "" }] }, { expect: 200 });
+  assert.equal((await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.assessments[sid].act_club_t1, undefined);
   // บัญชีวัดผลที่เปิดในบทบาทครู (scope=teacher) เห็น/บันทึกได้เฉพาะห้องที่ตนเป็นครูประจำชั้น
   assert.deepEqual((await call("admin", "GET", "/api/activities?scope=teacher", null, { expect: 200 })).data.rooms, []);
   await call("admin", "GET", `/api/activities?scope=teacher&${Q}`, null, { expect: 403 });
-  await call("admin", "PUT", "/api/activities?scope=teacher", { ...body, changes: [{ student_id: sid, item_key: "act_club_t", value: "มผ" }] }, { expect: 403 });
+  await call("admin", "PUT", "/api/activities?scope=teacher", { ...body, changes: [{ student_id: sid, item_key: "act_club_t1", value: "มผ" }] }, { expect: 403 });
   // ครูประจำชั้นเห็นเฉพาะห้องตัวเอง
   assert.deepEqual(meta.rooms.map((r) => `${r.grade_level}/${r.classroom}`), ["ป.4/1"]);
 });

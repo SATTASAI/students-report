@@ -118,7 +118,7 @@ const att = await api(`/api/homeroom/attendance?${Q}&month=2026-06`);
 const days = att.days.filter((x) => !x.holiday && !x.off).map((x) => x.date || x).slice(0, 4);
 await api(`/api/homeroom/attendance?${Q}`, "PUT", { changes: [
   { student_id: S[0].id, date: days[0], code: "ข" }, { student_id: S[0].id, date: days[1], code: "ล" }, { student_id: S[1].id, date: days[2], code: "ป" }, { student_id: S[1].id, date: days[3], code: "ส" }] });
-await api("/api/activities", "PUT", { grade: "ป.4", room: "1", changes: [{ student_id: S[2].id, item_key: "act_scout_o", value: "มผ" }] }).catch((e) => notes.push(`กิจกรรม: ${e.message.slice(0, 120)}`));
+await api("/api/activities", "PUT", { grade: "ป.4", room: "1", term: 2, changes: [{ student_id: S[2].id, item_key: "act_scout_o2", value: "มผ" }] }).catch((e) => notes.push(`กิจกรรม: ${e.message.slice(0, 120)}`));
 
 // ---------- วัดผลตรวจ → ผู้บริหารอนุมัติ (ภาษาไทย) ----------
 await login("admin@test.local");
