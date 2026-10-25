@@ -255,7 +255,7 @@ export async function shell(active) {
   const termPage = ["home", "activities", "logs", "docs"].includes(active);
   me.term = selectedTerm(me);
   rememberTerm(me.term);
-  // สีทั้งหน้าเปลี่ยนตามภาค (ภาค 1 คราม · ภาค 2 เขียว) เฉพาะหน้าที่ทำงานรายภาค
+  // สีทั้งหน้าเปลี่ยนตามภาค (ภาค 1 #CDB4DB · ภาค 2 #FFAFCC) เฉพาะหน้าที่ทำงานรายภาค
   if (termPage) document.documentElement.dataset.term = String(me.term);
   const roles = availableRoles(me.user);
   let role;
