@@ -120,3 +120,20 @@ test("ส่งผลเมื่อภาคหนึ่งยังไม่�
   assert.equal(row.good_pct, null);
   assert.equal(Object.values(row.counts).reduce((a, b) => a + b, 0), row.n);
 });
+
+// ตรวจระบบ 25 ต.ค. 2569: ห้องนำร่องที่การมาเรียนภาค 1 อยู่ใน Q-Info — นับวันเรียนตั้งแต่ภาคที่เริ่มบันทึกในระบบนี้
+test("ร้อยละมาเรียนนับตั้งแต่ภาคเรียนแรกที่มีการบันทึกการมาเรียน (ไม่นับภาค 1 เป็นมาเรียนครบ)", async () => {
+  const env = await makeEnv();
+  await worker.fetch(new Request(ORIGIN + "/api/me", { headers: { Origin: ORIGIN } }), env); // สร้างตาราง gr_*
+  const { attendanceRates, schoolCalendar } = await import("../src/lib/data.js");
+  const sid = (await env.DB.prepare("SELECT student_id FROM student_enrollments WHERE grade_level = 'ป.4' LIMIT 1").first()).student_id;
+  const cal = await schoolCalendar(env, 1);
+  const t2 = cal.days.filter((d) => d >= "2026-11-01" && d <= "2026-12-31");
+  await env.DB.prepare("INSERT INTO gr_attendance (academic_year_id, student_id, att_date, code) VALUES (1, ?, ?, 'ข')").bind(sid, t2[0]).run();
+  const r = (await attendanceRates(env, 1, [sid], "2026-12-31"))[sid];
+  assert.equal(r.days, t2.length); // นับเฉพาะวันเรียนภาค 2 ถึงวันนี้
+  assert.equal(r.year_days, cal.days.filter((d) => d >= "2026-11-01").length);
+  // มีบันทึกในภาค 1 ด้วย → นับทั้งปีตามเดิม
+  await env.DB.prepare("INSERT INTO gr_attendance (academic_year_id, student_id, att_date, code) VALUES (1, ?, '2026-06-02', 'ล')").bind(sid).run();
+  assert.equal((await attendanceRates(env, 1, [sid], "2026-12-31"))[sid].year_days, cal.days.length);
+});

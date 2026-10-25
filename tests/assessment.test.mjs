@@ -28,7 +28,12 @@ test("เกณฑ์สรุป: กรณีขอบ", () => {
   assert.equal(summarizeGroup(r, vals(r, [3, 3, 3, 2, 1])), "2");               // รวม 12
   assert.equal(summarizeGroup(r, vals(r, [1, 1, 1, 1, 1])), "1");               // รวม 5
   assert.equal(summarizeGroup(r, vals(r, [1, 1, 1, 1, 0])), "0");               // รวม 4
-  assert.equal(summarizeGroup(c, vals(c, [1, 2, 3, 1, 0])), "2");               // ผ่าน 4 ด้าน
+  // สมรรถนะ: รวมคะแนน 5 ด้าน (เต็ม 15) 13–15 / 9–12 / 5–8 / 0–4
+  assert.equal(summarizeGroup(c, vals(c, [1, 2, 3, 1, 0])), "1");               // รวม 7
+  assert.equal(summarizeGroup(c, vals(c, [1, 1, 1, 1, 1])), "1");               // ผ่านทุกด้าน ≠ ดีเยี่ยม
+  assert.equal(summarizeGroup(c, vals(c, [3, 3, 3, 2, 2])), "3");               // รวม 13
+  assert.equal(summarizeGroup(c, vals(c, [3, 3, 2, 2, 2])), "2");               // รวม 12
+  assert.equal(summarizeGroup(c, vals(c, [1, 1, 1, 1, 0])), "0");               // รวม 4
   assert.equal(summaryText(c, "1"), "พอใช้");
   assert.equal(summaryText(t, "2"), "ดี");
 });

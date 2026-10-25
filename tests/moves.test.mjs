@@ -91,6 +91,11 @@ test("ย้ายออก/ออกกลางคัน: หายจาก�
   assert.equal(back.student_code, leaver.student_code);
   assert.equal(back.number, cd.students.filter((x) => x.number).length, "นักเรียนที่เข้าระหว่างปีได้เลขที่ต่อท้าย");
   await call("admin", "POST", "/api/moves/in", { student_id: leaver.id, grade_level: "ป.4", classroom: "1" }, { expect: 409 });
+  // รับกลับในปีเดียวกันและมีคะแนนภาค 1 ในระบบแล้ว → ไม่ต้อง/ไม่ให้กรอกคะแนนยกมาทับ
+  assert.equal(d.items[0].term_number, 1);
+  const co = (await call("t1", "GET", `/api/homeroom/carryover?${Q}`, null, { expect: 200 })).data;
+  assert.ok(!co.students.some((x) => x.id === leaver.id));
+  await call("t1", "PUT", `/api/homeroom/carryover?${Q}`, { changes: [{ student_id: leaver.id, subject_code: "ท14101", term_number: 1, total: 40 }] }, { expect: 409 });
 });
 
 test("ย้ายเข้า (นักเรียนใหม่): เลขประจำตัวและเลขบัตรห้ามซ้ำ ต่อท้ายเลขที่ ครูประจำชั้นกรอกคะแนนยกมาจาก ปพ.6", async () => {

@@ -48,4 +48,18 @@ export async function reopenApprovedForRoom(env, user, yearId, grade, room, what
   return results.length;
 }
 
+// ข้อมูลที่ใช้คิด มส (บันทึกการมาเรียน / ปฏิทินวันหยุด) ถูกแก้หลังรายวิชาส่งผลแล้ว:
+// ผลเปลี่ยนตาม สถานะรายวิชาไม่เปลี่ยน แต่บันทึกประวัติไว้ให้ครูผู้สอนและฝ่ายวัดผลเห็นในหน้ารายวิชา (ผู้ใช้กำหนด 25 ต.ค. 2569)
+// room = { grade, room } เฉพาะห้องนั้น หรือ null = ทุกรายวิชาของปี
+export async function logLockedCourses(env, user, yearId, room, what, detail) {
+  const { results } = await env.DB.prepare(
+    `SELECT c.id FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
+      WHERE s.academic_year_id = ? AND c.locked = 1${room ? " AND s.grade_level = ? AND c.classroom = ?" : ""}`
+  ).bind(yearId, ...(room ? [room.grade, room.room] : [])).all();
+  if (!results.length) return 0;
+  const stmts = results.map((c) => env.DB.prepare("INSERT INTO gr_course_edits (course_id, user_id, what, detail) VALUES (?,?,?,?)").bind(c.id, user.id, what, detail));
+  for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
+  return results.length;
+}
+
 export { nowSql };

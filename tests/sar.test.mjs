@@ -103,3 +103,16 @@ test("SAR จากข้อมูลจริง: ผลการเรีย�
   assert.equal(z.values["1.1.3"].manual_value, null);
   assert.deepEqual(z.levels, DEFAULT_LEVELS);
 });
+
+test("SAR นับเฉพาะห้องนำร่อง (ผลการเรียน/กิจกรรม) และการมาเรียนเฉพาะห้องที่บันทึกแล้ว", async () => {
+  const { call } = await setup();
+  await call("admin", "PUT", "/api/admin/pilot", { rooms: ["ป.4/1"] }, { expect: 200 });
+  const kids = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.students.filter((s) => s.enrollment_status === "enrolled");
+  // ก่อนบันทึกมาเรียน: ห้องอื่นที่ไม่ได้ใช้ระบบต้องไม่ถูกนับว่าผ่านกิจกรรม
+  const m0 = (await call("admin", "GET", "/api/sar", null, { expect: 200 })).data.metrics.basic;
+  assert.equal(m0.act_pass.den, kids.length);
+  assert.equal(m0.att80, undefined);
+  await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, { changes: [{ student_id: kids[0].id, date: "2026-09-01", code: "ข" }] }, { expect: 200 });
+  const m1 = (await call("admin", "GET", "/api/sar", null, { expect: 200 })).data.metrics.basic;
+  assert.equal(m1.att80.den, kids.length); // ห้อง ป.1 / ป.6 ที่ไม่ได้บันทึกไม่ถูกนับเป็นมาเรียน 100%
+});

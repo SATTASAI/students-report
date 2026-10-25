@@ -64,7 +64,9 @@ export async function sarData(env, year) {
   const logs = { basic: {}, kinder: {} }; // แบบบันทึกประจำวัน: type → {num, den}
   const stageIds = { basic: [], kinder: [] };
   let anyAttendance = { basic: false, kinder: false };
-  const passPct = Number((await getSettings(env, year.id)).attendance_pass_pct ?? 80); // เกณฑ์เวลาเรียนตามที่ตั้งไว้ (เดิมใช้ 80 ตายตัว)
+  const settings0 = await getSettings(env, year.id);
+  const passPct = Number(settings0.attendance_pass_pct ?? 80); // เกณฑ์เวลาเรียนตามที่ตั้งไว้ (เดิมใช้ 80 ตายตัว)
+  const pilot = settings0.pilot_rooms;
 
   for (const r of rooms) {
     const stage = isPrimaryGrade(r.grade_level) ? "basic" : "kinder";
@@ -76,15 +78,21 @@ export async function sarData(env, year) {
     stageIds[stage].push(...ids);
     await roomNutrition(env, year.id, roster, m);
     await roomLogs(env, year.id, ids, logs[stage]);
+    // ผลการเรียน/การประเมินของครูประจำชั้น/กิจกรรม: นับเฉพาะห้องนำร่อง (ถ้าตั้งไว้) — ห้องที่ไม่ได้ใช้ระบบไม่มีข้อมูล
+    // กิจกรรมค่าเริ่มต้นคือ "ผ่าน" ห้องเหล่านั้นจึงเคยถูกนับว่าผ่าน 100%
+    const graded = stage === "basic" && (!pilot || pilot.includes(`${r.grade_level}/${r.classroom}`));
+    // การมาเรียน: นับเฉพาะห้องที่ครูประจำชั้นบันทึกการมาเรียนแล้ว (เดิมดูทั้งระดับ ห้องที่ไม่บันทึกจึงนับเป็นมาเรียน 100%)
+    const recorded = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM gr_attendance WHERE academic_year_id = ? AND student_id IN (${ids.map(() => "?").join(",")})`)
+      .bind(year.id, ...ids).first()).n > 0;
     const [att, ass, res] = await Promise.all([
-      attendanceRates(env, year.id, ids),
-      stage === "basic" ? assessmentsFor(env, year.id, ids) : {},
-      stage === "basic" ? yearResultsForStudents(env, year.id, r.grade_level, ids) : {},
+      recorded ? attendanceRates(env, year.id, ids) : {},
+      graded ? assessmentsFor(env, year.id, ids) : {},
+      graded ? yearResultsForStudents(env, year.id, r.grade_level, ids) : {},
     ]);
     for (const sid of ids) {
       const a = att[sid];
-      if (a?.days) { if (a.absent) anyAttendance[stage] = true; add(m, "att80", a.pct >= passPct); }
-      if (stage !== "basic") continue;
+      if (a?.days) { anyAttendance[stage] = true; add(m, "att80", a.pct >= passPct); }
+      if (!graded) continue;
       for (const sub of res[sid] || []) {
         if (!FINAL.has(String(sub.grade))) continue;
         const ok = GOOD.has(String(sub.grade));

@@ -164,7 +164,9 @@ export async function handleReports(request, env, user, parts, method, url) {
   if (kind === "summary") {
     requireReportViewer(user);
     const year = await resolveYear(env, url.searchParams.get("year"));
-    const rooms = (await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level));
+    // ห้องนำร่อง (ถ้าตั้งไว้): ห้องที่ไม่ได้ใช้ระบบไม่มีผลการเรียน — ไม่นำมาแสดง/จัดอันดับ
+    const pilot = (await getSettings(env, year.id)).pilot_rooms;
+    const rooms = (await listRooms(env, year.id)).filter((r) => isPrimaryGrade(r.grade_level) && (!pilot || pilot.includes(`${r.grade_level}/${r.classroom}`)));
     const grades = [...new Set(rooms.map((r) => r.grade_level))].sort(compareGrade);
     const bySubject = {};
     const byRoom = [];
