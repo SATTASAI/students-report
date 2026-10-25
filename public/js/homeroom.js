@@ -1,10 +1,13 @@
-import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear, fmt, editGate } from "/js/app.js";
+import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear, withTerm, fmt, editGate, monthsOfTerm, TERM_LABEL } from "/js/app.js";
 import { ASSESSMENT_GROUPS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
 import { analyzeBody, ageText, levelClass, loadGrowthRefs } from "/js/growth.js";
 import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, domainSummary, overallSummary, shortCode } from "/js/kinder.js";
 import { createChecker } from "/js/spellcheck.js";
 
-await shell("home");
+const me = await shell("home");
+// ภาคเรียนที่เลือก: ทุกแท็บกรอกเฉพาะภาคนี้ · ภาค 2 มีการประเมินที่สรุปทั้งปี (คุณลักษณะ อ่านคิดฯ สมรรถนะ) และผลการเรียนทั้งปี
+const T = me.term;
+const TR = (me.terms || []).find((t) => t.term_number === T); // ช่วงวันของภาค
 const p = params();
 const grade = p.get("grade"), room = p.get("room");
 const yearQ = p.get("year") ? `&year=${encodeURIComponent(p.get("year"))}` : "";
@@ -12,7 +15,7 @@ const q = `grade=${encodeURIComponent(grade)}&room=${encodeURIComponent(room)}${
 const view = document.getElementById("view");
 let data;
 let tab = sessionStorage.getItem("sr-hr-tab") || "attend";
-let cterm = Number(sessionStorage.getItem("sr-hr-cterm")) || 2;
+const cterm = T; // ความคิดเห็น ปพ.6 ของภาคเรียนที่เลือก
 const pending = new Map();      // การประเมิน "sid|key" → value
 const pendingC = new Map();     // ความคิดเห็น "term|sid|field" → body
 const pendingB = new Map();     // น้ำหนักส่วนสูง "sid|round" → {weight,height}
@@ -40,14 +43,16 @@ const active = () => data.students.filter((s) => s.enrollment_status === "enroll
 document.getElementById("meta").textContent = `ปีการศึกษา ${data.year.year_be} · นักเรียน ${active().length} คน${data.teachers?.length ? ` · ครูประจำชั้น ${data.teachers.join(", ")}` : ""}`;
 document.getElementById("backLink").href = withYear("/", data.year.id);
 const pp6 = document.getElementById("pp6Btn");
-pp6.innerHTML = `${ICONS.print} ${/^อ\./.test(grade) ? "เอกสารของห้อง" : "ปพ.6 และเอกสารของห้อง"}`;
-pp6.href = `/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}`;
+pp6.innerHTML = `${ICONS.print} ${/^อ\./.test(grade) ? `เอกสารของห้อง ภาค ${T}` : `ปพ.6 และเอกสารของห้อง ภาค ${T}`}`;
+pp6.href = withTerm(`/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}`, T);
 
 const hasMovers = data.students.some((s) => s.transfer_in_term > 1);
 const KINDER = /^อ\./.test(grade); // อนุบาล: ประเมินพัฒนาการ 4 ด้าน (หลักสูตรปฐมวัย 2569) + การมาเรียน + น้ำหนักส่วนสูง
 // บันทึกการมาเรียนอยู่แท็บแรก (ใช้ทุกวัน)
-const TABS = KINDER ? [["attend", "บันทึกการมาเรียน"], ["dev", "ประเมินพัฒนาการ"], ["devsum", "สรุปผลพัฒนาการ"], ["kcomments", "ความคิดเห็นครู"], ["body", "น้ำหนัก ส่วนสูง"]] : [["attend", "บันทึกการมาเรียน"], ...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, g.short]), ["comments", "ความคิดเห็น (ปพ.6)"], ["body", "น้ำหนัก ส่วนสูง"],
-  ...(hasMovers ? [["carry", "คะแนนยกมา (ย้ายเข้า)"]] : []), ["grades", "ผลการเรียนรวม"]];
+// การประเมินที่สรุปผลทั้งปี (คุณลักษณะฯ อ่านคิดฯ สมรรถนะ) อยู่ที่ภาคเรียนที่ 2 เท่านั้น
+const TABS = KINDER ? [["attend", `บันทึกการมาเรียน ภาค ${T}`], ["dev", `ประเมินพัฒนาการ ภาค ${T}`], ["devsum", T === 2 ? "สรุปผลพัฒนาการ (ภาค 2/ทั้งปี)" : "สรุปผลพัฒนาการ ภาค 1"], ["kcomments", `ความคิดเห็นครู ภาค ${T}`], ["body", `น้ำหนัก ส่วนสูง ภาค ${T}`]]
+  : [["attend", `บันทึกการมาเรียน ภาค ${T}`], ...(T === 2 ? ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, `${g.short} (ทั้งปี)`]) : []), ["comments", `ความคิดเห็น ปพ.6 ภาค ${T}`], ["body", `น้ำหนัก ส่วนสูง ภาค ${T}`],
+  ...(hasMovers ? [["carry", "คะแนนยกมา ภาค 1 (ย้ายเข้า)"]] : []), ["grades", T === 1 ? "คะแนนรวม ภาค 1" : "ผลการเรียนทั้งปี"]];
 if (location.hash === "#carry" && hasMovers) tab = "carry";
 const tabs = document.getElementById("tabs");
 tabs.innerHTML = TABS.map(([k, label]) => `<button role="tab" data-tab="${k}">${label}</button>`).join("");
@@ -199,7 +204,7 @@ const commentOf = (sid, f) => data.comments?.[sid]?.[cterm]?.[f] ?? "";
 function renderComments() {
   view.innerHTML = `
     <div class="sheet-tools">
-      <span class="actions">${[1, 2].map((t) => `<button class="btn small ${t === cterm ? "primary" : ""}" data-term="${t}">ภาคเรียนที่ ${t}</button>`).join("")}</span>
+      <span class="muted small">ความคิดเห็นของครูประจำชั้นใน ปพ.6 <b>${TERM_LABEL[cterm]}</b> · บันทึกอัตโนมัติ</span>
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
     ${spellBar()}
@@ -210,7 +215,6 @@ function renderComments() {
       <span class="cm-name"><b>${s.number ?? ""}</b> ${esc(s.name)}</span>
       ${CFIELDS.map(([f, l]) => `<label class="cm-field"><span class="cm-label">${l}</span><textarea rows="2" maxlength="300" data-f="${f}" aria-label="${esc(s.name)} ${l}">${esc(commentOf(s.id, f))}</textarea><span class="sp-issues" hidden></span></label>`).join("")}
     </div>`).join("")}</div>`;
-  for (const b of view.querySelectorAll("[data-term]")) b.onclick = async () => { if (!(await leaveHeld())) return; await flush(); cterm = Number(b.dataset.term); sessionStorage.setItem("sr-hr-cterm", cterm); renderComments(); };
   const list = document.getElementById("cmList");
   list.addEventListener("focusin", (e) => { if (e.target.dataset.f) { focusField = e.target.dataset.f; focusBox = e.target; drawBank(); } });
   list.addEventListener("input", (e) => { if (e.target.dataset.f) setComment(Number(e.target.closest(".cm-row").dataset.sid), e.target.dataset.f, e.target.value); });
@@ -277,7 +281,9 @@ async function applyAll(f) {
 }
 
 // ---------- น้ำหนัก ส่วนสูง 4 ครั้งต่อปี ----------
-const ROUNDS = [1, 2, 3, 4];
+// ชั่งน้ำหนักวัดส่วนสูงภาคละ 2 ครั้ง: ครั้งที่ 1–2 = ภาคเรียนที่ 1, ครั้งที่ 3–4 = ภาคเรียนที่ 2
+const ALL_ROUNDS = [1, 2, 3, 4];
+const ROUNDS = T === 1 ? [1, 2] : [3, 4];
 const bodyOf = (sid, r) => data.body?.[sid]?.[r] || {};
 const todayIso = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 // ภาวะโภชนาการตามเกณฑ์กรมอนามัย ของการวัดครั้งล่าสุด: รูปร่าง (น้ำหนักตามส่วนสูง) + ส่วนสูงตามอายุ
@@ -285,7 +291,7 @@ let growthReady = false;
 const tagOf = (x, what) => (x ? `<span class="tag ${levelClass(x.label)}" title="${what}${x.z != null ? ` · z = ${fmt(x.z, 2)}` : ""}">${x.label}</span>` : "");
 function bmiText(sid) {
   const st = data.students.find((x) => x.id === sid);
-  for (const r of [...ROUNDS].reverse()) {
+  for (const r of [...ALL_ROUNDS].filter((x) => x <= ROUNDS.at(-1)).reverse()) { // ภาค 2 ใช้ครั้งล่าสุดของทั้งปี
     const b = bodyOf(sid, r);
     if (!(b.weight && b.height)) continue;
     const a = analyzeBody(st, b, data.body_dates?.[sid]?.[r] || todayIso());
@@ -347,8 +353,9 @@ function renderBody() {
 // ภาคเรียนละ 2 ครั้ง · 3 ดี · 2 พอใช้ · 1 ควรส่งเสริม · ผลของภาค = ครั้งล่าสุด · ผลสิ้นปี = ภาค 2 (ไม่มีใช้ภาค 1)
 let kd = null;
 const kst = (() => { try { return JSON.parse(sessionStorage.getItem("sr-hr-k") || "{}"); } catch { return {}; } })();
-let kterm = [1, 2].includes(kst.term) ? kst.term : 1, kround = [1, 2].includes(kst.round) ? kst.round : 1, kdom = Math.min(3, Math.max(0, Number(kst.dom) || 0));
-let ksumTerm = kst.sum ?? "year";
+const kterm = T;
+let kround = [1, 2].includes(kst.round) ? kst.round : 1, kdom = Math.min(3, Math.max(0, Number(kst.dom) || 0));
+let ksumTerm = T === 1 ? 1 : (kst.sum === 2 ? 2 : "year");
 const saveK = () => { try { sessionStorage.setItem("sr-hr-k", JSON.stringify({ term: kterm, round: kround, dom: kdom, sum: ksumTerm })); } catch { /* */ } };
 const kOptions = (v, blank = "–") => [["", blank], ...KINDER_LEVELS.map(([n, l]) => [String(n), `${n} ${l}`])]
   .map(([val, label]) => `<option value="${val}" ${String(v ?? "") === val ? "selected" : ""}>${label}</option>`).join("");
@@ -376,7 +383,7 @@ function renderDev() {
   let lastSub = "";
   view.innerHTML = `
     <div class="sheet-tools">
-      <span class="actions">${btnRow([[1, "ภาคเรียนที่ 1"], [2, "ภาคเรียนที่ 2"]], kterm, "kt")}<span class="muted small" style="margin:0 4px">·</span>${btnRow([[1, "ครั้งที่ 1"], [2, "ครั้งที่ 2"]], kround, "kr")}</span>
+      <span class="actions"><b class="small">${TERM_LABEL[kterm]}</b><span class="muted small" style="margin:0 4px">·</span>${btnRow([[1, "ครั้งที่ 1"], [2, "ครั้งที่ 2"]], kround, "kr")}</span>
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
     <div class="actions" style="margin:0 0 10px">${btnRow(KINDER_DOMAINS.map((d, i) => [i, `${i + 1}. ${d.replace(/^ด้าน/, "")}`]), kdom, "kd")}</div>
@@ -397,7 +404,6 @@ function renderDev() {
     </table></div>
     <details class="small muted" style="margin-top:10px"><summary>พฤติกรรมที่ประเมิน — ${esc(domain)} (${items.length} ข้อ)</summary>
       <ol style="margin:6px 0 0;padding-left:22px">${items.map((it) => `<li><b>${esc(it.code)}</b> ${it.comp ? `<i>${esc(it.comp)}</i> — ` : ""}${esc(it.title)}</li>`).join("")}</ol></details>`;
-  for (const b of view.querySelectorAll("[data-kt]")) b.onclick = () => { kterm = Number(b.dataset.kt); saveK(); renderDev(); };
   for (const b of view.querySelectorAll("[data-kr]")) b.onclick = () => { kround = Number(b.dataset.kr); saveK(); renderDev(); };
   for (const b of view.querySelectorAll("[data-kd]")) b.onclick = () => { kdom = Number(b.dataset.kd); saveK(); renderDev(); };
   const table = document.getElementById("sheet");
@@ -453,9 +459,9 @@ function renderDevSum() {
   const pq = `grade=${encodeURIComponent(grade)}&room=${encodeURIComponent(room)}${yearQ}`;
   view.innerHTML = `
     <div class="sheet-tools">
-      <span class="actions">${btnRow([[1, "ภาคเรียนที่ 1"], [2, "ภาคเรียนที่ 2"], ["year", "สรุปสิ้นปี"]], ksumTerm, "ks")}</span>
-      <span class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/kinder.html?${pq}">${ICONS.print} สมุดรายงานพัฒนาการรายคน</a>
-        <a class="btn small" target="_blank" rel="noopener" href="/print/kinder.html?${pq}&mode=room">${ICONS.print} สรุปผลทั้งห้อง</a></span>
+      <span class="actions">${T === 1 ? `<b class="small">${TERM_LABEL[1]}</b>` : btnRow([[2, "ภาคเรียนที่ 2"], ["year", "สรุปสิ้นปี (รวมภาค 1)"]], ksumTerm, "ks")}</span>
+      <span class="actions"><a class="btn small" target="_blank" rel="noopener" href="/print/kinder.html?${pq}&term=${T}">${ICONS.print} สมุดรายงานพัฒนาการรายคน ภาค ${T}</a>
+        <a class="btn small" target="_blank" rel="noopener" href="/print/kinder.html?${pq}&mode=room&term=${T}">${ICONS.print} สรุปผลทั้งห้อง ภาค ${T}</a></span>
     </div>
     <div class="sheet-wrap"><table class="sheet">
       <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
@@ -473,7 +479,7 @@ const kCommentOf = (sid, f) => kd.comments?.[sid]?.[kterm]?.[f] ?? "";
 function renderKComments() {
   view.innerHTML = `
     <div class="sheet-tools">
-      <span class="actions">${btnRow([[1, "ภาคเรียนที่ 1"], [2, "ภาคเรียนที่ 2"]], kterm, "kt")}</span>
+      <span class="muted small"><b>${TERM_LABEL[kterm]}</b></span>
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
     <p class="muted small" style="margin:0 0 8px">ความคิดเห็นของครูรายด้าน (ไม่เกิน 300 ตัวอักษรต่อช่อง) ขึ้นในสมุดรายงานพัฒนาการรายคน · บันทึกอัตโนมัติ</p>
@@ -483,7 +489,6 @@ function renderKComments() {
       <span class="cm-name"><b>${s.number ?? ""}</b> ${esc(s.name)}</span>
       ${KINDER_COMMENT_FIELDS.map(([f, l]) => `<label class="cm-field"><span class="cm-label">${esc(l)}</span><textarea rows="2" maxlength="300" data-f="${f}" aria-label="${esc(s.name)} ${esc(l)}">${esc(kCommentOf(s.id, f))}</textarea><span class="sp-issues" hidden></span></label>`).join("")}
     </div>`).join("")}</div>`;
-  for (const b of view.querySelectorAll("[data-kt]")) b.onclick = async () => { if (!(await leaveHeld())) return; await flush(); kterm = Number(b.dataset.kt); saveK(); renderKComments(); };
   const list = document.getElementById("cmList");
   list.addEventListener("input", (e) => {
     const f = e.target.dataset.f;
@@ -757,6 +762,17 @@ function showState(err) {
   else el.textContent = "บันทึกแล้ว";
 }
 
+// ภาค 1: คะแนนรวมภาค (เต็ม 50) · ภาค 2: เกรดทั้งปี พร้อมคะแนนแต่ละภาค
+function term1Cell(g) {
+  const x = g?.term_scores?.[1];
+  if (!x) return "–";
+  if (x.carried) return `${fmt(x.total)} <span class="tag">ยกมา</span>`;
+  return x.complete ? fmt(x.total) : `<span class="muted small" title="คะแนนยังไม่ครบ ${x.missing} ช่อง">${fmt(x.total)}*</span>`;
+}
+function termTip(g) {
+  const t = (n) => { const x = g?.term_scores?.[n]; return x ? `${fmt(x.total)}${x.complete ? "" : " (ไม่ครบ)"}` : "–"; };
+  return g ? `ภาค 1: ${t(1)} · ภาค 2: ${t(2)} · รวม: ${g.total == null || g.total_max !== 100 ? "–" : fmt(g.total)}` : "";
+}
 function renderGrades() {
   const subjects = [];
   for (const s of data.students) for (const g of data.grades[s.id] || []) if (!subjects.some((x) => x.code === g.code)) subjects.push(g);
@@ -767,9 +783,11 @@ function renderGrades() {
     <tbody>${data.students.map((st) => {
       const by = Object.fromEntries((data.grades[st.id] || []).map((g) => [g.code, g]));
       return `<tr class="${st.enrollment_status !== "enrolled" ? "inactive" : ""}"><td class="stick no">${st.number ?? ""}</td><td class="stick name">${esc(st.name)}</td>
-        ${subjects.map((s) => `<td class="calc grade-col">${gradeBadge(by[s.code]?.grade)}</td>`).join("")}</tr>`;
+        ${subjects.map((s) => T === 1 ? `<td class="calc">${term1Cell(by[s.code])}</td>` : `<td class="calc grade-col" title="${esc(termTip(by[s.code]))}">${gradeBadge(by[s.code]?.grade)}</td>`).join("")}</tr>`;
     }).join("")}</tbody></table></div>
-    <p class="muted small" style="margin-top:10px">ผลการเรียนดึงจากสมุดคะแนนของครูผู้สอนแต่ละวิชาแบบทันที — ช่องที่เป็น ร คือคะแนนยังไม่ครบ</p>`;
+    <p class="muted small" style="margin-top:10px">${T === 1
+      ? "คะแนนรวมภาคเรียนที่ 1 (เต็ม 50) ดึงจากสมุดคะแนนของครูผู้สอนแบบทันที — – = ยังไม่มีคะแนน · * = คะแนนยังไม่ครบ · ผลการเรียน (เกรด) ออกที่ภาคเรียนที่ 2 เมื่อครบ 2 ภาค"
+      : "ผลการเรียนทั้งปี (ภาค 1 + ภาค 2) ดึงจากสมุดคะแนนของครูผู้สอนแต่ละวิชาแบบทันที — ช่องที่เป็น ร คือคะแนนยังไม่ครบ · ชี้ที่ผลเพื่อดูคะแนนแต่ละภาค"}</p>`;
 }
 
 // ---------- บันทึกการมาเรียน (ตารางรายเดือน) ----------
@@ -781,10 +799,22 @@ let att;
 const WD = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 const monthName = (m) => new Date(`${m}-01T00:00:00`).toLocaleDateString("th-TH", { month: "long", year: "numeric" });
 
+// เฉพาะเดือน/วันในช่วงภาคเรียนที่เลือก
+const inTermDay = (d) => !TR || (d >= TR.start_date && d <= TR.end_date);
+function termMonth(m) {
+  if (!TR) return m;
+  const a = TR.start_date.slice(0, 7), b = TR.end_date.slice(0, 7);
+  if (m && m >= a && m <= b) return m;
+  const now = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
+  return now >= a && now <= b ? now : a;
+}
 async function renderAttendance() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
+  attMonth = termMonth(attMonth);
   att = await api(`/api/homeroom/attendance?${q}${attMonth ? `&month=${attMonth}` : ""}`);
   attMonth = att.month;
+  att.months = monthsOfTerm(att.months, me, T);
+  att.days = att.days.filter(inTermDay);
   const idx = att.months.indexOf(att.month);
   const codeOf = (sid, d) => att.records[sid]?.[d] || "";
   const counts = (sid) => { const c = { "ข": 0, "ล": 0, "ป": 0, "ส": 0 }; for (const v of Object.values(att.records[sid] || {})) c[v]++; return c; };

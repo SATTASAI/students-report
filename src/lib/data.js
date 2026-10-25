@@ -505,16 +505,42 @@ export async function attendanceRates(env, yearId, studentIds, today = thaiToday
   return out;
 }
 
-// { student_id: { ข: n, ล: n, ป: n, ส: n } } (ส = มาสาย)
+// ภาคเรียนของปี [{term_number, start_date, end_date}] เรียงตามภาค
+export async function yearTerms(env, yearId) {
+  const { results } = await env.DB.prepare("SELECT term_number, start_date, end_date FROM academic_terms WHERE academic_year_id = ? ORDER BY term_number").bind(yearId).all();
+  return results.filter((t) => t.term_number === 1 || t.term_number === 2);
+}
+// วันที่นี้อยู่ภาคไหน: ก่อนวันเปิดภาค 2 = ภาค 1 · ตั้งแต่วันเปิดภาค 2 = ภาค 2 (ไม่มีภาค 2 ในระบบ = ภาค 1 ทั้งหมด)
+export function termOfDate(terms, iso) {
+  const t2 = terms.find((t) => t.term_number === 2)?.start_date;
+  return t2 && String(iso).slice(0, 10) >= t2 ? 2 : 1;
+}
+// ภาคเรียนที่ควรเปิดเป็นค่าเริ่มต้น: ภาคที่วันนี้อยู่ · ช่วงปิดภาคระหว่างภาค 1–2 = ภาคถัดไป · ก่อนเปิดปี = ภาค 1 · หลังจบปี = ภาคสุดท้าย
+export function currentTerm(terms, today = thaiToday()) {
+  if (!terms.length) return 1;
+  const inside = terms.find((t) => today >= t.start_date && today <= t.end_date);
+  if (inside) return inside.term_number;
+  const next = terms.find((t) => today < t.start_date);
+  return next ? next.term_number : terms.at(-1).term_number;
+}
+
+// { student_id: { ข: n, ล: n, ป: n, ส: n, by_term: { 1: {ข: n, …}, 2: {…} } } } (ส = มาสาย)
+// รวมทั้งปี + แยกภาค (ภาค 2 เริ่มวันเปิดภาค 2 ของ academic_terms) — ปพ.5/ปพ.6 ภาค 1 ใช้ by_term[1], ภาค 2 แสดงทั้งสองภาคและรวม
 export async function attendanceSummary(env, yearId, studentIds) {
   const out = {};
+  const t2 = (await yearTerms(env, yearId)).find((t) => t.term_number === 2)?.start_date || "9999-12-31";
   for (let i = 0; i < studentIds.length; i += 90) {
     const chunk = studentIds.slice(i, i + 90);
     if (!chunk.length) continue;
     const { results } = await env.DB.prepare(
-      `SELECT student_id, code, COUNT(*) AS n FROM gr_attendance WHERE academic_year_id = ? AND student_id IN (${chunk.map(() => "?").join(",")}) GROUP BY student_id, code`
-    ).bind(yearId, ...chunk).all();
-    for (const r of results) (out[r.student_id] ||= {})[r.code] = r.n;
+      `SELECT student_id, code, CASE WHEN att_date >= ? THEN 2 ELSE 1 END AS term, COUNT(*) AS n FROM gr_attendance
+        WHERE academic_year_id = ? AND student_id IN (${chunk.map(() => "?").join(",")}) GROUP BY student_id, code, term`
+    ).bind(t2, yearId, ...chunk).all();
+    for (const r of results) {
+      const o = (out[r.student_id] ||= { by_term: { 1: {}, 2: {} } });
+      o[r.code] = (o[r.code] || 0) + r.n;
+      o.by_term[r.term][r.code] = (o.by_term[r.term][r.code] || 0) + r.n;
+    }
   }
   return out;
 }

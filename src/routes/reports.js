@@ -1,7 +1,7 @@
 import { json, fail, requireUser, requireViewer, requireReportViewer, intParam, text } from "../lib/http.js";
 import {
   resolveYear, listYears, getSettings, listRooms, roomRoster, isHomeroomTeacher, yearResultsForStudents,
-  assessmentsFor, absenceCounts, attendanceSummary, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, compareGrade, compareRoom, compareSubject, homeroomNames,
+  assessmentsFor, absenceCounts, attendanceSummary, yearTerms, currentTerm, termOfDate, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, compareGrade, compareRoom, compareSubject, homeroomNames,
 } from "../lib/data.js";
 import { courseOverview } from "./admin.js";
 import { listAbsences, commentsFor, bodyFor } from "./homeroom.js";
@@ -18,7 +18,7 @@ export async function handleMe(request, env, user, url) {
     "SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?"
   ).bind(year.id, user.id).all();
   homerooms.sort(compareRoom); // เมนูประจำชั้นเรียง อ.1 → ป.6 และห้อง 1, 2, …, 10
-  const rooms = await listRooms(env, year.id);
+  const [rooms, terms] = await Promise.all([listRooms(env, year.id), yearTerms(env, year.id)]);
   for (const h of homerooms) h.students = rooms.find((r) => r.grade_level === h.grade_level && r.classroom === h.classroom)?.students || 0;
   const summary = user.can_view_all ? {
     courses: all.length,
@@ -29,6 +29,7 @@ export async function handleMe(request, env, user, url) {
   return json({
     user: { id: user.id, full_name: user.full_name, role: user.role, grade_role: user.grade_role || null, is_admin: user.is_admin, can_view_all: user.can_view_all, is_super: user.is_super, can_import: !!user.can_import },
     years, year, settings: { entry_open: settings.entry_open, school_name: settings.school_name },
+    terms, current_term: currentTerm(terms),
     courses: mine, homerooms, summary,
   });
 }
@@ -47,7 +48,7 @@ async function roomReport(env, year, grade, room, onlyStudent) {
   let roster = await roomRoster(env, year.id, grade, room);
   if (onlyStudent) roster = roster.filter((s) => s.id === onlyStudent);
   const ids = roster.map((s) => s.id);
-  const [grades, assessments, absences, settings, homeroom, comments, attendance, body] = await Promise.all([
+  const [grades, assessments, absences, settings, homeroom, comments, attendance, body, terms] = await Promise.all([
     yearResultsForStudents(env, year.id, grade, ids),
     assessmentsFor(env, year.id, ids),
     absenceCounts(env, year.id, ids),
@@ -56,9 +57,10 @@ async function roomReport(env, year, grade, room, onlyStudent) {
     commentsFor(env, year.id, ids),
     attendanceSummary(env, year.id, ids),
     bodyFor(env, year.id, ids),
+    yearTerms(env, year.id),
   ]);
   return {
-    year, grade, room, settings, homeroom_teachers: homeroom,
+    year, grade, room, settings, homeroom_teachers: homeroom, terms,
     students: roster.map((s) => ({
       id: s.id, number: s.number, student_code: s.student_code, national_id: s.national_id, name: studentName(s),
       birth_date: s.birth_date, gender: s.gender, enrollment_status: s.enrollment_status, transfer_in_term: s.transfer_in_term || null,
@@ -128,8 +130,11 @@ export async function handleReports(request, env, user, parts, method, url) {
       `SELECT guardian_prefix, guardian_first_name, guardian_last_name, guardian_relationship,
               house_number, village_no, road_soi, subdistrict, district, province FROM student_details WHERE student_id = ?`
     ).bind(sid).first();
-    const absences = (await listAbsences(env, year.id, [sid]))[sid] || [];
-    return json({ year, grade, room, settings: await getSettings(env, year.id), student: { ...s, name: studentName(s) }, guardian: detail || {}, absences });
+    let absences = (await listAbsences(env, year.id, [sid]))[sid] || [];
+    // ?term=1|2: เฉพาะวันขาด/ลาในภาคเรียนนั้น (หนังสือแจ้งผู้ปกครองรายภาค)
+    const term = Number(url.searchParams.get("term"));
+    if (term === 1 || term === 2) { const terms = await yearTerms(env, year.id); absences = absences.filter((a) => termOfDate(terms, a.absence_date) === term); }
+    return json({ year, grade, room, term: term === 1 || term === 2 ? term : null, settings: await getSettings(env, year.id), student: { ...s, name: studentName(s) }, guardian: detail || {}, absences });
   }
 
   if (kind === "pp1") {

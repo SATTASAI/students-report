@@ -8,7 +8,7 @@ const OUT = process.argv[2] || "/tmp";
 const fails = [], notes = [];
 const check = (ok, msg) => { if (!ok) fails.push(msg); };
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
+const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
 const ctx = await browser.newContext({ viewport: { width: 1300, height: 900 }, locale: "th-TH" });
 const page = await ctx.newPage();
 page.on("pageerror", (e) => fails.push(`pageerror: ${e.message}`));

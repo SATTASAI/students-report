@@ -795,7 +795,11 @@ export async function courseOverview(env, yearId, { teacherId = null } = {}) {
     `SELECT c.id, c.classroom, c.locked, c.submitted_at, c.approved_at, c.reviewed_at, c.return_note, c.returned_at, s.id AS subject_id, s.grade_level, s.code, s.name, s.learning_area,
             s.subject_type, s.hours_per_year, s.sort_order,
             (SELECT COUNT(*) FROM gr_items i WHERE i.course_id = c.id) AS item_count,
-            (SELECT COUNT(*) FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id = c.id AND sc.score IS NOT NULL) AS filled
+            (SELECT COUNT(*) FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id = c.id AND sc.score IS NOT NULL) AS filled,
+            (SELECT COUNT(*) FROM gr_items i WHERE i.course_id = c.id AND i.term_number = 1) AS t1_items,
+            (SELECT COUNT(*) FROM gr_items i WHERE i.course_id = c.id AND i.term_number = 2) AS t2_items,
+            (SELECT COUNT(*) FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id = c.id AND i.term_number = 1 AND sc.score IS NOT NULL) AS t1_filled,
+            (SELECT COUNT(*) FROM gr_scores sc JOIN gr_items i ON i.id = sc.item_id WHERE i.course_id = c.id AND i.term_number = 2 AND sc.score IS NOT NULL) AS t2_filled
        FROM gr_courses c JOIN gr_subjects s ON s.id = c.subject_id
       WHERE s.academic_year_id = ?${teacherFilter}`
   ).bind(...(teacherId ? [yearId, teacherId] : [yearId])).all();
@@ -813,6 +817,8 @@ export async function courseOverview(env, yearId, { teacherId = null } = {}) {
     c.students = size[`${c.grade_level}|${c.classroom}`] || 0;
     const expected = c.item_count * c.students;
     c.progress = expected ? Math.min(100, Math.round((c.filled / expected) * 100)) : 0;
+    // ความคืบหน้ารายภาค (หน้าแรกแสดงตามภาคเรียนที่เลือก)
+    for (const t of [1, 2]) { const ex = c[`t${t}_items`] * c.students; c[`progress_t${t}`] = ex ? Math.min(100, Math.round((c[`t${t}_filled`] / ex) * 100)) : 0; }
     c.status = !c.locked ? "draft" : c.approved_at ? "approved" : c.reviewed_at ? "reviewed" : "submitted";
     c.edit_count = editCounts[c.id] || 0;
   }

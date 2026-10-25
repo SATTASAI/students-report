@@ -35,7 +35,7 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(r.status, headers); res.end(Buffer.from(await r.arrayBuffer()));
 }).listen(PORT);
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
+const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
 const page = await (await browser.newContext({ locale: "th-TH" })).newPage();
 page.on("pageerror", (e) => fails.push(`pageerror: ${e.message}`));
 async function login(email) {
