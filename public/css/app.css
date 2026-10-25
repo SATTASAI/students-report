@@ -560,20 +560,6 @@ details.panel > summary { cursor: pointer; }
 .term-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--term); flex: none; }
 body.term-mode .tabs button[aria-selected="true"], body.term-mode .tabs .tab-link[aria-selected="true"] { color: var(--term-ink); border-bottom-color: var(--term); }
 body.term-mode .tabs { border-bottom-color: var(--term-line); }
-/* หน้าแรก: การ์ดเลือกภาคเรียน */
-.term-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 4px; }
-.term-card { display: grid; gap: 2px; text-align: left; padding: 14px 16px; border-radius: var(--r-lg); border: 2px solid var(--line); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
-.term-card b { font-size: 18px; }
-.term-card .sub { font-size: 13px; color: var(--muted); }
-.term-card.t1 { border-color: var(--t1-line); } .term-card.t1 b { color: var(--t1-ink); }
-.term-card.t2 { border-color: var(--t2-line); } .term-card.t2 b { color: var(--t2-ink); }
-.term-card.t1:hover { background: var(--t1-bg); } .term-card.t2:hover { background: var(--t2-bg); }
-.term-card[aria-pressed="true"].t1 { background: var(--t1); border-color: var(--t1); } .term-card[aria-pressed="true"].t2 { background: var(--t2); border-color: var(--t2); }
-.term-card[aria-pressed="true"] b, .term-card[aria-pressed="true"] .sub { color: #fff; }
-.term-card .now { font-size: 12px; font-weight: 600; }
-.term-card.t1 .now { color: var(--t1); } .term-card.t2 .now { color: var(--t2); }
-.term-card[aria-pressed="true"] .now { color: #fff; }
-@media (max-width: 520px) { .term-cards { grid-template-columns: 1fr; } }
 .meter.term i { background: var(--term); }
 .term-only { border: 1px dashed var(--term-line); background: var(--term-bg); color: var(--term-ink); }
 

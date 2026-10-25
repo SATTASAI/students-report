@@ -15,7 +15,6 @@
       <p id="yearLine"></p>
     </div>
   </div>
-  <div class="term-cards" id="termCards" role="group" aria-label="เลือกภาคเรียนที่จะทำงาน"></div>
   <div class="note warn" id="closedNote" hidden>ปิดระบบการกรอกคะแนนของปีการศึกษานี้แล้ว ดูผลได้แต่แก้ไขไม่ได้</div>
   <div class="dash" style="margin-top:14px">
     <section class="panel">
@@ -31,16 +30,11 @@
   </div>
 </main>
 <script type="module">
-import { shell, esc, withYear, withTerm, switchTerm, termRange, TERM_LABEL } from "/js/app.js";
+import { shell, esc, withYear, withTerm } from "/js/app.js";
 const me = await shell("home");
 document.getElementById("main").hidden = false;
 const y = me.year.id, T = me.term;
-// คลิกเลือกภาคเรียนก่อน แล้วทุกหน้า (สมุดคะแนน ประจำชั้น เอกสาร) ทำงานกับภาคนั้น
-document.getElementById("termCards").innerHTML = [1, 2].map((t) => `<button type="button" class="term-card t${t}" data-term="${t}" aria-pressed="${t === T}">
-  <b>${TERM_LABEL[t]}</b><span class="sub">${esc(termRange(me, t) || `ปีการศึกษา ${me.year.year_be}`)}</span>
-  <span class="sub">${t === 1 ? "กรอก/พิมพ์ข้อมูลภาคเรียนที่ 1" : "กรอกภาคเรียนที่ 2 · สรุปผลทั้งปี ปพ.5 ปพ.6"}</span>
-  ${t === me.current_term ? '<span class="now">● ภาคเรียนปัจจุบัน</span>' : ""}</button>`).join("");
-for (const b of document.querySelectorAll("#termCards [data-term]")) b.onclick = () => { if (Number(b.dataset.term) !== T) switchTerm(Number(b.dataset.term)); };
+// ภาคเรียนที่ทำงาน: เลือกด้วยสวิตช์บนสุดของเมนูซ้าย — ลิงก์ทุกอันพาภาคเรียนไปด้วย
 const link = (path) => withTerm(withYear(path, y), T);
 document.getElementById("yearLine").textContent = `สวัสดี ${me.user.full_name} · ปีการศึกษา ${me.year.year_be}`;
 document.getElementById("closedNote").hidden = !!me.settings.entry_open;
