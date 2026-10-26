@@ -72,6 +72,24 @@ for (const [type, month] of [["milk", "2026-07"], ["duty", "2026-10"]]) {
   check(pages === 1, `${type} ${month}: หน้าพิมพ์ต้องมี 1 หน้า (ได้ ${pages})`);
   await t.screenshot({ path: `${OUT}/logs-print-${type}-${month}.png`, fullPage: true });
 }
+// ปุ่ม "พิมพ์ / PDF": เปิดแท็บใหม่ได้ → แท็บใหม่ · ป๊อปอัปถูกบล็อก (Safari บน iPhone) → เปิดหน้าพิมพ์ในแท็บเดิม
+for (const blocked of [false, true]) {
+  await t.goto(`${BASE}/logs.html?term=1`);
+  await t.waitForSelector("#logSheet table");
+  if (blocked) await t.evaluate(() => { window.open = () => null; });
+  await t.click("#pdfBtn");
+  await t.locator("input[name=scope][value=year]").check();
+  await t.locator("input[name=all]").check();
+  const popP = blocked ? null : t.context().waitForEvent("page");
+  await t.locator("dialog button, .dialog button").filter({ hasText: "ตกลง" }).click();
+  const target = blocked ? t : await popP;
+  await target.waitForURL(/\/print\/logs\.html\?.*months=2026-05%2C/, { timeout: 15000 }).catch(() => errors.push(`พิมพ์ (${blocked ? "ป๊อปอัปถูกบล็อก" : "แท็บใหม่"}): ไม่เปิดหน้าพิมพ์ ${target.url()}`));
+  await target.waitForSelector(".logbook", { timeout: 20000 }).catch(() => errors.push(`พิมพ์ (${blocked ? "ป๊อปอัปถูกบล็อก" : "แท็บใหม่"}): หน้าพิมพ์ไม่ขึ้น`));
+  const n = await target.locator(".logbook").count();
+  check(n === 30, `พิมพ์ทั้งภาค 1 ทั้ง 5 แบบต้องมี 30 หน้า (ได้ ${n})`);
+  if (!blocked) await target.close();
+}
+
 // ตรวจสุขภาพไม่มีคอลัมน์วันหยุด
 await t.goto(`${BASE}/print/logs.html?year=1&${Q}&types=health&months=2026-07`);
 await t.waitForSelector(".logbook table");
