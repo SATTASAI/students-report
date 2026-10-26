@@ -9,7 +9,7 @@
 <body>
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
-import { esc, params, get, toolbar, status, td, thaiDate, todayIso } from "/print/print.js";
+import { esc, params, get, toolbar, status, td, thaiDate, todayIso, directorTitle } from "/print/print.js";
 const p = params();
 const q = new URLSearchParams({ grade: p.get("grade") || "", room: p.get("room") || "", student: p.get("student") || "" });
 if (p.get("year")) q.set("year", p.get("year"));
@@ -42,7 +42,7 @@ document.getElementById("doc").innerHTML = `<section class="sheet">
   <p style="text-indent:2.5cm">จึงเรียนมาเพื่อโปรดทราบและให้ความร่วมมือ</p>
   <div class="signs" style="grid-template-columns:1fr 1fr">
     <div></div>
-    <div class="sign">ขอแสดงความนับถือ<div class="line"></div>(${esc(s.director_name || "................................................")})<br>ผู้อำนวยการ${esc(s.school_name || "")}</div>
+    <div class="sign">ขอแสดงความนับถือ<div class="line"></div>(${esc(s.director_name || "................................................")})<br>${esc(directorTitle(s.school_name))}</div>
   </div>
   <div style="margin-top:10mm;border-top:1px dashed #000;padding-top:3mm">
     <b>ส่วนที่ผู้ปกครองตอบกลับ</b> &nbsp; ได้รับทราบการขาดเรียนของ ${esc(d.student.name)} แล้ว สาเหตุ ...................................................................................

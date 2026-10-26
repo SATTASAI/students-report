@@ -26,7 +26,7 @@
 <body>
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
-import { esc, params, get, toolbar, status, td } from "/print/print.js";
+import { esc, params, get, toolbar, status, td, directorTitle } from "/print/print.js";
 import { LOG_TITLE, LOG_DONE, headerLine, dailyModel, healthModel, weekRange, weekdayOf, dayNum } from "/js/logbook-data.js";
 const p = params();
 const base = new URLSearchParams({ grade: p.get("grade") || "", room: p.get("room") || "" });
@@ -43,7 +43,7 @@ toolbar(`${types.length > 1 ? "แบบบันทึกประจำวั�
 // ครูประจำชั้นหลายคน → ลงชื่อคนละช่อง (ไม่มีข้อมูล = เว้นช่องไว้ 1 ช่อง)
 const signs = (d) => `<div class="signs" style="grid-template-columns:repeat(${Math.min(3, Math.max(1, d.teachers.length) + 1)},1fr)">
   ${(d.teachers.length ? d.teachers : [""]).map((t) => `<div class="sign"><div class="line"></div>(${esc(t || ".................................................")})<br>ครูประจำชั้น</div>`).join("")}
-  <div class="sign"><div class="line"></div>(${esc(d.school.director || ".................................................")})<br>ผู้อำนวยการ${esc(d.school.name || "")}</div></div>`;
+  <div class="sign"><div class="line"></div>(${esc(d.school.director || ".................................................")})<br>${esc(directorTitle(d.school.name))}</div></div>`;
 const name = (r) => `${esc(r.name)}${r.active ? "" : " (ย้ายออก)"}`;
 
 function dailyPage(d) {
