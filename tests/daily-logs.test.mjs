@@ -159,3 +159,36 @@ test("บันทึกประจำวัน: บันทึกได้เ
   await call("t1", "PUT", `/api/homeroom/logs?${Q}`, change, { expect: 200 });
   assert.equal((await call("t1", "GET", `/api/homeroom/logs?${Q}&type=milk&month=2026-11`, null, { expect: 200 })).data.can_edit, true);
 });
+
+test("บันทึกประจำวัน 4 แบบ: ตารางมีวันเสาร์ อาทิตย์ และวันหยุด (ทำเครื่องหมายเป็นวันหยุด) เฉพาะวันในภาคเรียน", async () => {
+  const { logColumns, sheetForMonth, dailyModel } = await import("../public/js/logbook-data.js");
+  const { call } = await setup();
+  await call("admin", "POST", "/api/calendar", { from: "2026-07-15", name: "หยุดทดสอบ" }, { expect: 200 });
+  for (const month of ["2026-07", "2026-10", "2026-11"]) {
+    const d = (await call("t1", "GET", `/api/homeroom/logs?${Q}&type=milk&month=${month}`, null, { expect: 200 })).data;
+    const C = logColumns(d);
+    const inTerm = (iso) => d.terms.some((t) => iso >= t.start_date && iso <= t.end_date);
+    const all = []; for (let x = new Date(`${month}-01T00:00:00Z`); x.toISOString().slice(0, 7) === month; x.setUTCDate(x.getUTCDate() + 1)) all.push(x.toISOString().slice(0, 10));
+    assert.deepEqual(C.map((c) => c.date), all.filter(inTerm), `${month}: ทุกวันในภาคเรียน`);
+    // วันเรียนครบ ลำดับตรงกับ d.days · วันอื่นเป็นวันหยุดทั้งหมด
+    assert.deepEqual(C.filter((c) => !c.off).map((c) => c.date), d.days);
+    C.filter((c) => !c.off).forEach((c) => assert.equal(d.days[c.i], c.date));
+    for (const c of C.filter((c) => c.off)) {
+      const wd = new Date(`${c.date}T00:00:00Z`).getUTCDay(), h = d.holidays.find((x) => x.holiday_date === c.date);
+      assert.equal(c.off, h ? h.name : wd === 6 ? "วันเสาร์" : wd === 0 ? "วันอาทิตย์" : "?", `${c.date}`);
+    }
+    if (month === "2026-07") assert.equal(C.find((c) => c.date === "2026-07-15").off, "หยุดทดสอบ");
+    if (month === "2026-10") assert.equal(C.at(-1).date, "2026-10-10"); // หลังปิดภาคไม่แสดง
+    // Excel: คอลัมน์ตรงกับตาราง ชื่อวันหยุดแถวแรก รวมช่องลงมาทั้งคอลัมน์
+    const { aoa, merges } = sheetForMonth({ ...d, school: { name: "x" } });
+    const m = dailyModel(d), R = m.rows.length;
+    assert.equal(aoa[2].length, 2 + C.length + 2);
+    C.forEach((c, k) => {
+      if (c.off) {
+        assert.equal(aoa[4][2 + k], `หยุด: ${c.off}`);
+        assert.ok(merges.some((g) => g.s.c === 2 + k && g.s.r === 4 && g.e.r === 3 + R));
+        assert.equal(aoa[4 + R][2 + k], "");
+      } else assert.equal(aoa[4 + R][2 + k], `${m.foot[c.i].done}/${m.foot[c.i].present}`);
+    });
+  }
+});

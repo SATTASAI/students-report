@@ -2,7 +2,7 @@
 // หน้าละ 1 เดือน วันในตารางมาจากปฏิทินวันหยุด · ส่งออก Excel (.xlsx) และพิมพ์/บันทึกเป็น PDF ได้ทั้งเดือนนี้และทั้งปีการศึกษา
 import { shell, api, esc, toast, showError, params, dialog, monthsOfTerm, TERM_LABEL } from "/js/app.js";
 import { loadXlsx } from "/js/export.js";
-import { LOG_FORMS, LOG_TITLE, ABS_LABEL, monthLabel, dayShort, weekdayOf, dayNum, dailyModel, healthModel, weekRange, sheetForMonth } from "/js/logbook-data.js";
+import { LOG_FORMS, LOG_TITLE, ABS_LABEL, monthLabel, dayShort, weekdayOf, dayNum, dailyModel, healthModel, weekRange, sheetForMonth, logColumns } from "/js/logbook-data.js";
 
 const me = await shell("logs");
 const view = document.getElementById("view");
@@ -112,7 +112,7 @@ function draw() {
       </span>
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
-    ${d.holidays?.length ? `<p class="muted small" style="margin:0 0 8px">วันหยุดเดือนนี้ (ไม่แสดงในตาราง): ${d.holidays.map((h) => `${dayNum(h.holiday_date)} ${esc(h.name)}`).join(" · ")}</p>` : ""}
+    ${d.holidays?.length ? `<p class="muted small" style="margin:0 0 8px">วันหยุดเดือนนี้${logType === "health" ? "" : " (คอลัมน์สีแดง)"}: ${d.holidays.map((h) => `${dayNum(h.holiday_date)} ${esc(h.name)}`).join(" · ")}</p>` : ""}
     ${d.can_edit ? "" : `<p class="note" style="margin:0 0 8px">ดูอย่างเดียว — บันทึกได้เฉพาะครูประจำชั้นของห้อง ${esc(room)}</p>`}
     <div id="logSheet"></div>`;
   const go = async (m) => { await settle(); month = m; sessionStorage.setItem("sr-hr-month", m); load().catch(showError); };
@@ -140,7 +140,9 @@ function drawDaily() {
   if (!d.days.length) { box.innerHTML = `<div class="panel empty"><strong>เดือนนี้ไม่มีวันเรียน</strong>อยู่นอกช่วงภาคเรียน หรือเป็นวันหยุดทั้งเดือน</div>`; return; }
   const T = logType;
   const m = () => dailyModel(d);
-  const model = m();
+  const model = m(), C = logColumns(d), R = model.rows.length;
+  // วันเสาร์ อาทิตย์ และวันหยุด: คอลัมน์สีแดง ชื่อวันหยุดแนวตั้ง (แถวแรก รวมช่องลงมาทั้งคอลัมน์)
+  const offCell = (c, ri) => ri === 0 ? `<td class="log-off" rowspan="${R}"><span>${esc(c.off)}</span></td>` : "";
   const cell = (r, i) => {
     const day = d.days[i], c = r.cells[i];
     if (c === null) return `<td class="lcell na"></td>`;
@@ -149,14 +151,15 @@ function drawDaily() {
   };
   box.innerHTML = `<div class="sheet-wrap"><table class="sheet att-sheet log-sheet" id="sheet">
     <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
-      ${d.days.map((day) => `<th class="col-head att-day ${day === d.today ? "today" : ""}"><span class="wd">${weekdayOf(day)}</span><b>${dayNum(day)}</b>
+      ${C.map(({ date: day, off }) => off ? `<th class="col-head att-day log-off ${day === d.today ? "today" : ""}" title="${esc(off)}"><span class="wd">${weekdayOf(day)}</span><b>${dayNum(day)}</b></th>`
+        : `<th class="col-head att-day ${day === d.today ? "today" : ""}"><span class="wd">${weekdayOf(day)}</span><b>${dayNum(day)}</b>
         <button type="button" class="col-all" data-all="${day}" data-tip="ติ๊กทุกคนที่มาเรียนวันนี้ (กดอีกครั้ง = ล้าง)" aria-label="ติ๊กทั้งห้อง ${dayShort(day)}">ทั้งห้อง</button></th>`).join("")}
       <th class="col-head att-sum" data-tip="จำนวนวันที่ติ๊ก / วันที่มาเรียน">รวม</th></tr></thead>
-    <tbody>${model.rows.map((r) => `<tr data-sid="${r.id}" class="${r.active ? "" : "inactive"}"><td class="stick no">${r.number}</td><td class="stick name" title="${esc(r.name)}">${esc(r.name)}</td>
-      ${d.days.map((_, i) => cell(r, i)).join("")}<td class="calc att-sum" data-row>${r.active ? `${r.done}/${r.present}` : ""}</td></tr>`).join("")}</tbody>
-    <tfoot><tr><td class="stick no"></td><td class="stick name" style="text-align:left">รวมรายวัน</td>${model.foot.map((f, i) => `<td class="calc log-foot" data-col="${d.days[i]}">${f.done}/${f.present}</td>`).join("")}<td></td></tr></tfoot>
+    <tbody>${model.rows.map((r, ri) => `<tr data-sid="${r.id}" class="${r.active ? "" : "inactive"}"><td class="stick no">${r.number}</td><td class="stick name" title="${esc(r.name)}">${esc(r.name)}</td>
+      ${C.map((c) => c.off ? offCell(c, ri) : cell(r, c.i)).join("")}<td class="calc att-sum" data-row>${r.active ? `${r.done}/${r.present}` : ""}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td class="stick no"></td><td class="stick name" style="text-align:left">รวมรายวัน</td>${C.map((c) => c.off ? '<td class="log-foot log-off"></td>' : `<td class="calc log-foot" data-col="${c.date}">${model.foot[c.i].done}/${model.foot[c.i].present}</td>`).join("")}<td></td></tr></tfoot>
   </table></div>
-  <p class="muted small" style="margin-top:10px">แตะช่องเพื่อติ๊ก ✓ (แตะซ้ำ = ล้าง) · ปุ่ม "ทั้งห้อง" ใต้วันที่ = ติ๊กทุกคนที่มาเรียนวันนั้น · ช่องสีเทาคือนักเรียนที่ขาด/ลาในบันทึกการมาเรียน · บันทึกอัตโนมัติ</p>`;
+  <p class="muted small" style="margin-top:10px">แตะช่องเพื่อติ๊ก ✓ (แตะซ้ำ = ล้าง) · ปุ่ม "ทั้งห้อง" ใต้วันที่ = ติ๊กทุกคนที่มาเรียนวันนั้น · ช่องสีเทาคือนักเรียนที่ขาด/ลาในบันทึกการมาเรียน · คอลัมน์สีแดง = วันเสาร์ อาทิตย์ และวันหยุด · บันทึกอัตโนมัติ</p>`;
   const table = document.getElementById("sheet");
   const refresh = () => {
     const mm = m();
