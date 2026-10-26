@@ -14,7 +14,7 @@ await page.goto(`${BASE}/login.html`);
 const form = (await page.locator("#loginForm").count()) ? "#loginForm " : "";
 await page.fill(`${form}input[name=email]`, "admin@test.local");
 await page.fill(`${form}input[name=password]`, "test-password-1");
-await page.click(form ? "#loginForm button[type=submit]" : "#go");
+await page.click(form ? "#loginForm button.primary" : "#go");
 await page.waitForURL((u) => !u.pathname.startsWith("/login"));
 await page.waitForSelector("#main:not([hidden])");
 const api = (path, method = "GET", body) => page.evaluate(async ([path, method, body]) => {

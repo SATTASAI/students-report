@@ -16,7 +16,7 @@
 // ?course=ID = 1 วิชา, ?courses=1,2,3 หรือ ?grade=ป.4&room=2&year=ID = ทุกวิชาของห้องเป็นไฟล์เดียว
 // ?term=1 = เล่มภาคเรียนที่ 1: ปก (สรุปคะแนนภาค 1) → โครงสร้างภาค 1 → เวลาเรียนภาค 1 → ตัวชี้วัดภาค 1 → สรุปผลภาค 1
 // ?term=2 (หรือไม่ระบุ) = เล่มภาคเรียนที่ 2 สรุปทั้งปี: ทุกส่วนข้างต้นของทั้งสองภาค + อ่านคิดฯ คุณลักษณะ และสรุปผลการเรียนทั้งปี
-import { fixed, esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDateUtc, directorTitle } from "/print/print.js";
+import { fixed, esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDateUtc, directorTitleHtml } from "/print/print.js";
 import { indicatorResult, effectiveScore, indicatorWord, ASSESSMENT_GROUPS, summarizeGroup, summaryText, NUMERIC_GRADES } from "/js/grading.js";
 
 const q = params();
@@ -152,7 +152,7 @@ function book(d) {
       <div><b>เรียนเพื่อเสนอโปรดพิจารณา</b>${(() => { const ds = String(s.deputy_director_name || "").split("\n").filter(Boolean);
         if (ds.length <= 1) return decision("รองผู้อำนวยการสถานศึกษา", ds[0] || "");
         return `<div class="box"><div class="checks"><span>☐ อนุมัติ</span><span>☐ ไม่อนุมัติ/ให้นำไปปรับปรุงแก้ไข</span></div>${ds.map((n) => signLine("รองผู้อำนวยการสถานศึกษา", n)).join("")}<div class="sign-name">........../........../..........</div></div>`; })()}</div>
-      <div><b>การพิจารณา/สั่งการ</b>${decision(esc(directorTitle(s.school_name)), s.director_name)}</div>
+      <div><b>การพิจารณา/สั่งการ</b>${decision(directorTitleHtml(s.school_name), s.director_name)}</div>
     </div>
     ${TERM === 1 ? `<div class="sys-note">เล่มภาคเรียนที่ ${td(1)} — ผลการเรียน (เกรด) การส่งผลและการอนุมัติผลทั้งปีอยู่ในเล่มภาคเรียนที่ ${td(2)}</div>`
       : c.status === "approved" ? `<div class="sys-note">อนุมัติในระบบ${c.approved_by_name ? ` โดย ${esc(c.approved_by_name)}` : ""} เมื่อ ${esc(thaiDateUtc(c.approved_at))}</div>`

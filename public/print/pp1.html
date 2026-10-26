@@ -9,7 +9,7 @@
 <body>
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
-import { esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDate, directorTitle } from "/print/print.js";
+import { esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDate, directorTitleHtml } from "/print/print.js";
 import { ASSESSMENT_GROUPS, summarizeGroup, summaryText, weightedGPA } from "/js/grading.js";
 
 const p = params();
@@ -67,7 +67,7 @@ function page(d) {
     <div class="note">ฉบับนี้ใช้ตรวจทานข้อมูลก่อนออก ปพ.1 จากแบบพิมพ์ทางราชการ/ระบบ SGS เท่านั้น — แสดงเฉพาะปีที่มีข้อมูลในระบบนี้ ปีที่ยังไม่ได้บันทึกต้องตรวจจากระเบียนเดิม</div>
     <div class="signs">
       <div class="sign"><div class="line"></div>(${esc(s.registrar_name || s.measurement_head_name || "................................................")})<br>นายทะเบียน</div>
-      <div class="sign"><div class="line"></div>(${esc(s.director_name || "................................................")})<br>${esc(directorTitle(s.school_name))}</div>
+      <div class="sign"><div class="line"></div>(${esc(s.director_name || "................................................")})<br>${directorTitleHtml(s.school_name)}</div>
     </div>
   </section>`;
 }
