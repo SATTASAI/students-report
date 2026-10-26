@@ -27,7 +27,7 @@
 <body>
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
-import { esc, params, get, toolbar, status, td, fmt, fixed, thaiDate, directorTitle } from "/print/print.js";
+import { esc, params, get, toolbar, status, td, fmt, fixed, thaiDate, directorTitleHtml } from "/print/print.js";
 import { analyzeBody, ageText, ageMonths, sexOf, loadGrowthRefs, WFH_LEVELS, HFA_LEVELS } from "/js/growth.js";
 
 const p = params();
@@ -55,7 +55,7 @@ const flagW = (l) => l && l !== "สมส่วน", flagH = (l) => l && !["ต
 const missingRef = rows.some((x) => x.r.some((y) => y.a?.why?.startsWith("รอตาราง") || y.a?.why?.includes("รอตาราง")));
 const dots = "..........................................";
 const signs = `<div class="signs">${(d.teachers?.length ? d.teachers : [""]).map((t) => `<div class="sign"><div class="line"></div>(${esc(t || dots)})<br>ครูประจำชั้น</div>`).join("")}
-  <div class="sign"><div class="line"></div>(${esc(school.director || dots)})<br>${esc(directorTitle(school.name))}</div></div>`;
+  <div class="sign"><div class="line"></div>(${esc(school.director || dots)})<br>${directorTitleHtml(school.name)}</div></div>`;
 const criteria = `เกณฑ์ของกรมอนามัย: อายุไม่เกิน 5 ปี ใช้มาตรฐานการเจริญเติบโตขององค์การอนามัยโลก (WHO 2006) · อายุ 6–19 ปี ใช้เกณฑ์อ้างอิงการเจริญเติบโตของเด็กอายุ 6–19 ปี (กรมอนามัย 2564)
   · รูปร่าง (น้ำหนักตามเกณฑ์ส่วนสูง): ต่ำกว่า −2 SD ผอม · −2 ถึง −1.5 SD ค่อนข้างผอม · −1.5 ถึง +1.5 SD สมส่วน · +1.5 ถึง +2 SD ท้วม · +2 ถึง +3 SD เริ่มอ้วน · เกิน +3 SD อ้วน
   · ส่วนสูงตามเกณฑ์อายุ: ต่ำกว่า −2 SD เตี้ย · −2 ถึง −1.5 SD ค่อนข้างเตี้ย · −1.5 ถึง +1.5 SD ตามเกณฑ์ · +1.5 ถึง +2 SD ค่อนข้างสูง · เกิน +2 SD สูง

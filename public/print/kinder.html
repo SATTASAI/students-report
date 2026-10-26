@@ -28,7 +28,7 @@
 <body>
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
-import { fixed, esc, params, get, toolbar, status, td, directorTitle } from "/print/print.js";
+import { fixed, esc, params, get, toolbar, status, td, directorTitleHtml } from "/print/print.js";
 import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, termResult, domainSummary, overallSummary } from "/js/kinder.js";
 
 const p = params();
@@ -91,7 +91,7 @@ function childPage(st) {
       <thead><tr><th>ด้าน</th>${TERMS.map((t) => `<th>ภาคเรียนที่ ${td(t)}</th>`).join("")}</tr></thead>
       <tbody>${KINDER_COMMENT_FIELDS.map(([f, l]) => `<tr><td>${esc(l)}</td>${TERMS.map((t) => `<td>${esc(cm(t, f))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
     <div class="signs">${teacherSigns()}
-      <div class="sign"><div class="line"></div>(${esc(school.director || dots)})<br>${esc(directorTitle(school.name))}</div>
+      <div class="sign"><div class="line"></div>(${esc(school.director || dots)})<br>${directorTitleHtml(school.name)}</div>
       <div class="sign"><div class="line"></div>(${dots})<br>ผู้ปกครอง</div></div>
   </section>`;
 }
@@ -112,7 +112,7 @@ function roomPage() {
     </table>
     <div class="legend">ระดับคุณภาพ ${KINDER_LEVELS.map(([n, l]) => `${td(n)} = ${l}`).join(" · ")} — ระดับรายด้านจากค่าเฉลี่ยของข้อในด้านนั้น (${td("2.50")} ขึ้นไป = ดี · ${td("1.50–2.49")} = พอใช้ · ต่ำกว่านั้น = ควรส่งเสริม)
       · ด้าน: กาย = สุขภาวะทางกาย · อารมณ์ฯ = อารมณ์ จิตใจ และสังคม · พลเมืองฯ = ความเป็นพลเมืองและความเป็นไทย</div>
-    <div class="signs">${teacherSigns()}<div class="sign"><div class="line"></div>(${esc(school.director || dots)})<br>${esc(directorTitle(school.name))}</div></div>
+    <div class="signs">${teacherSigns()}<div class="sign"><div class="line"></div>(${esc(school.director || dots)})<br>${directorTitleHtml(school.name)}</div></div>
   </section>`;
 }
 

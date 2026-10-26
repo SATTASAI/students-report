@@ -57,6 +57,8 @@ export const GRADE_TEXT = { "4": "ดีเยี่ยม", "3.5": "ดีม�
 // ตำแหน่งใต้ลายเซ็นผู้อำนวยการ: "ผู้อำนวยการโรงเรียน<ชื่อโรงเรียน>" ทุกเอกสาร (ชื่อจากตั้งค่าโรงเรียน ใส่หรือไม่ใส่คำว่าโรงเรียนก็ได้)
 export const SCHOOL_DEFAULT = "โรงเรียนบ้านป่าเด็ง";
 export const directorTitle = (school) => `ผู้อำนวยการโรงเรียน${String(school || "").trim().replace(/^โรงเรียน\s*/, "") || SCHOOL_DEFAULT.replace(/^โรงเรียน/, "")}`;
+// HTML: ขึ้นบรรทัดใหม่ได้เฉพาะที่ช่องว่าง (เช่น "ผู้อำนวยการโรงเรียนวัดโบสถ์ / (ราษฎร์รังสฤษฏ์)") ไม่ตัดกลางคำ
+export const directorTitleHtml = (school) => `<span class="dir-title">${directorTitle(school).split(/\s+/).map((w) => `<span class="nw">${esc(w)}</span>`).join(" ")}</span>`;
 export const gradeOut = (g) => g == null ? "" : td(g);
 
 // วันที่จากฐานข้อมูล (UTC) → วันที่ไทยแบบเต็ม เช่น "8 ตุลาคม 2569" (ตามตัวเลือกเลขไทย)

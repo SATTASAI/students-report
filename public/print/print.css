@@ -84,3 +84,6 @@ table.t th.r { text-align: right; font-weight: 400; }
 table.t th.xs { font-size: 10pt; font-weight: 400; }
 table.t td.small-note { font-size: 11pt; text-align: center; }
 table.t tr.band td { background: #f0f0f0; }
+
+/* ตำแหน่งผู้อำนวยการ + ชื่อโรงเรียน: ไม่ตัดกลางคำ (ขึ้นบรรทัดใหม่ได้เฉพาะที่ช่องว่าง เช่น ก่อนวงเล็บ) */
+.dir-title .nw { white-space: nowrap; }
