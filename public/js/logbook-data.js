@@ -25,6 +25,22 @@ export function termOfMonth(d) {
 }
 export const headerLine = (d) => `ชั้น ${d.grade}/${d.room} · เดือน${monthLabel(d.month)}${termOfMonth(d) ? ` · ภาคเรียนที่ ${termOfMonth(d)}` : ""} · ปีการศึกษา ${d.year.year_be}`;
 
+// คอลัมน์ของตารางติ๊กรายวัน (4 แบบบันทึก ไม่รวมตรวจสุขภาพ): ทุกวันของเดือนที่อยู่ในภาคเรียน
+// วันเรียน → { date, off: null } · เสาร์ อาทิตย์ และวันหยุด → { date, off: "วันเสาร์" | ชื่อวันหยุด } (แสดงเป็นแถบสีแดง)
+// วันปิดภาคเรียนไม่แสดง · ยังไม่มีภาคเรียนในระบบ = ทั้งเดือน
+const WD_FULL = ["วันอาทิตย์", "วันจันทร์", "วันอังคาร", "วันพุธ", "วันพฤหัสบดี", "วันศุกร์", "วันเสาร์"];
+export function logColumns(d) {
+  const school = new Set(d.days || []), names = new Map((d.holidays || []).map((h) => [h.holiday_date, h.name]));
+  const terms = d.terms || [], inTerm = (iso) => !terms.length || terms.some((t) => iso >= t.start_date && iso <= t.end_date);
+  const out = [];
+  for (let x = new Date(`${d.month}-01T00:00:00Z`); x.toISOString().slice(0, 7) === d.month; x.setUTCDate(x.getUTCDate() + 1)) {
+    const iso = x.toISOString().slice(0, 10);
+    if (school.has(iso)) out.push({ date: iso, off: null, i: d.days.indexOf(iso) });
+    else if (inTerm(iso)) out.push({ date: iso, off: names.get(iso) || WD_FULL[x.getUTCDay()], i: -1 });
+  }
+  return out;
+}
+
 const val = (d, sid, type, key) => d.records[sid]?.[type]?.[key] || "";
 const isActive = (s) => s.enrollment_status === "enrolled";
 
@@ -77,18 +93,20 @@ export function sheetForMonth(d) {
   const sub = [headerLine(d)];
   const merges = [];
   if (d.type !== "health") {
-    const m = dailyModel(d);
-    const head1 = ["เลขที่", "ชื่อ–สกุล", ...d.days.map(weekdayOf), "รวม", "มาเรียน"];
-    const head2 = ["", "", ...d.days.map(dayNum), "(วัน)", "(วัน)"];
-    const body = m.rows.map((r) => [r.number, r.name + (r.active ? "" : " (ย้ายออก)"), ...r.cells.map((c) => c ?? ""), r.active ? r.done : "", r.active ? r.present : ""]);
-    const foot = ["", "รวมรายวัน (ติ๊ก/มาเรียน)", ...m.foot.map((f) => `${f.done}/${f.present}`), "", ""];
-    const legend = [`✓ = ${LOG_DONE[d.type]} · ข = ขาดเรียน · ล = ลากิจ · ป = ลาป่วย (จากบันทึกการมาเรียน) · วันหยุดไม่แสดง`];
+    const m = dailyModel(d), C = logColumns(d);
+    const head1 = ["เลขที่", "ชื่อ–สกุล", ...C.map((c) => weekdayOf(c.date)), "รวม", "มาเรียน"];
+    const head2 = ["", "", ...C.map((c) => dayNum(c.date)), "(วัน)", "(วัน)"];
+    // วันหยุด: แถวนักเรียนแถวแรกใส่ชื่อวันหยุด แล้วรวมช่องลงมาทั้งคอลัมน์
+    const body = m.rows.map((r, ri) => [r.number, r.name + (r.active ? "" : " (ย้ายออก)"), ...C.map((c) => c.off ? (ri === 0 ? `หยุด: ${c.off}` : "") : r.cells[c.i] ?? ""), r.active ? r.done : "", r.active ? r.present : ""]);
+    const foot = ["", "รวมรายวัน (ติ๊ก/มาเรียน)", ...C.map((c) => c.off ? "" : `${m.foot[c.i].done}/${m.foot[c.i].present}`), "", ""];
+    const legend = [`✓ = ${LOG_DONE[d.type]} · ข = ขาดเรียน · ล = ลากิจ · ป = ลาป่วย (จากบันทึกการมาเรียน) · คอลัมน์ "หยุด" = วันเสาร์ อาทิตย์ และวันหยุด`];
     const width = head1.length;
     merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: width - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: width - 1 } },
       { s: { r: 2, c: 0 }, e: { r: 3, c: 0 } }, { s: { r: 2, c: 1 }, e: { r: 3, c: 1 } });
+    if (m.rows.length > 1) C.forEach((c, k) => { if (c.off) merges.push({ s: { r: 4, c: 2 + k }, e: { r: 3 + m.rows.length, c: 2 + k } }); });
     const aoa = [title, sub, head1, head2, ...body, foot, [], legend];
     if (!d.days.length) aoa.splice(2, aoa.length, ["เดือนนี้ไม่มีวันเรียน"]);
-    return { aoa, merges, cols: [{ wch: 6 }, { wch: 28 }, ...d.days.map(() => ({ wch: 4 })), { wch: 6 }, { wch: 7 }] };
+    return { aoa, merges, cols: [{ wch: 6 }, { wch: 28 }, ...C.map(() => ({ wch: 4 })), { wch: 6 }, { wch: 7 }] };
   }
   const m = healthModel(d);
   const n = m.items.length;

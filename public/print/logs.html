@@ -16,6 +16,10 @@
   .logbook table.t td.abs { background: #ececec; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 12pt; }
   .logbook table.t td.out { background: #f4f4f4; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .logbook table.t tfoot td { font-size: 11.5pt; }
+  /* วันเสาร์ อาทิตย์ และวันหยุด: แถบสีแดงทั้งคอลัมน์ ชื่อวันหยุดแนวตั้ง */
+  .logbook table.t .off { background: #fbd5d5; color: #b71c1c; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .logbook table.t td.off.lbl { vertical-align: middle; padding: 1mm 0; }
+  .logbook table.t td.off.lbl span { writing-mode: vertical-rl; font-size: 12pt; line-height: 1; white-space: nowrap; display: inline-block; }
   .logbook table.t .wk { border-left: 2px solid #000; }
   .logbook .legend { font-size: 13pt; margin-top: 2mm; }
   .logbook .signs { grid-template-columns: 1fr 1fr; margin-top: 6mm; gap: 4mm 14mm; break-inside: avoid; }
@@ -27,7 +31,7 @@
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
 import { esc, params, get, toolbar, status, td, directorTitleHtml } from "/print/print.js";
-import { LOG_TITLE, LOG_DONE, headerLine, dailyModel, healthModel, weekRange, weekdayOf, dayNum } from "/js/logbook-data.js";
+import { LOG_TITLE, LOG_DONE, headerLine, dailyModel, healthModel, weekRange, weekdayOf, dayNum, logColumns } from "/js/logbook-data.js";
 const p = params();
 const base = new URLSearchParams({ grade: p.get("grade") || "", room: p.get("room") || "" });
 if (p.get("year")) base.set("year", p.get("year"));
@@ -47,17 +51,20 @@ const signs = (d) => `<div class="signs" style="grid-template-columns:repeat(${M
 const name = (r) => `${esc(r.name)}${r.active ? "" : " (ย้ายออก)"}`;
 
 function dailyPage(d) {
-  const m = dailyModel(d), n = d.days.length;
-  if (!n) return `<h1>${LOG_TITLE[d.type]}</h1><div class="sub">${esc(d.school.name)} · ${td(headerLine(d))}</div><p class="center" style="margin-top:20mm">เดือนนี้ไม่มีวันเรียน</p>`;
+  const m = dailyModel(d), C = logColumns(d), n = C.length, R = m.rows.length;
+  if (!d.days.length) return `<h1>${LOG_TITLE[d.type]}</h1><div class="sub">${esc(d.school.name)} · ${td(headerLine(d))}</div><p class="center" style="margin-top:20mm">เดือนนี้ไม่มีวันเรียน</p>`;
   const dayW = Math.max(5.2, Math.min(9, (273 - 10 - 52 - 22) / n));
+  const cell = (r, ri, c) => c.off ? (ri === 0 ? `<td class="off lbl" rowspan="${R}"><span style="max-height:${Math.max(10, R * 6 - 2)}mm;overflow:hidden">${esc(td(c.off))}</span></td>` : "")
+    : (x => x === null ? `<td class="out"></td>` : x && x !== "✓" ? `<td class="abs">${x}</td>` : `<td>${x}</td>`)(r.cells[c.i]);
+  const offs = C.filter((c) => c.off && !/^วัน(เสาร์|อาทิตย์)$/.test(c.off));
   return `<h1>${LOG_TITLE[d.type]}</h1><div class="sub">${esc(d.school.name)} · ${td(headerLine(d))}</div>
-    <table class="t"><colgroup><col style="width:10mm"><col style="width:52mm">${d.days.map(() => `<col style="width:${dayW}mm">`).join("")}<col style="width:11mm"><col style="width:11mm"></colgroup>
-    <thead><tr><th rowspan="2">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th>${d.days.map((x) => `<th class="wd">${weekdayOf(x)}</th>`).join("")}<th rowspan="2">รวม<br>(วัน)</th><th rowspan="2">มา<br>(วัน)</th></tr>
-      <tr>${d.days.map((x) => `<th>${td(dayNum(x))}</th>`).join("")}</tr></thead>
-    <tbody>${m.rows.map((r) => `<tr><td>${td(r.number)}</td><td class="n">${name(r)}</td>${r.cells.map((c) => c === null ? `<td class="out"></td>` : c && c !== "✓" ? `<td class="abs">${c}</td>` : `<td>${c}</td>`).join("")}
+    <table class="t"><colgroup><col style="width:10mm"><col style="width:52mm">${C.map(() => `<col style="width:${dayW}mm">`).join("")}<col style="width:11mm"><col style="width:11mm"></colgroup>
+    <thead><tr><th rowspan="2">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th>${C.map((c) => `<th class="wd${c.off ? " off" : ""}">${weekdayOf(c.date)}</th>`).join("")}<th rowspan="2">รวม<br>(วัน)</th><th rowspan="2">มา<br>(วัน)</th></tr>
+      <tr>${C.map((c) => `<th${c.off ? ' class="off"' : ""}>${td(dayNum(c.date))}</th>`).join("")}</tr></thead>
+    <tbody>${m.rows.map((r, ri) => `<tr><td>${td(r.number)}</td><td class="n">${name(r)}</td>${C.map((c) => cell(r, ri, c)).join("")}
       <td>${r.active ? td(r.done) : ""}</td><td>${r.active ? td(r.present) : ""}</td></tr>`).join("")}</tbody>
-    <tfoot><tr><td></td><td class="n">รวม (ติ๊ก/มาเรียน)</td>${m.foot.map((f) => `<td>${td(f.done)}<br>${td(f.present)}</td>`).join("")}<td></td><td></td></tr></tfoot></table>
-    <div class="legend">✓ = ${LOG_DONE[d.type]} · ข = ขาดเรียน · ล = ลากิจ · ป = ลาป่วย (จากบันทึกการมาเรียน) · วันหยุดไม่แสดงในตาราง${d.holidays.length ? ` (เดือนนี้: ${d.holidays.map((h) => `${td(dayNum(h.holiday_date))} ${esc(h.name)}`).join(", ")})` : ""}</div>
+    <tfoot><tr><td></td><td class="n">รวม (ติ๊ก/มาเรียน)</td>${C.map((c) => c.off ? '<td class="off"></td>' : `<td>${td(m.foot[c.i].done)}<br>${td(m.foot[c.i].present)}</td>`).join("")}<td></td><td></td></tr></tfoot></table>
+    <div class="legend">✓ = ${LOG_DONE[d.type]} · ข = ขาดเรียน · ล = ลากิจ · ป = ลาป่วย (จากบันทึกการมาเรียน) · สีแดง = วันเสาร์ อาทิตย์ และวันหยุด${offs.length ? ` (เดือนนี้: ${offs.map((c) => `${td(dayNum(c.date))} ${esc(c.off)}`).join(", ")})` : ""}</div>
     ${signs(d)}`;
 }
 

@@ -469,6 +469,12 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-ส input {
 .log-sheet .tick.on { background: var(--ok-bg); }
 .log-sheet .tick.h.ok { background: var(--ok-bg); color: var(--ok); }
 .log-sheet .tick.h.no { background: var(--bad-bg); color: var(--bad); }
+/* บันทึกประจำวัน: วันเสาร์ อาทิตย์ และวันหยุด เป็นคอลัมน์สีแดง */
+.log-sheet thead th.att-day.log-off { min-width: 30px; width: 30px; background: #fde4e4; color: #b71c1c; }
+.log-sheet thead th.att-day.log-off .wd { color: #b71c1c; }
+.log-sheet td.log-off { background: #fde4e4; color: #b71c1c; text-align: center; vertical-align: top; padding: 8px 0; }
+.log-sheet td.log-off span { writing-mode: vertical-rl; font-size: 12px; font-weight: 600; white-space: nowrap; display: inline-block; position: sticky; top: 8px; }
+.log-sheet tfoot td.log-off { background: #fde4e4; }
 .log-sheet tfoot td { position: sticky; bottom: 0; background: #f8f9fd; font-size: 12px; color: var(--muted); text-align: center; padding: 0 4px; z-index: 2; border-top: 1px solid var(--line); }
 .log-sheet tfoot td.stick { z-index: 3; font-size: 13px; padding: 0 10px; }
 .log-sheet.health thead th.wk-head { height: auto; min-width: 0; max-width: none; text-align: center; vertical-align: middle; color: var(--ink); font-weight: 600; }
@@ -616,3 +622,6 @@ body.term-mode .tabs { border-bottom-color: var(--line); }
 :root[data-term] .sheet td.calc, :root[data-term] .doc-item { background: #fdfbfe; }
 :root[data-term="2"] .sheet td.calc, :root[data-term="2"] .doc-item { background: #fffbfc; }
 :root[data-term] .sheet td.cell input:focus, :root[data-term] .sheet tbody tr:hover td.stick, :root[data-term] .course-row:hover, :root[data-term] .log-sheet .tick:hover { background: var(--tint); }
+
+/* บันทึกประจำวัน: คอลัมน์วันหยุดเป็นสีแดงในทั้งสองภาค (ชนะสีพื้นของภาคเรียน) */
+:root[data-term] .sheet.log-sheet thead th.log-off, :root[data-term] .log-sheet tfoot td.log-off, .log-sheet tfoot td.log-off { background: #fde4e4; }
