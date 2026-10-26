@@ -285,7 +285,11 @@ async function printPdf() {
   if (!(await settle())) return showError("ยังบันทึกไม่สำเร็จ — ลองใหม่อีกครั้ง");
   const [g, c] = room.split("/");
   const q = new URLSearchParams({ year: Y, grade: g, room: c, types: s.types.join(","), months: s.months.join(",") });
-  window.open(`/print/logs.html?${q}`, "_blank", "noopener");
+  // เปิดแท็บใหม่หลังรอกล่องเลือก/บันทึก → Safari บน iPhone/iPad บล็อกป๊อปอัป (window.open คืน null)
+  // ถูกบล็อกเมื่อไร เปิดหน้าพิมพ์ในแท็บเดิมแทน (กดย้อนกลับมาหน้านี้ได้ ข้อมูลบันทึกแล้ว)
+  const url = `/print/logs.html?${q}`;
+  const w = window.open(url, "_blank");
+  if (w) w.opener = null; else location.href = url;
 }
 
 load().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
