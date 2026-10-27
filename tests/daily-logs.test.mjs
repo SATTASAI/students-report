@@ -106,6 +106,10 @@ test("วันหยุดราชการ: ระบบใส่ให้อ
   assert.equal(gov["2026-10-23"], "วันปิยมหาราช");
   assert.equal(gov["2026-12-07"], "วันหยุดชดเชยวันพ่อแห่งชาติ");
   assert.equal(gov["2027-02-21"], "วันมาฆบูชา");
+  assert.equal(gov["2027-02-22"], "วันหยุดชดเชยวันมาฆบูชา");
+  const feb = (await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2027-02`, null, { expect: 200 })).data;
+  assert.ok(!feb.days.includes("2027-02-22"));
+  assert.ok(feb.days.includes("2027-02-23"));
   // วันหยุดราชการไม่แสดงในตารางมาเรียน
   const att = (await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2026-10`, null, { expect: 200 })).data;
   assert.ok(!att.days.includes("2026-10-13") && !att.days.includes("2026-10-23"));
