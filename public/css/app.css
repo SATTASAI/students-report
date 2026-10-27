@@ -397,13 +397,18 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-ส input {
 .cal-day:not(.ro):hover { background: #f3f5fd; }
 .cal-day:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; z-index: 1; }
 .cal-day .num { font-size: 17px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.cal-day.we { background: #f6f7fb; }
+.cal-day.we, .cal-day.we.off { background: var(--bad-bg); }
+.cal-day.we:not(.ro):hover { background: #f9dedc; }
 .cal-day.we .num { color: var(--bad); opacity: .75; }
 .cal-day.off:not(.we) { background: repeating-linear-gradient(135deg, #fafbfe 0 6px, #f1f3f9 6px 7px); }
-.cal-day.off .num { color: var(--muted); }
+.cal-day.off:not(.we):not(.hol):not(.important) .num { color: var(--muted); }
 .cal-day.other { opacity: .38; }
-.cal-day.hol, .cal-day.hol.off { background: var(--warn-bg); }
-.cal-day.hol .num, .cal-day.hol .hname { color: var(--warn); }
+.cal-day.hol, .cal-day.hol.off { background: var(--bad-bg); }
+.cal-day.hol .num, .cal-day.hol .hname { color: var(--bad); }
+.cal-day.important, .cal-day.important.off { background: #fff4bf; }
+.cal-day.important:not(.ro):hover { background: #ffeba0; }
+.cal-day.important .num { color: #765500; }
+.cal-day .iname { font-size: 12px; line-height: 1.3; font-weight: 500; color: #765500; background: #fff4bf; border-radius: 4px; padding: 1px 3px; overflow-wrap: anywhere; }
 .cal-day.hol.gov, .cal-day.hol.gov.off { background: var(--bad-bg); }
 .cal-day.hol.gov .num, .cal-day.hol.gov .hname { color: var(--bad); }
 .cal-day.hol:not(.ro):hover { background: #f9dedc; }
@@ -417,7 +422,8 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-ส input {
 .cal-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); margin-top: 10px; }
 .cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .cal-legend .lg { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--line); display: inline-block; }
-.lg.hol { background: var(--warn-bg); border-color: #efd2b0 !important; }
+.lg.hol { background: var(--bad-bg); border-color: #efc4c1 !important; }
+.lg.important { background: #fff4bf; border-color: #d6b855 !important; }
 .lg.gov { background: var(--bad-bg); border-color: #efc4c1 !important; }
 .lg.sel { background: #dfe4fb; border-color: var(--ink-2) !important; }
 .lg.off { background: repeating-linear-gradient(135deg, #fafbfe 0 3px, #dfe3ee 3px 4px); }
@@ -431,7 +437,9 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-ส input {
 .cal-list { display: grid; gap: 6px; }
 .cal-item.gov { border-left-color: var(--bad); }
 .gov-tag { font-style: normal; font-size: 11px; color: var(--bad); background: var(--bad-bg); border-radius: 6px; padding: 0 6px; margin-left: 6px; font-weight: 500; }
-.cal-item { display: grid; grid-template-columns: minmax(150px, 230px) 1fr auto; gap: 12px; align-items: center; text-align: left; font: inherit; color: var(--text); background: #fff; border: 1px solid var(--line-soft); border-left: 4px solid var(--warn); border-radius: var(--r-sm); padding: 8px 12px; cursor: pointer; }
+.cal-item { display: grid; grid-template-columns: minmax(150px, 230px) 1fr auto; gap: 12px; align-items: center; text-align: left; font: inherit; color: var(--text); background: #fff; border: 1px solid var(--line-soft); border-left: 4px solid var(--bad); border-radius: var(--r-sm); padding: 8px 12px; cursor: pointer; }
+.cal-item.important { border-left-color: #c99a00; }
+.cal-item.important .cal-item-n { color: #765500; background: #fff4bf; }
 .cal-item:hover { background: var(--wash); }
 .cal-item-date { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .cal-item-name { font-weight: 500; }
@@ -443,12 +451,13 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-ส input {
   .cal-day { min-height: 64px; padding: 4px 3px; align-items: center; }
   .cal-day .num { font-size: 15px; }
   .cal-day .hname { font-size: 10px; text-align: center; -webkit-line-clamp: 2; }
+  .cal-day .iname { font-size: 10px; text-align: center; }
   .cal-day .mark { font-size: 9px; padding: 0 3px; text-align: center; }
   .cal-item { grid-template-columns: 1fr auto; gap: 2px 10px; }
   .cal-item-date { grid-column: 1; } .cal-item-name { grid-column: 1; grid-row: 2; } .cal-item-n { grid-row: 1 / span 2; grid-column: 2; }
   .cal-bar { bottom: 8px; }
 }
-@media (max-width: 400px) { .cal-day .hname { display: none; } .cal-day.hol::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); margin-top: auto; } .cal-day.hol.gov::after { background: var(--bad); } }
+@media (max-width: 400px) { .cal-day .hname { display: none; } .cal-day.hol::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--bad); margin-top: auto; } }
 .cal-day.ro { cursor: default; }
 
 /* ---------- แบบบันทึกประจำวัน (ครูประจำชั้น) ---------- */

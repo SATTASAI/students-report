@@ -106,6 +106,10 @@ test("วันหยุดราชการ: ระบบใส่ให้อ
   assert.equal(gov["2026-10-23"], "วันปิยมหาราช");
   assert.equal(gov["2026-12-07"], "วันหยุดชดเชยวันพ่อแห่งชาติ");
   assert.equal(gov["2027-02-21"], "วันมาฆบูชา");
+  assert.equal(gov["2027-02-22"], "วันหยุดชดเชยวันมาฆบูชา");
+  const feb = (await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2027-02`, null, { expect: 200 })).data;
+  assert.ok(!feb.days.includes("2027-02-22"));
+  assert.ok(feb.days.includes("2027-02-23"));
   // วันหยุดราชการไม่แสดงในตารางมาเรียน
   const att = (await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2026-10`, null, { expect: 200 })).data;
   assert.ok(!att.days.includes("2026-10-13") && !att.days.includes("2026-10-23"));
@@ -120,6 +124,27 @@ test("วันหยุดราชการ: ระบบใส่ให้อ
   const h = (await call("admin", "GET", "/api/calendar", null, { expect: 200 })).data.holidays.find((x) => x.holiday_date === "2026-12-07");
   assert.equal(h.name, "หยุดชดเชย + กีฬาสี");
   assert.equal(h.gov, 0);
+});
+
+test("วันสำคัญในปฏิทิน: ครูประจำชั้นเห็นวันสำคัญ แต่ยังบันทึกมาเรียนและกิจกรรมได้ตามปกติ", async () => {
+  const { call } = await setup();
+  const calendar = (await call("t1", "GET", "/api/calendar", null, { expect: 200 })).data;
+  assert.ok(calendar.important_days.some((d) => d.date === "2027-01-09" && d.name === "วันเด็กแห่งชาติ"));
+  assert.ok(calendar.important_days.some((d) => d.date === "2027-01-16" && d.name === "วันครู"));
+  assert.ok(calendar.important_days.some((d) => d.date === "2026-07-29" && d.name === "วันภาษาไทยแห่งชาติ"));
+  assert.equal(calendar.holidays.find((h) => h.holiday_date === "2026-07-29").name, "วันอาสาฬหบูชา"); // ตรงกันได้ แยกคนละประเภท
+  assert.ok(!calendar.holidays.some((h) => h.holiday_date === "2026-08-18"));
+  const before = (await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2026-08`, null, { expect: 200 })).data;
+  assert.ok(before.days.includes("2026-08-18"));
+  const sid = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.students[0].id;
+  await call("t1", "PUT", `/api/homeroom/logs?${Q}`, { changes: [{ student_id: sid, type: "milk", date: "2026-08-18", value: "1" }] }, { expect: 200 });
+  const again = (await call("t1", "GET", "/api/calendar", null, { expect: 200 })).data;
+  assert.equal(again.school_days, calendar.school_days);
+  // โรงเรียนประกาศหยุดในวันสำคัญ → ต้องเป็นวันหยุดจริงเมื่อฝ่ายวัดผลเพิ่มเท่านั้น
+  await call("admin", "POST", "/api/calendar", { from: "2026-08-18", name: "หยุดตามประกาศโรงเรียน" }, { expect: 200 });
+  const after = (await call("t1", "GET", "/api/calendar", null, { expect: 200 })).data;
+  assert.equal(after.school_days, calendar.school_days - 1);
+  assert.ok(after.important_days.some((d) => d.date === "2026-08-18"));
 });
 
 test("หน้าบันทึกประจำวัน: รายชื่อห้องตามสิทธิ์ และข้อมูลสำหรับพิมพ์ (ชื่อโรงเรียน ครูประจำชั้น รายชื่อนักเรียน)", async () => {
