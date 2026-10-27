@@ -634,3 +634,12 @@ body.term-mode .tabs { border-bottom-color: var(--line); }
 
 /* บันทึกประจำวัน: คอลัมน์วันหยุดเป็นสีแดงในทั้งสองภาค (ชนะสีพื้นของภาคเรียน) */
 :root[data-term] .sheet.log-sheet thead th.log-off, :root[data-term] .log-sheet tfoot td.log-off, .log-sheet tfoot td.log-off { background: #fde4e4; }
+
+/* Calendar categories and details */
+.cal-type { display:grid; gap:4px; flex:1 1 230px; font-size:12px; }
+.cal-type select { width:100%; }
+.cal-bar textarea { flex:1 1 100%; min-width:0; resize:vertical; }
+.cal-effect { flex:1 1 100%; margin:0; color:var(--muted); }
+.cal-detail { display:block; white-space:pre-wrap; overflow-wrap:anywhere; font-weight:400; margin-top:4px; color:var(--muted); }
+.cal-day-actions { display:grid; gap:10px; }
+.cal-day-actions .btn { white-space:normal; text-align:left; }
