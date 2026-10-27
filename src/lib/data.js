@@ -420,7 +420,7 @@ export async function schoolCalendar(env, yearId) {
   await ensureGovernmentHolidays(env, yearId);
   const [{ results: terms }, { results: holidays }] = await Promise.all([
     env.DB.prepare("SELECT term_number, start_date, end_date FROM academic_terms WHERE academic_year_id = ? ORDER BY term_number").bind(yearId).all(),
-    env.DB.prepare(`SELECT h.holiday_date, h.name, CASE WHEN s.name = h.name THEN 1 ELSE 0 END AS gov FROM gr_holidays h
+    env.DB.prepare(`SELECT h.holiday_date, h.name, h.category, h.description, CASE WHEN s.name = h.name THEN 1 ELSE 0 END AS gov FROM gr_holidays h
       LEFT JOIN gr_holiday_seeds s ON s.academic_year_id = h.academic_year_id AND s.holiday_date = h.holiday_date
       WHERE h.academic_year_id = ? ORDER BY h.holiday_date`).bind(yearId).all(),
   ]);
@@ -458,7 +458,7 @@ export async function ensureGovernmentHolidays(env, yearId, { force = false } = 
   if (!list.length) return 0;
   const before = (await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_holidays WHERE academic_year_id = ?").bind(yearId).first()).n;
   await env.DB.batch(list.flatMap((h) => [
-    env.DB.prepare("INSERT OR IGNORE INTO gr_holidays (academic_year_id, holiday_date, name) VALUES (?,?,?)").bind(yearId, h.date, h.name),
+    env.DB.prepare("INSERT OR IGNORE INTO gr_holidays (academic_year_id, holiday_date, name, category) VALUES (?,?,?,'government')").bind(yearId, h.date, h.name),
     env.DB.prepare("INSERT OR IGNORE INTO gr_holiday_seeds (academic_year_id, holiday_date, name) VALUES (?,?,?)").bind(yearId, h.date, h.name),
   ]));
   return (await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_holidays WHERE academic_year_id = ?").bind(yearId).first()).n - before;

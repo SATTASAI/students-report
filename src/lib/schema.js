@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-23";
+export const SCHEMA_VERSION = "gr-24";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -188,8 +188,21 @@ export const SCHEMA_SQL = [
     academic_year_id INTEGER NOT NULL,
     holiday_date TEXT NOT NULL,
     name TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'holiday' CHECK (category IN ('government','public','cabinet','holiday','school_activity_holiday')),
+    description TEXT NOT NULL DEFAULT '',
     created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (academic_year_id, holiday_date))`,
+  // Calendar-only events never enter gr_holidays: all consumers of that shared table remain correct.
+  `CREATE TABLE IF NOT EXISTS gr_calendar_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    academic_year_id INTEGER NOT NULL,
+    event_date TEXT NOT NULL,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('festival','school_activity')),
+    description TEXT NOT NULL DEFAULT '',
+    created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (academic_year_id, event_date, category, name))`,
+  `CREATE INDEX IF NOT EXISTS idx_gr_calendar_events_year ON gr_calendar_events(academic_year_id, event_date)`,
   // gr-8: เลขที่ที่ฝ่ายวัดผลกำหนดเอง (ว่าง = เรียงอัตโนมัติ)
   `CREATE TABLE IF NOT EXISTS gr_roster_numbers (
     academic_year_id INTEGER NOT NULL,
@@ -283,6 +296,8 @@ export const SCHEMA_SQL = [
 
 // คอลัมน์ที่เพิ่มหลังเวอร์ชันแรก — เพิ่มเฉพาะที่ยังไม่มี (ALTER TABLE ADD COLUMN ไม่แตะข้อมูลเดิม)
 export const ADDED_COLUMNS = [
+  ["gr_holidays", "category", "TEXT NOT NULL DEFAULT 'holiday' CHECK (category IN ('government','public','cabinet','holiday','school_activity_holiday'))"],
+  ["gr_holidays", "description", "TEXT NOT NULL DEFAULT ''"],
   ["gr_settings", "indicator_pass_pct_t2", "INTEGER CHECK (indicator_pass_pct_t2 IS NULL OR indicator_pass_pct_t2 BETWEEN 0 AND 100)"], // เกณฑ์ผ่านรายตัวชี้วัดภาค 2 (ว่าง = ใช้ค่าภาค 1)
   ["gr_settings", "deputy_director_name", "TEXT"],
   ["gr_settings", "affiliation", "TEXT"],
@@ -384,6 +399,9 @@ export async function ensureSchema(env) {
     await addMissingColumns(env);
     await migrateLateCode(env);
     await migrateActivityTerms(env);
+    if (marker?.setting_value !== SCHEMA_VERSION) await env.DB.prepare(`UPDATE gr_holidays SET category = 'government'
+      WHERE category = 'holiday' AND EXISTS (SELECT 1 FROM gr_holiday_seeds s
+        WHERE s.academic_year_id = gr_holidays.academic_year_id AND s.holiday_date = gr_holidays.holiday_date AND s.name = gr_holidays.name)`).run();
     await seedIndicatorBank(env);
     await env.DB.prepare(`INSERT INTO system_settings (setting_key, setting_value, updated_at)
       VALUES ('students_report_schema', ?, datetime('now'))
