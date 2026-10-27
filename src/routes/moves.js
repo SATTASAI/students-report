@@ -10,8 +10,8 @@
 import { json, readJson, fail, requireImporter, intParam, text, audit } from "../lib/http.js";
 import { resolveYear, listRooms, studentName, isSchoolGrade, getSettings, LEFT_STATUSES, roomRoster, thaiToday } from "../lib/data.js";
 
-const OUT_REASONS = { transfer: "transferred", dropout: "withdrawn" };
-export const MOVE_LABEL = { new: "ย้ายเข้า (นักเรียนใหม่)", return: "รับกลับเข้าเรียน", transfer: "ย้ายออก", dropout: "ออกกลางคัน / ติดตามไม่ได้" };
+const OUT_REASONS = { transfer: "transferred", dropout: "withdrawn", absent: "transferred", hometown: "transferred" };
+export const MOVE_LABEL = { new: "ย้ายเข้า (นักเรียนใหม่)", return: "รับกลับเข้าเรียน", transfer: "ย้ายออก", dropout: "ออกกลางคัน / ติดตามไม่ได้", absent: "ขาดเรียนเกิน", hometown: "กลับภูมิลำเนา" };
 
 const maskId = (v) => { const s = String(v || "").replace(/\D/g, ""); return s.length === 13 ? `${s[0]}-xxxx-xxxxx-${s.slice(10, 12)}-${s[12]}` : (s ? "xxxx" + s.slice(-3) : ""); };
 const dateOrNull = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : null);
@@ -142,7 +142,7 @@ export async function handleMoves(request, env, user, parts, method, url) {
     const b = await readJson(request);
     const sid = intParam(b.student_id, "นักเรียน");
     const status = OUT_REASONS[b.reason];
-    if (!status) fail(400, "เลือกเหตุผล: ย้ายออก หรือ ออกกลางคัน");
+    if (!status) fail(400, "เลือกเหตุผล: ย้ายออก ออกกลางคัน ขาดเรียนเกิน หรือ กลับภูมิลำเนา");
     const termNo = Number(b.term_number) || term.term_number;
     if (![1, 2].includes(termNo)) fail(400, "ภาคเรียนไม่ถูกต้อง");
     const cur = await latestInYear(env, year.id, sid);

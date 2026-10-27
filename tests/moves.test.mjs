@@ -143,3 +143,15 @@ test("ย้ายเข้า (นักเรียนใหม่): เลข
   cd = (await call("t1", "GET", `/api/courses/${c.id}`, null, { expect: 200 })).data;
   assert.equal(cd.computed[id].missing, 2);
 });
+
+test("ขาดเรียนเกิน / กลับภูมิลำเนา: บันทึกได้เหมือนย้ายออก และแสดงเหตุผลในรายการของปี", async () => {
+  const { call, d } = await setup();
+  const kids = d.students.filter((x) => x.enrollment_status === "enrolled");
+  for (const [kid, reason, label] of [[kids[0], "absent", "ขาดเรียนเกิน"], [kids[1], "hometown", "กลับภูมิลำเนา"]]) {
+    await call("admin", "POST", "/api/moves/out", { student_id: kid.id, reason, term_number: 2, move_date: "2026-12-01" }, { expect: 200 });
+    const f = (await call("admin", "GET", `/api/moves?q=${encodeURIComponent(kid.student_code)}`, null, { expect: 200 })).data;
+    assert.equal(f.results.find((x) => x.id === kid.id)?.status, "transferred");
+    const m = (await call("admin", "GET", "/api/moves", null, { expect: 200 })).data;
+    assert.ok(m.moves.some((x) => x.student_id === kid.id && x.reason === reason && x.label === label));
+  }
+});
