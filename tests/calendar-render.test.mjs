@@ -5,7 +5,7 @@ import { importantDaysBetween } from "../src/lib/thai-observances.js";
 import { governmentHolidays } from "../src/lib/thai-holidays.js";
 
 // ตรวจ HTML ของ renderer จริงด้วย DOM stub: เส้นทางครูและฝ่ายวัดผลใช้ renderer เดียวกัน
-async function render({ editable = false, customHoliday = false } = {}) {
+async function render({ editable = false, customHoliday = false, month = "2027-07" } = {}) {
   const elements = new Map();
   const element = (key) => {
     if (!elements.has(key)) elements.set(key, { innerHTML: "", dataset: {}, querySelector: () => null, addEventListener() {}, scrollIntoView() {} });
@@ -20,7 +20,7 @@ async function render({ editable = false, customHoliday = false } = {}) {
   const renderer = new Function("api", "esc", "sessionStorage", "document", source + "; return renderHolidayCalendar;")(
     async () => data,
     (s) => String(s).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;"),
-    { getItem: () => "2027-07", setItem() {} },
+    { getItem: () => month, setItem() {} },
     { getElementById: element },
   );
   const view = { innerHTML: "", querySelectorAll: () => [], querySelector: element };
@@ -52,4 +52,17 @@ test("วันสำคัญตรงวันหยุดโรงเรี�
   assert.ok(!day.classes.includes("important"));
   assert.match(day.tag, /หยุดตามประกาศโรงเรียน/);
   assert.match(day.tag, /วันภาษาไทยแห่งชาติ/);
+});
+
+test("เทศกาลในปฏิทิน: วันกินเจ/สารทไทยแสดงร่วมกัน สีเหลือง วันตรุษจีนตรงเสาร์คงสีแดง", async () => {
+  const sept = await render({ month: "2027-09" });
+  const day = cell(sept.grid, "2027-09-30");
+  assert.ok(day.classes.includes("important"));
+  assert.ok(!day.classes.includes("hol"));
+  assert.match(day.tag, /เทศกาลกินเจ/);
+  assert.match(day.tag, /วันสารทไทย/);
+  const feb = await render({ month: "2027-02" });
+  assert.ok(cell(feb.grid, "2027-02-06").classes.includes("we"));
+  assert.ok(!cell(feb.grid, "2027-02-06").classes.includes("important"));
+  assert.match(cell(feb.grid, "2027-02-06").tag, /วันตรุษจีน/);
 });
