@@ -131,6 +131,10 @@ test("วันสำคัญในปฏิทิน: ครูประจำ
   const calendar = (await call("t1", "GET", "/api/calendar", null, { expect: 200 })).data;
   assert.ok(calendar.important_days.some((d) => d.date === "2027-01-09" && d.name === "วันเด็กแห่งชาติ"));
   assert.ok(calendar.important_days.some((d) => d.date === "2027-01-16" && d.name === "วันครู"));
+  assert.ok(calendar.important_days.some((d) => d.date === "2027-02-06" && d.name === "วันตรุษจีน"));
+  assert.ok(!calendar.holidays.some((d) => d.holiday_date === "2027-02-04")); // วันจ่ายยังเป็นวันเรียน
+  const feb = (await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2027-02`, null, { expect: 200 })).data;
+  assert.ok(feb.days.includes("2027-02-04") && feb.days.includes("2027-02-05"));
   assert.ok(calendar.important_days.some((d) => d.date === "2026-07-29" && d.name === "วันภาษาไทยแห่งชาติ"));
   assert.equal(calendar.holidays.find((h) => h.holiday_date === "2026-07-29").name, "วันอาสาฬหบูชา"); // ตรงกันได้ แยกคนละประเภท
   assert.ok(!calendar.holidays.some((h) => h.holiday_date === "2026-08-18"));
