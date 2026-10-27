@@ -1,7 +1,8 @@
 // ปฏิทินวันหยุดของโรงเรียน (ฝ่ายวัดผลตั้ง) — ใช้ซ่อนวันหยุดในตารางมาเรียน และนับวันเรียนจริงเพื่อคิดร้อยละการมาเรียน / มส
 // ช่วงภาคเรียน (วันเปิด–ปิด) มาจาก academic_terms ของระบบบริหารโรงเรียน
 import { json, readJson, fail, requireAdmin, requireUser, text, audit, batchAll } from "../lib/http.js";
-import { resolveYear, schoolCalendar, ensureGovernmentHolidays } from "../lib/data.js";
+import { resolveYear, schoolCalendar, ensureGovernmentHolidays, yearWindow } from "../lib/data.js";
+import { importantDaysBetween } from "../lib/thai-observances.js";
 import { logLockedCourses } from "../lib/edit-requests.js";
 
 const validDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "") && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
@@ -16,7 +17,9 @@ export async function handleCalendar(request, env, user, parts, method, url) {
       if (!hr) fail(403, "ปฏิทินวันหยุดดูได้เฉพาะครูประจำชั้นและฝ่ายวัดผล");
     }
     const cal = await schoolCalendar(env, year.id);
-    return json({ year, terms: cal.terms, holidays: cal.holidays, school_days: cal.days.length, can_edit: !!(user.is_admin && user.can_import) });
+    const window = await yearWindow(env, year.id);
+    const important_days = window ? importantDaysBetween(window.from, window.to) : [];
+    return json({ year, terms: cal.terms, holidays: cal.holidays, important_days, school_days: cal.days.length, can_edit: !!(user.is_admin && user.can_import) });
   }
   requireAdmin(user);
   if (!user.can_import) fail(403, "ตั้งปฏิทินได้เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล");
