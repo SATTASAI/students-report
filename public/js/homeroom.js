@@ -2,6 +2,7 @@ import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICON
 import { ASSESSMENT_GROUPS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
 import { analyzeBody, ageText, levelClass, loadGrowthRefs } from "/js/growth.js";
 import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, domainSummary, overallSummary, shortCode } from "/js/kinder.js";
+import { logColumns } from "/js/logbook-data.js";
 import { createChecker } from "/js/spellcheck.js";
 
 const me = await shell("home");
@@ -815,9 +816,11 @@ async function renderAttendance() {
   attMonth = att.month;
   att.months = monthsOfTerm(att.months, me, T);
   att.days = att.days.filter(inTermDay);
+  const columns = logColumns(att).filter((c) => inTermDay(c.date));
+  const schoolDays = new Set(att.days);
   const idx = att.months.indexOf(att.month);
   const codeOf = (sid, d) => att.records[sid]?.[d] || "";
-  const counts = (sid) => { const c = { "ข": 0, "ล": 0, "ป": 0, "ส": 0 }; for (const v of Object.values(att.records[sid] || {})) c[v]++; return c; };
+  const counts = (sid) => { const c = { "ข": 0, "ล": 0, "ป": 0, "ส": 0 }; for (const [date, v] of Object.entries(att.records[sid] || {})) if (schoolDays.has(date) && v in c) c[v]++; return c; };
   view.innerHTML = `
     <div class="sheet-tools">
       <span class="actions">
@@ -828,17 +831,17 @@ async function renderAttendance() {
       </span>
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
-    ${att.holidays?.length ? `<p class="muted small" style="margin:0 0 8px">วันหยุดเดือนนี้ (ไม่แสดงในตาราง): ${att.holidays.map((h) => `${new Date(`${h.holiday_date}T00:00:00`).getDate()} ${esc(h.name)}`).join(" · ")}</p>` : ""}
-    ${att.days.length ? `<div class="sheet-wrap"><table class="sheet att-sheet" id="sheet">
+    ${att.holidays?.length ? `<p class="muted small" style="margin:0 0 8px">วันหยุดเดือนนี้ (คอลัมน์สีแดง): ${att.holidays.map((h) => `${new Date(`${h.holiday_date}T00:00:00`).getDate()} ${esc(h.name)}`).join(" · ")}</p>` : ""}
+    ${columns.length ? `<div class="sheet-wrap"><table class="sheet att-sheet log-sheet" id="sheet">
       <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
-        ${att.days.map((d) => { const dt = new Date(`${d}T00:00:00`); return `<th class="col-head att-day ${d === att.today ? "today" : ""}"><span class="wd">${WD[dt.getDay()]}</span><b>${dt.getDate()}</b></th>`; }).join("")}
+        ${columns.map((c) => { const d = c.date, dt = new Date(`${d}T00:00:00`); return `<th class="col-head att-day ${c.off ? "log-off" : ""} ${d === att.today ? "today" : ""}" title="${esc(c.off || "วันเรียน")}"><span class="wd">${WD[dt.getDay()]}</span><b>${dt.getDate()}</b></th>`; }).join("")}
         ${Object.keys(ATT).map((k) => `<th class="col-head att-sum" data-tip="${ATT[k]} (วัน) ในเดือนนี้">${k}</th>`).join("")}</tr></thead>
-      <tbody>${data.students.map((s) => { const c = counts(s.id); return `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}">
+      <tbody>${data.students.map((s, ri) => { const c = counts(s.id); return `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}">
         <td class="stick no">${s.number ?? ""}</td><td class="stick name" title="${esc(s.name)}">${esc(s.name)}</td>
-        ${att.days.map((d) => { const v = codeOf(s.id, d); return `<td class="cell att ${v ? `c-${v}` : ""} ${d === att.today ? "today" : ""}"><input data-date="${d}" value="${esc(v)}" maxlength="2" autocomplete="off" aria-label="${esc(s.name)} ${d}"></td>`; }).join("")}
+        ${columns.map((c) => { const d = c.date; if (c.off) return ri === 0 ? `<td class="log-off" rowspan="${data.students.length}" title="${esc(c.off)}"><span>${esc(c.off)}</span></td>` : ""; const v = codeOf(s.id, d); return `<td class="cell att ${v ? `c-${v}` : ""} ${d === att.today ? "today" : ""}"><input data-date="${d}" value="${esc(v)}" maxlength="2" autocomplete="off" aria-label="${esc(s.name)} ${d}"></td>`; }).join("")}
         ${Object.keys(ATT).map((k) => `<td class="calc att-sum" data-n="${k}">${c[k] || ""}</td>`).join("")}</tr>`; }).join("")}</tbody>
     </table></div>
-    <p class="muted small" style="margin-top:10px">พิมพ์ ข ล ป หรือ ส (ส = มาสาย) แล้วกด Enter ลงไปคนถัดไป · ลูกศรเลื่อนช่อง · ลบตัวอักษร = มาเรียน · วันหยุดที่ฝ่ายวัดผลตั้งไว้จะไม่แสดงในตาราง
+    <p class="muted small" style="margin-top:10px">พิมพ์ ข ล ป หรือ ส (ส = มาสาย) แล้วกด Enter ลงไปคนถัดไป · ลูกศรเลื่อนช่อง · ลบตัวอักษร = มาเรียน · วันเสาร์ อาทิตย์ และวันหยุดแสดงเป็นคอลัมน์สีแดง กรอกไม่ได้และไม่นับเป็นวันเรียน
       · หนังสือแจ้งผู้ปกครองกรณีขาดเรียน (บค.) พิมพ์ได้ที่ <a href="/docs.html?room=${encodeURIComponent(`${grade}/${room}`)}">คลังเอกสาร</a></p>`
     : `<div class="panel empty"><strong>เดือนนี้ไม่มีวันเรียน</strong>อยู่นอกช่วงภาคเรียน</div>`}`;
   const go = async (m) => { await flush(); attMonth = m; sessionStorage.setItem("sr-hr-month", m); renderAttendance().catch(showError); };
