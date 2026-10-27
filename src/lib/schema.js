@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-23";
+export const SCHEMA_VERSION = "gr-24";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -155,7 +155,7 @@ export const SCHEMA_SQL = [
     academic_year_id INTEGER NOT NULL,
     student_id INTEGER NOT NULL,
     direction TEXT NOT NULL CHECK (direction IN ('in','out')),
-    reason TEXT NOT NULL CHECK (reason IN ('new','return','transfer','dropout')),
+    reason TEXT NOT NULL CHECK (reason IN ('new','return','transfer','dropout','absent','hometown')),
     term_number INTEGER NOT NULL CHECK (term_number IN (1,2)),
     move_date TEXT, school TEXT, note TEXT,
     grade_level TEXT, classroom TEXT,
@@ -372,6 +372,31 @@ export async function migrateActivityTerms(env) {
   ].map((sql) => env.DB.prepare(sql)));
 }
 
+// gr-24: เหตุผลย้ายออกเพิ่ม "ขาดเรียนเกิน" (absent) และ "กลับภูมิลำเนา" (hometown) — สร้างตารางใหม่เพื่อแก้ CHECK แล้วย้ายข้อมูล
+export async function migrateTransferReasons(env) {
+  const row = await env.DB.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'gr_transfers'").first();
+  if (!row?.sql || row.sql.includes("'hometown'")) return;
+  const cols = "id, academic_year_id, student_id, direction, reason, term_number, move_date, school, note, grade_level, classroom, undone_at, undone_by, created_by, created_at";
+  await env.DB.batch([
+    `DROP TABLE IF EXISTS gr_transfers_v24`,
+    `CREATE TABLE gr_transfers_v24 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      academic_year_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      direction TEXT NOT NULL CHECK (direction IN ('in','out')),
+      reason TEXT NOT NULL CHECK (reason IN ('new','return','transfer','dropout','absent','hometown')),
+      term_number INTEGER NOT NULL CHECK (term_number IN (1,2)),
+      move_date TEXT, school TEXT, note TEXT,
+      grade_level TEXT, classroom TEXT,
+      undone_at TEXT, undone_by INTEGER,
+      created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+    `INSERT INTO gr_transfers_v24 (${cols}) SELECT ${cols} FROM gr_transfers`,
+    `DROP TABLE gr_transfers`,
+    `ALTER TABLE gr_transfers_v24 RENAME TO gr_transfers`,
+    `CREATE INDEX IF NOT EXISTS idx_gr_transfers_year ON gr_transfers(academic_year_id, student_id)`,
+  ].map((sql) => env.DB.prepare(sql)));
+}
+
 const ensured = new WeakMap();
 
 export async function ensureSchema(env) {
@@ -384,6 +409,7 @@ export async function ensureSchema(env) {
     await addMissingColumns(env);
     await migrateLateCode(env);
     await migrateActivityTerms(env);
+    await migrateTransferReasons(env);
     await seedIndicatorBank(env);
     await env.DB.prepare(`INSERT INTO system_settings (setting_key, setting_value, updated_at)
       VALUES ('students_report_schema', ?, datetime('now'))

@@ -529,18 +529,19 @@ async function renderMoves() {
         <td>${x.grade_level ? `${esc(x.grade_level)}/${esc(x.classroom)}${x.in_year ? "" : ` <span class="muted small">(ปี ${esc(x.last_year_be || "")})</span>`}` : "–"}</td>
         <td><span class="tag ${x.enrolled ? "ok" : "warn"}">${esc(STATUS_TH[x.status] || x.status)}</span></td>
         <td class="actions">${x.enrolled
-          ? `<button class="btn small" data-out="${i}" data-reason="transfer">ย้ายออก</button><button class="btn small" data-out="${i}" data-reason="dropout">ออกกลางคัน</button>`
+          ? `<button class="btn small" data-out="${i}" data-reason="transfer">ย้ายออก</button><button class="btn small" data-out="${i}" data-reason="dropout">ออกกลางคัน</button><button class="btn small" data-out="${i}" data-reason="absent">ขาดเรียนเกิน</button><button class="btn small" data-out="${i}" data-reason="hometown">กลับภูมิลำเนา</button>`
           : `<button class="btn small primary" data-back="${i}">รับกลับเข้าเรียน</button>`}</td></tr>`).join("")}</tbody></table></div>`
       : `<p class="muted" style="margin-top:10px">ไม่พบนักเรียน — ถ้าเป็นนักเรียนที่ไม่เคยเรียนที่นี่ ให้กด "นักเรียนย้ายเข้าใหม่"</p>`;
     for (const b of box.querySelectorAll("[data-out]")) b.onclick = async () => {
       const x = results[Number(b.dataset.out)], transfer = b.dataset.reason === "transfer";
+      const OUT_TITLE = { transfer: "ย้ายออก", dropout: "ออกกลางคัน / ติดตามไม่ได้", absent: "ขาดเรียนเกิน", hometown: "กลับภูมิลำเนา" };
       const r = await dialog({
-        title: `${transfer ? "ย้ายออก" : "ออกกลางคัน / ติดตามไม่ได้"}: ${x.name}`,
+        title: `${OUT_TITLE[b.dataset.reason]}: ${x.name}`,
         okText: "บันทึก", okClass: "danger",
         body: `<p class="muted small">${esc(x.name)} จะไม่แสดงในรายชื่อ รายวิชา ปพ.5 และ ปพ.6 อีก แต่ข้อมูลและคะแนนยังเก็บไว้ ยกเลิกได้ภายหลัง</p>
           <div class="form-grid">${termSel()}<label>วันที่${transfer ? "ย้ายออก" : "ออก"}<input type="date" name="move_date"></label>
           ${transfer ? `<label>ย้ายไปโรงเรียน<input name="school" maxlength="200"></label>` : ""}
-          <label>หมายเหตุ<input name="note" maxlength="300" placeholder="${transfer ? "" : "เช่น ขาดเรียนต่อเนื่อง ติดตามไม่ได้"}"></label></div>`,
+          <label>หมายเหตุ<input name="note" maxlength="300" placeholder="${b.dataset.reason === "dropout" ? "เช่น ขาดเรียนต่อเนื่อง ติดตามไม่ได้" : ""}"></label></div>`,
       });
       if (!r.ok) return;
       try { await api(`/api/moves/out?${yq}`, { method: "POST", body: { student_id: x.id, reason: b.dataset.reason, ...r.data } }); toast("บันทึกแล้ว"); renderMoves(); } catch (err) { showError(err); }
