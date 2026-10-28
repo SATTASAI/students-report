@@ -337,6 +337,12 @@ table.sheet { border-collapse: separate; border-spacing: 0; font-size: 14px; }
 .doc-item.wide { grid-column: 1 / -1; }
 .doc-item > .btn, .doc-item > a.btn { justify-self: start; }
 .room-docs { scroll-margin-top: 70px; }
+details.room-docs:not([open]) { padding-bottom: 14px; }
+details.room-docs:not([open]) > summary { margin-bottom: 0; border-bottom: 0; padding-bottom: 0; }
+details.room-docs > summary { list-style: none; }
+details.room-docs > summary::-webkit-details-marker { display: none; }
+details.room-docs > summary h2::before { content: "▸ "; color: var(--muted); }
+details.room-docs[open] > summary h2::before { content: "▾ "; }
 
 /* คะแนนยกมา */
 .carry input.num-in { width: 78px; text-align: right; }
