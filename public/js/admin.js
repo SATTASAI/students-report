@@ -221,7 +221,7 @@ async function renderSubjects() {
     ${GRADES.map((g) => { const list = subjects.filter((s) => s.grade_level === g); return list.length ? `
       <h3 style="margin-top:18px">${g}</h3>
       <div class="table-wrap"><table class="list"><thead><tr><th>รหัส</th><th>ชื่อวิชา</th><th>กลุ่มสาระ</th><th>ประเภท</th><th class="num">ชม./ปี</th><th>ระหว่างภาค : ปลายภาค</th><th class="num">ห้อง</th><th></th></tr></thead>
-      <tbody>${list.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td class="small">${esc(s.learning_area)}</td><td>${s.subject_type === "basic" ? "พื้นฐาน" : "เพิ่มเติม"}</td>
+      <tbody>${list.map((s) => `<tr><td>${esc(s.code)}</td><td class="nm">${esc(s.name)}</td><td class="small">${esc(s.learning_area)}</td><td>${s.subject_type === "basic" ? "พื้นฐาน" : "เพิ่มเติม"}</td>
         <td class="num">${s.hours_per_year}</td>
         <td><select class="ratio-sel" data-ratio="${s.id}" aria-label="สัดส่วนคะแนน ${esc(s.code)}" ${s.locked_count ? 'disabled title="มีห้องที่ส่งผลแล้ว ส่งคืนก่อนจึงเปลี่ยนได้"' : ""}>${ratioOptions(s.collect_ratio)}</select>
           <span class="small muted">${perTerm(s.collect_ratio)}</span></td><td class="num">${s.course_count}</td>
@@ -343,7 +343,7 @@ function renderTeacherLoad(courses, list, viewSwitch) {
   const load = (t) => (byTeacher.get(t.id) || []).reduce((a, c) => a + perWeek(c.hours_per_year), 0);
   const row = (t) => {
     const cs = byTeacher.get(t.id) || []; // ตามลำดับรายวิชาจากเซิร์ฟเวอร์: ชั้น → ห้อง (1, 2, …, 10) → พื้นฐาน/เพิ่มเติม → ลำดับในรายงาน
-    return `<tr><td><b>${esc(t.full_name)}</b>${pendingTag(t)}<br><span class="muted small">${esc(t.email || "")}</span></td>
+    return `<tr><td class="nm"><b>${esc(t.full_name)}</b>${pendingTag(t)}<br><span class="muted small">${esc(t.email || "")}</span></td>
       <td>${cs.length ? cs.map((c) => `<span class="chip-use" style="display:inline-block;border:1px solid var(--line);border-radius:999px;margin:2px">${esc(c.grade_level)}/${esc(c.classroom)} ${esc(c.code)} ${esc(c.name)}</span>`).join("") : '<span class="tag warn">ยังไม่มีวิชาสอน</span>'}</td>
       <td class="num">${cs.length || ""}</td><td class="num">${cs.length ? fmtNum(load(t)) : ""}</td>
       <td class="actions"><button class="btn small" data-tload="${t.id}">กำหนดวิชา</button></td></tr>`;
@@ -511,7 +511,7 @@ async function renderMoves() {
       <div class="panel-head"><h2>รายการปีการศึกษา ${me.year.year_be}</h2></div>
       <div class="table-wrap"><table class="list"><thead><tr><th>วันที่</th><th>นักเรียน</th><th>รายการ</th><th>ห้อง</th><th>ภาค</th><th>โรงเรียน / หมายเหตุ</th><th>บันทึกโดย</th><th></th></tr></thead>
       <tbody>${m.moves.map((x) => `<tr class="${x.undone_at ? "muted" : ""}">
-        <td class="small">${esc(x.move_date ? thaiTime(x.move_date, false) : thaiTime(x.created_at, false))}</td><td>${esc(x.student_code)} ${esc(x.name)}</td>
+        <td class="small">${esc(x.move_date ? thaiTime(x.move_date, false) : thaiTime(x.created_at, false))}</td><td class="nm">${esc(x.student_code)} ${esc(x.name)}</td>
         <td><span class="tag ${x.direction === "out" ? "warn" : "ok"}">${esc(x.label)}</span>${x.undone_at ? ' <span class="tag">ยกเลิกแล้ว</span>' : ""}</td>
         <td>${esc(x.grade_level || "")}/${esc(x.classroom || "")}</td><td class="num">${x.term_number}</td>
         <td class="small">${esc([x.school, x.note].filter(Boolean).join(" · "))}</td><td class="small">${esc(x.by_name || "")}</td>
@@ -525,7 +525,7 @@ async function renderMoves() {
     box.innerHTML = `<p class="muted small">กำลังค้นหา…</p>`;
     const { results } = await api(`/api/moves?${yq}&q=${encodeURIComponent(moveQuery)}`);
     box.innerHTML = results.length ? `<div class="table-wrap" style="margin-top:10px"><table class="list"><thead><tr><th>เลขประจำตัว</th><th>ชื่อ–สกุล</th><th>เลขประจำตัวประชาชน</th><th>ห้องล่าสุด</th><th>สถานะ</th><th></th></tr></thead>
-      <tbody>${results.map((x, i) => `<tr><td>${esc(x.student_code)}</td><td>${esc(x.name)}</td><td class="small">${esc(x.national_id)}</td>
+      <tbody>${results.map((x, i) => `<tr><td>${esc(x.student_code)}</td><td class="nm">${esc(x.name)}</td><td class="small">${esc(x.national_id)}</td>
         <td>${x.grade_level ? `${esc(x.grade_level)}/${esc(x.classroom)}${x.in_year ? "" : ` <span class="muted small">(ปี ${esc(x.last_year_be || "")})</span>`}` : "–"}</td>
         <td><span class="tag ${x.enrolled ? "ok" : "warn"}">${esc(STATUS_TH[x.status] || x.status)}</span></td>
         <td class="actions">${x.enrolled
@@ -725,7 +725,7 @@ async function renderPeople() {
   view.innerHTML = `<div class="panel"><div class="panel-head"><h2>ทีมวัดและประเมินผล</h2></div>
     <p class="muted small">ผู้ที่ได้สิทธิ์จะเห็นบทบาท "เจ้าหน้าที่วัดผล" ในเมนูซ้าย: ตั้งค่ารายวิชา นำเข้าข้อมูล ติดตามและส่งคืนงาน · ผู้ดูแลระบบมีทุกสิทธิ์อยู่แล้ว · ผู้บริหารอนุมัติผลได้โดยไม่ต้องมีสิทธิ์นี้</p>
     <div class="table-wrap"><table class="list"><thead><tr><th>ชื่อ</th><th>บทบาทในระบบบริหารฯ</th><th>ทีมวัดและประเมินผล</th></tr></thead>
-    <tbody>${list.map((t) => { const built = t.role === "superadmin"; return `<tr><td>${esc(t.full_name)}</td><td class="small muted">${esc(t.role)}</td>
+    <tbody>${list.map((t) => { const built = t.role === "superadmin"; return `<tr><td class="nm">${esc(t.full_name)}</td><td class="small muted">${esc(t.role)}</td>
       <td>${built ? '<span class="tag ok">มีสิทธิ์อยู่แล้ว</span>' : `<label class="check"><input type="checkbox" data-u="${t.id}" ${t.grade_role ? "checked" : ""}> ให้สิทธิ์</label>`}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   for (const c of view.querySelectorAll("[data-u]")) c.onchange = async () => {
     try { await api("/api/admin/staff-roles", { method: "PUT", body: { user_id: Number(c.dataset.u), grant: c.checked } }); toast(c.checked ? "ให้สิทธิ์แล้ว" : "ยกเลิกสิทธิ์แล้ว"); } catch (err) { c.checked = !c.checked; showError(err); }
@@ -839,7 +839,7 @@ async function renderAudit() {
   const { entries } = await api("/api/admin/audit");
   view.innerHTML = `<div class="panel"><div class="panel-head"><h2>200 รายการล่าสุด</h2><input type="search" id="auditQ" placeholder="ค้นหาชื่อหรือการกระทำ" style="max-width:260px"></div>
     <div class="table-wrap"><table class="list"><thead><tr><th>เวลา (UTC)</th><th>ผู้ใช้</th><th>การกระทำ</th><th>รายละเอียด</th></tr></thead>
-    <tbody>${entries.map((e) => `<tr data-q="${esc(`${e.full_name || ""} ${ACTION_TEXT[e.action] || e.action}`)}"><td class="small nowrap">${esc(e.created_at)}</td><td>${esc(e.full_name || "–")}</td>
+    <tbody>${entries.map((e) => `<tr data-q="${esc(`${e.full_name || ""} ${ACTION_TEXT[e.action] || e.action}`)}"><td class="small nowrap">${esc(e.created_at)}</td><td class="nm">${esc(e.full_name || "–")}</td>
       <td>${esc(ACTION_TEXT[e.action] || e.action)}</td><td class="small muted" style="max-width:420px;word-break:break-word">${esc(String(e.detail || "").slice(0, 220))}</td></tr>`).join("")}</tbody></table></div></div>`;
   const q = document.getElementById("auditQ");
   q.oninput = () => { for (const tr of view.querySelectorAll("tbody tr")) tr.hidden = !tr.dataset.q.includes(q.value.trim()); };

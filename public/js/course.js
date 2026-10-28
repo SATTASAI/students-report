@@ -524,7 +524,7 @@ function renderTermSummary(term) {
           const failed = k.failed_indicators.filter((id) => ids.has(id)).length;
           const note = t?.carried ? "ยกมาจาก ปพ.6 โรงเรียนเดิม" : !t ? "ยังไม่มีคะแนน" : t.complete ? "" : `คะแนนยังไม่ครบ ${t.missing} ช่อง`;
           return `<tr class="${s.enrollment_status !== "enrolled" ? "muted" : ""} ${s.enrollment_status === "transferred" || s.enrollment_status === "withdrawn" ? "inactive" : ""}">
-            <td class="num">${s.number ?? ""}</td><td>${esc(s.name)}${statusTag(s)}</td>
+            <td class="num">${s.number ?? ""}</td><td class="nm">${esc(s.name)}${statusTag(s)}</td>
             <td class="num">${t && t.collect != null ? fmt(t.collect) : "–"}</td><td class="num">${t && t.final != null ? fmt(t.final) : "–"}</td>
             <td class="num"><b>${t && t.complete ? fmt(t.total) : "–"}</b></td>
             <td class="num">${a.detail ? `<span data-tip="${esc(a.detail)} (วัน)" tabindex="0">${a.off}</span>` : "–"}</td>
@@ -556,7 +556,7 @@ function renderSummary() {
           const k = data.computed[s.id], r = data.results[s.id] || {};
           const failed = k.failed_indicators.length;
           return `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "muted" : ""} ${s.enrollment_status === "transferred" || s.enrollment_status === "withdrawn" ? "inactive" : ""}">
-            <td class="num">${s.number ?? ""}</td><td>${esc(s.name)}${statusTag(s)}</td>
+            <td class="num">${s.number ?? ""}</td><td class="nm">${esc(s.name)}${statusTag(s)}</td>
             <td class="num">${otherTermText(k, 1)}</td><td class="num">${otherTermText(k, 2)}</td>
             <td class="num">${fmt(k.collect_scaled)}</td><td class="num">${fmt(k.final_scaled)}</td><td class="num"><b>${yearTotalText(k)}</b></td>
             <td class="num">${attText(s.id)}</td>

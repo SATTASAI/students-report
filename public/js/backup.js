@@ -44,7 +44,7 @@ export async function renderBackup(view) {
       <div class="meter" id="bkMeter" hidden style="margin-top:12px"><i style="width:0%"></i></div><p class="muted small" id="bkMsg"></p>
       <details style="margin-top:8px"><summary class="small">รายการตาราง</summary>
         <div class="table-wrap"><table class="list"><thead><tr><th>ตาราง</th><th class="num">แถว</th><th>กู้คืน</th></tr></thead>
-        <tbody>${meta.tables.map((t) => `<tr><td>${esc(t.name)}</td><td class="num">${t.count.toLocaleString("th-TH")}</td><td>${t.restorable ? "✓" : '<span class="muted small">เก็บของเดิม</span>'}</td></tr>`).join("")}</tbody></table></div></details>
+        <tbody>${meta.tables.map((t) => `<tr><td class="nm">${esc(t.name)}</td><td class="num">${t.count.toLocaleString("th-TH")}</td><td>${t.restorable ? "✓" : '<span class="muted small">เก็บของเดิม</span>'}</td></tr>`).join("")}</tbody></table></div></details>
     </div>
     <div class="panel">
       <div class="panel-head"><h2>กู้คืนข้อมูลจากไฟล์</h2></div>
