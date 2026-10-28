@@ -1,7 +1,7 @@
 import { json, fail, requireUser, requireViewer, requireReportViewer, intParam, text } from "../lib/http.js";
 import {
   resolveYear, listYears, getSettings, listRooms, roomRoster, isHomeroomTeacher, yearResultsForStudents,
-  assessmentsFor, absenceCounts, attendanceSummary, yearTerms, currentTerm, termOfDate, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, compareGrade, compareRoom, compareSubject, homeroomNames,
+  assessmentsFor, absenceCounts, attendanceSummary, yearTerms, currentTerm, termOfDate, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, inPilot, compareGrade, compareRoom, compareSubject, homeroomNames,
 } from "../lib/data.js";
 import { courseOverview } from "./admin.js";
 import { listAbsences, commentsFor, bodyFor } from "./homeroom.js";
@@ -92,7 +92,7 @@ export async function handleReports(request, env, user, parts, method, url) {
     // ครูผู้สอน (หรือผู้ดูแลที่สลับมาดูในบทบาทครู ?scope=mine) เห็นเฉพาะห้องที่เป็นครูประจำชั้น + รายวิชาที่ตัวเองสอน
     const asAdmin = user.can_view_all && url.searchParams.get("scope") !== "mine";
     let full = new Set();
-    if (asAdmin) full = new Set(primary.map((r) => key(r.grade_level, r.classroom)).filter((k) => !settings.pilot_rooms || settings.pilot_rooms.includes(k)));
+    if (asAdmin) full = new Set(primary.map((r) => key(r.grade_level, r.classroom)).filter((k) => inPilot(settings.pilot_rooms, ...k.split("/"))));
     else {
       const { results } = await env.DB.prepare("SELECT grade_level, classroom FROM gr_homerooms WHERE academic_year_id = ? AND user_id = ?").bind(year.id, user.id).all();
       full = new Set(results.map((h) => key(h.grade_level, h.classroom)));

@@ -60,7 +60,7 @@ async function renderStart() {
   ]);
   const primaryRooms = rooms.filter((r) => GRADES.includes(r.grade_level));
   const pilot = settings.pilot_rooms;
-  const inScope = (g, r) => !pilot || pilot.includes(`${g}/${r}`);
+  const inScope = (g, r) => /^อ\./.test(g) || !pilot || pilot.includes(`${g}/${r}`); // อนุบาลเปิดใช้เสมอ
   const scopedCourses = courses.filter((c) => inScope(c.grade_level, c.classroom));
   const noTeacher = scopedCourses.filter((c) => !c.teachers.length).length;
   const scopedHr = hr.rooms.filter((r) => inScope(r.grade_level, r.classroom));
@@ -195,7 +195,7 @@ async function downloadTemplate(kind) {
     rows = [["10101", "เด็กหญิง", "ตัวอย่าง", "นามสกุลตัวอย่าง", "ญ", "1234567890123", "2019-05-31", "อ.1/1"]];
   } else {
     const [{ rooms }, { settings }] = await Promise.all([api(`/api/admin/homerooms?${yq}`), api(`/api/admin/settings?${yq}`)]);
-    rows = rooms.filter((r) => !settings.pilot_rooms || settings.pilot_rooms.includes(`${r.grade_level}/${r.classroom}`))
+    rows = rooms.filter((r) => /^อ\./.test(r.grade_level) || !settings.pilot_rooms || settings.pilot_rooms.includes(`${r.grade_level}/${r.classroom}`))
       .map((r) => [`${r.grade_level}/${r.classroom}`, r.teachers.map((t) => t.full_name).join(", ")]);
   }
   const XLSX = await loadXlsx();

@@ -71,6 +71,8 @@ export const isPrimaryGrade = (g) => /^ป\.[1-6]$/.test(g);
 // อนุบาล: ใช้ระบบส่วนงานครูประจำชั้น (บันทึกการมาเรียน น้ำหนักส่วนสูง ย้ายเข้า/ออก) — ยังไม่มีรายวิชา/ปพ.5/ปพ.6
 export const isKinderGrade = (g) => /^อ\.[1-3]$/.test(g);
 export const isSchoolGrade = (g) => isPrimaryGrade(g) || isKinderGrade(g);
+// ห้องนำร่อง (pilot_rooms) เลือกได้เฉพาะชั้นประถม — ชั้นอนุบาลเปิดใช้เสมอ
+export const inPilot = (pilot, g, r) => isKinderGrade(g) || !pilot || pilot.includes(`${g}/${r}`);
 
 // เรียงชื่อคนแบบไทย: ไม่สนคำนำหน้า (นาย/นาง/นางสาว/ครู…) และเรียงสระหน้า (เ แ โ ใ ไ) ตามพจนานุกรม
 const NAME_PREFIX = /^(นางสาว|นาง|นาย|น\.ส\.|ว่าที่ร้อยตรี|ว่าที่ ร\.ต\.|ดร\.|ครู|เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.)\s*/;
