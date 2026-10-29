@@ -25,18 +25,23 @@ export async function renderHolidayCalendar(view, yq, render) {
   const c = await api(`/api/calendar?${yq}`);
   const canEdit = !!c.can_edit;
   const hol = new Map(c.holidays.map((h) => [h.holiday_date, h.name]));
+  const activities = c.activities || [];
+  const act = new Map(activities.map((h) => [h.holiday_date, h.name])); // วันกิจกรรม — ยังนับเป็นวันเรียน (สีเขียว)
+  const KIND_LABEL = { holiday: "วันหยุด", activity: "วันกิจกรรม" };
   const govSet = new Set(c.holidays.filter((h) => h.gov).map((h) => h.holiday_date)); // วันหยุดราชการที่ระบบใส่ให้
   const importantDays = c.important_days || [];
   const important = new Map();
   for (const d of importantDays) important.set(d.date, [important.get(d.date), d.name].filter(Boolean).join(" / "));
-  // รวมวันหยุดชื่อเดียวกันที่ต่อกันจริง (ข้ามเสาร์–อาทิตย์ได้) เป็นช่วงเดียว
+  // รวมวันชื่อเดียวกัน ประเภทเดียวกัน ที่ต่อกันจริง (ข้ามเสาร์–อาทิตย์ได้) เป็นช่วงเดียว
   const groups = [];
-  for (const h of c.holidays) {
+  const entries = [...c.holidays.map((h) => ({ ...h, kind: "holiday" })), ...activities.map((h) => ({ ...h, kind: "activity", gov: 0 }))]
+    .sort((x, y) => x.holiday_date.localeCompare(y.holiday_date));
+  for (const h of entries) {
     const g = groups.at(-1);
     let next = g && addDays(g.to, 1);
     while (next && [0, 6].includes(wdOf(next))) next = addDays(next, 1);
-    if (g && g.name === h.name && !!h.gov === g.gov && next === h.holiday_date) { g.to = h.holiday_date; g.dates.push(h.holiday_date); }
-    else groups.push({ name: h.name, from: h.holiday_date, to: h.holiday_date, dates: [h.holiday_date], gov: !!h.gov });
+    if (g && g.name === h.name && g.kind === h.kind && !!h.gov === g.gov && next === h.holiday_date) { g.to = h.holiday_date; g.dates.push(h.holiday_date); }
+    else groups.push({ name: h.name, kind: h.kind, from: h.holiday_date, to: h.holiday_date, dates: [h.holiday_date], gov: !!h.gov });
   }
   const groupOf = (iso) => groups.find((g) => g.dates.includes(iso));
   const terms = c.terms;
@@ -51,11 +56,12 @@ export async function renderHolidayCalendar(view, yq, render) {
   }
   const today = todayIso();
   if (!/^\d{4}-\d{2}$/.test(calMonth)) calMonth = months.includes(today.slice(0, 7)) || !months.length ? today.slice(0, 7) : months[0];
-  const holidayNames = [...new Set([...HOLIDAY_PRESETS, ...c.holidays.map((h) => h.name)])];
+  const holidayNames = [...new Set([...HOLIDAY_PRESETS, ...c.holidays.map((h) => h.name), ...activities.map((h) => h.name)])];
+  let calKind = "holiday";
 
   view.innerHTML = `<div class="cal-summary">
       ${terms.map((t, i) => `<div class="cal-stat"><span>ภาคเรียนที่ ${t.term_number}</span><strong>${termDays[i]}</strong><small>วันเรียน · ${thDate(t.start_date, false)} – ${thDate(t.end_date, false)}</small></div>`).join("")}
-      <div class="cal-stat total"><span>รวมทั้งปี</span><strong>${c.school_days}</strong><small>วันเรียน (จ.–ศ. ไม่รวมวันหยุด) · หยุด ${c.holidays.length} วัน</small></div>
+      <div class="cal-stat total"><span>รวมทั้งปี</span><strong>${c.school_days}</strong><small>วันเรียน (จ.–ศ. ไม่รวมวันหยุด) · หยุด ${c.holidays.length} วัน${activities.length ? ` · กิจกรรม ${activities.length} วัน` : ""}</small></div>
     </div>
     <div class="panel cal-panel">
       <div class="cal-top">
@@ -69,9 +75,9 @@ export async function renderHolidayCalendar(view, yq, render) {
       ${months.length ? `<div class="cal-months" id="calMonths"></div>` : ""}
       <div class="cal-grid" id="calGrid" role="grid"></div>
       <div class="cal-legend">
-        <span><i class="lg hol"></i>วันหยุด (ราชการ / โรงเรียน / เสาร์–อาทิตย์)</span><span><i class="lg important"></i>วันสำคัญที่ไม่ใช่วันหยุด</span>${canEdit ? '<span><i class="lg sel"></i>กำลังเลือก</span>' : ""}<span><i class="lg off"></i>ปิดภาคเรียน</span>
+        <span><i class="lg hol"></i>วันหยุด (ราชการ / โรงเรียน / เสาร์–อาทิตย์)</span><span><i class="lg act"></i>วันกิจกรรม (นับเป็นวันเรียน)</span><span><i class="lg important"></i>วันสำคัญที่ไม่ใช่วันหยุด</span>${canEdit ? '<span><i class="lg sel"></i>กำลังเลือก</span>' : ""}<span><i class="lg off"></i>ปิดภาคเรียน</span>
       </div>
-      <p class="muted small cal-hint">สีแดง = วันหยุด · สีเหลือง = วันสำคัญที่ยังนับเป็นวันเรียนเมื่ออยู่ในภาคเรียน · หากตรงวันหยุด ช่องวันเป็นสีแดงและแสดงชื่อวันสำคัญประกอบ</p>
+      <p class="muted small cal-hint">สีแดง = วันหยุด · สีเขียว = วันกิจกรรม (ยังนับเป็นวันเรียน เช็คชื่อได้ตามปกติ) · สีเหลือง = วันสำคัญที่ยังนับเป็นวันเรียนเมื่ออยู่ในภาคเรียน · หากตรงวันหยุด ช่องวันเป็นสีแดงและแสดงชื่อวันสำคัญประกอบ</p>
       <p class="muted small cal-hint">วันครูแสดงเป็นวันสำคัญ หากโรงเรียนประกาศหยุดให้ฝ่ายวัดผลเพิ่มวันหยุด · วันพืชมงคลและวันหยุดพิเศษต้องเพิ่มตามประกาศทางการของปีนั้น</p>
       <p class="muted small cal-hint">เทศกาลจีนมีวันที่ตรวจสอบแล้วสำหรับ พ.ศ. 2569–2571 · กำหนดจัดงานของแต่ละพื้นที่อาจต่างจากวันเทศกาลในปฏิทิน</p>
       ${canEdit ? "" : `<p class="muted small cal-hint">ดูอย่างเดียว · วันหยุดราชการระบบใส่ให้ทุกปี ส่วนวันหยุดอื่นกำหนดโดยฝ่ายวัดผล วันที่เป็นวันหยุดจะไม่แสดงในตารางบันทึกการมาเรียนและแบบบันทึกประจำวัน</p>`}
@@ -80,15 +86,19 @@ export async function renderHolidayCalendar(view, yq, render) {
     <div class="cal-bar" id="calBar" hidden${canEdit ? "" : ' data-readonly'}>
       <div class="cal-bar-in">
         <div class="cal-bar-info"><strong id="calSelText"></strong><span id="calSelSub" class="muted small"></span></div>
+        <div class="cal-kind" role="radiogroup" aria-label="ประเภท">
+          <button type="button" class="btn small on" data-kind="holiday" role="radio" aria-checked="true">วันหยุด</button>
+          <button type="button" class="btn small" data-kind="activity" role="radio" aria-checked="false">วันกิจกรรม</button>
+        </div>
         <input id="calName" list="calNames" maxlength="120" placeholder="ชื่อวันหยุด เช่น วันปิยมหาราช" autocomplete="off">
         <datalist id="calNames">${holidayNames.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
         <button class="btn primary" id="calSave">บันทึกวันหยุด</button>
         <button class="btn ghost" id="calCancel">ยกเลิก</button>
       </div>
     </div>
-    <div class="panel"><div class="panel-head"><h2>วันหยุดทั้งปี</h2><span class="muted small">${groups.length} รายการ · แตะเพื่อไปที่เดือนนั้น</span>
+    <div class="panel"><div class="panel-head"><h2>วันหยุดและวันกิจกรรมทั้งปี</h2><span class="muted small">${groups.length} รายการ · แตะเพื่อไปที่เดือนนั้น</span>
       ${canEdit ? `<button class="btn small" id="calGov" data-tip="ใส่วันหยุดราชการที่ยังไม่มีในปฏิทินกลับเข้าไป (รวมวันที่เคยลบ) ไม่ทับวันที่ตั้งชื่อไว้แล้ว">เติมวันหยุดราชการ</button>` : ""}</div>
-      <div class="cal-list">${groups.map((g, i) => `<button class="cal-item${g.gov ? " gov" : ""}" data-go="${i}"><span class="cal-item-date">${thRange(g.from, g.to)}</span><span class="cal-item-name">${esc(g.name)}${g.gov ? ' <em class="gov-tag">ราชการ</em>' : ""}</span><span class="cal-item-n">${g.dates.length} วัน</span></button>`).join("") || (canEdit ? '<p class="empty">ยังไม่มีวันหยุด — แตะวันที่ในปฏิทินด้านบนเพื่อเริ่ม</p>' : '<p class="empty">ฝ่ายวัดผลยังไม่ได้ตั้งวันหยุด</p>')}</div>
+      <div class="cal-list">${groups.map((g, i) => `<button class="cal-item${g.gov ? " gov" : ""}${g.kind === "activity" ? " act" : ""}" data-go="${i}"><span class="cal-item-date">${thRange(g.from, g.to)}</span><span class="cal-item-name">${esc(g.name)}${g.gov ? ' <em class="gov-tag">ราชการ</em>' : ""}${g.kind === "activity" ? ' <em class="act-tag">กิจกรรม</em>' : ""}</span><span class="cal-item-n">${g.dates.length} วัน</span></button>`).join("") || (canEdit ? '<p class="empty">ยังไม่มีวันหยุด — แตะวันที่ในปฏิทินด้านบนเพื่อเริ่ม</p>' : '<p class="empty">ฝ่ายวัดผลยังไม่ได้ตั้งวันหยุด</p>')}</div>
     </div>
     <div class="panel"><div class="panel-head"><h2>วันสำคัญในปีการศึกษา</h2><span class="muted small">แสดงประกอบปฏิทิน · ไม่เพิ่มวันหยุด</span></div>
       <div class="cal-list">${importantDays.map((d) => {
@@ -116,12 +126,12 @@ export async function renderHolidayCalendar(view, yq, render) {
     const cells = Math.ceil((lead + dim) / 7) * 7;
     for (let i = 0; i < cells; i++) {
       const iso = addDays(first, i - lead), [, cm, cd] = iso.split("-").map(Number), wd = wdOf(iso);
-      const other = cm !== m, name = hol.get(iso), term = termOf(iso), event = important.get(iso), weekend = wd === 0 || wd === 6;
-      const cls = ["cal-day", !canEdit && "ro", other && "other", weekend && "we", name && "hol", event && !name && !weekend && "important", govSet.has(iso) && "gov", !term && "off", iso === today && "today", inSel(iso) && "sel"].filter(Boolean).join(" ");
+      const other = cm !== m, name = hol.get(iso), aname = !name && act.get(iso), term = termOf(iso), event = important.get(iso), weekend = wd === 0 || wd === 6;
+      const cls = ["cal-day", !canEdit && "ro", other && "other", weekend && "we", name && "hol", aname && "act", event && !name && !aname && !weekend && "important", govSet.has(iso) && "gov", !term && "off", iso === today && "today", inSel(iso) && "sel"].filter(Boolean).join(" ");
       const marks = terms.flatMap((t) => [iso === t.start_date && `<em class="mark open">เปิดภาค ${t.term_number}</em>`, iso === t.end_date && `<em class="mark close">ปิดภาค ${t.term_number}</em>`]).filter(Boolean).join("");
-      const label = `${TH_WD[wd]} ${cd} ${TH_MONTHS[cm - 1]} ${Number(iso.slice(0, 4)) + 543}${name ? ` วันหยุด ${name}` : weekend ? " วันหยุดประจำสัปดาห์" : ""}${event ? ` วันสำคัญ ${event}` : ""}`;
+      const label = `${TH_WD[wd]} ${cd} ${TH_MONTHS[cm - 1]} ${Number(iso.slice(0, 4)) + 543}${name ? ` วันหยุด ${name}` : aname ? ` วันกิจกรรม ${aname}` : weekend ? " วันหยุดประจำสัปดาห์" : ""}${event ? ` วันสำคัญ ${event}` : ""}`;
       html += `<${canEdit ? 'button type="button"' : "div"} class="${cls}" data-d="${iso}" title="${esc(label)}" aria-label="${esc(label)}"${inSel(iso) ? ' aria-selected="true"' : ""}>
-        <span class="num">${cd}</span>${marks}${name ? `<span class="hname">${esc(name)}</span>` : ""}${event ? `<span class="iname">${esc(event)}</span>` : ""}</${canEdit ? "button" : "div"}>`;
+        <span class="num">${cd}</span>${marks}${name ? `<span class="hname">${esc(name)}</span>` : aname ? `<span class="aname">${esc(aname)}</span>` : ""}${event ? `<span class="iname">${esc(event)}</span>` : ""}</${canEdit ? "button" : "div"}>`;
     }
     grid.innerHTML = html;
   }
@@ -129,10 +139,10 @@ export async function renderHolidayCalendar(view, yq, render) {
   function drawBar() {
     bar.hidden = !calSel;
     if (!calSel) return;
-    const wk = weekdaysIn(calSel.a, calSel.b), existing = wk.filter((d) => hol.has(d)).length;
+    const wk = weekdaysIn(calSel.a, calSel.b), existing = wk.filter((d) => hol.has(d) || act.has(d)).length;
     document.getElementById("calSelText").textContent = thRange(calSel.a, calSel.b);
     document.getElementById("calSelSub").textContent = !wk.length ? "ช่วงนี้มีแต่เสาร์–อาทิตย์ — เลือกวันจันทร์–ศุกร์"
-      : `หยุด ${wk.length} วันทำการ${existing ? ` · ทับวันหยุดเดิม ${existing} วัน (จะเปลี่ยนเป็นชื่อใหม่)` : ""}${calSel.a === calSel.b ? " · แตะอีกวันเพื่อขยายเป็นช่วง" : ""}`;
+      : `${calKind === "activity" ? "กิจกรรม" : "หยุด"} ${wk.length} วันทำการ${existing ? ` · ทับวันที่ตั้งไว้เดิม ${existing} วัน (จะเปลี่ยนเป็นชื่อ/ประเภทใหม่)` : ""}${calSel.a === calSel.b ? " · แตะอีกวันเพื่อขยายเป็นช่วง" : ""}`;
     document.getElementById("calSave").disabled = !wk.length;
   }
   const redraw = () => { drawMonth(); drawBar(); };
@@ -152,12 +162,13 @@ export async function renderHolidayCalendar(view, yq, render) {
   let drag = null;
   const setSel = (a, b) => { calSel = a <= b ? { a, b } : { a: b, b: a }; redraw(); };
   async function openHoliday(iso) {
-    const g = groupOf(iso);
+    const g = groupOf(iso), label = KIND_LABEL[g.kind];
     let act = "";
     const r = await dialog({
-      title: "วันหยุด",
+      title: label,
       body: `<p class="muted" style="margin-top:0">${thRange(g.from, g.to)} · ${g.dates.length} วันทำการ</p>
-        <label class="field">ชื่อวันหยุด<input name="name" list="calNames" value="${esc(g.name)}" required maxlength="120"></label>
+        <label class="field">ชื่อ${label}<input name="name" list="calNames" value="${esc(g.name)}" required maxlength="120"></label>
+        <label class="field">ประเภท<select name="kind"><option value="holiday"${g.kind === "holiday" ? " selected" : ""}>วันหยุด (ไม่นับเป็นวันเรียน)</option><option value="activity"${g.kind === "activity" ? " selected" : ""}>วันกิจกรรม (นับเป็นวันเรียน)</option></select></label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
           <button type="button" class="btn danger small" data-act="all">ลบทั้งช่วง (${g.dates.length} วัน)</button>
           ${g.dates.length > 1 ? `<button type="button" class="btn small" data-act="one">ลบเฉพาะ ${thDate(iso)}</button>` : ""}
@@ -168,19 +179,21 @@ export async function renderHolidayCalendar(view, yq, render) {
     try {
       if (act) {
         const dates = act === "all" ? g.dates : [iso];
-        if (act === "all" && !(await confirmBox("ลบวันหยุด", `ลบ "${esc(g.name)}" ${g.dates.length} วัน`, "ลบ", true))) return;
+        if (act === "all" && !(await confirmBox(`ลบ${label}`, `ลบ "${esc(g.name)}" ${g.dates.length} วัน`, "ลบ", true))) return;
         for (const d of dates) await api(`/api/calendar/${d}?${yq}`, { method: "DELETE" });
-        toast(`ลบวันหยุด ${dates.length} วัน`); return render();
+        toast(`ลบ${label} ${dates.length} วัน`); return render();
       }
-      if (r.ok && r.data.name.trim() && r.data.name.trim() !== g.name) {
-        await api(`/api/calendar?${yq}`, { method: "POST", body: { from: g.from, to: g.to, name: r.data.name.trim() } });
-        toast("แก้ชื่อแล้ว"); render();
+      const kind = r.data?.kind === "activity" ? "activity" : "holiday";
+      if (r.ok && r.data.name.trim() && (r.data.name.trim() !== g.name || kind !== g.kind)) {
+        if (kind === "holiday" && g.kind === "activity" && !(await confirmBox("เปลี่ยนเป็นวันหยุด", "วันหยุดไม่นับเป็นวันเรียน — บันทึกขาด/ลาและแบบบันทึกประจำวันของวันนั้นจะถูกล้าง", "เปลี่ยน", true))) return;
+        await api(`/api/calendar?${yq}`, { method: "POST", body: { from: g.from, to: g.to, name: r.data.name.trim(), kind } });
+        toast("บันทึกแล้ว"); render();
       }
     } catch (err) { showError(err); }
   }
   grid.addEventListener("pointerdown", (e) => {
     const cell = e.target.closest("[data-d]");
-    if (!cell || e.pointerType !== "mouse" || e.button !== 0 || hol.has(cell.dataset.d)) return;
+    if (!cell || e.pointerType !== "mouse" || e.button !== 0 || hol.has(cell.dataset.d) || act.has(cell.dataset.d)) return;
     drag = { a: cell.dataset.d, moved: false };
   });
   grid.addEventListener("pointerover", (e) => {
@@ -194,7 +207,7 @@ export async function renderHolidayCalendar(view, yq, render) {
     const cell = e.target.closest("[data-d]");
     if (!cell || drag?.justDragged) return;
     const iso = cell.dataset.d;
-    if (hol.has(iso) && !calSel) return openHoliday(iso);
+    if ((hol.has(iso) || act.has(iso)) && !calSel) return openHoliday(iso);
     if (calSel && calSel.a === calSel.b && iso !== calSel.a) setSel(calSel.a, iso);
     else if (calSel && calSel.a === iso && calSel.b === iso) { calSel = null; redraw(); }
     else setSel(iso, iso);
@@ -204,11 +217,19 @@ export async function renderHolidayCalendar(view, yq, render) {
   document.getElementById("calGov").onclick = async () => {
     try { const r = await api(`/api/calendar/government?${yq}`, { method: "POST", body: {} }); toast(r.added ? `เติมวันหยุดราชการ ${r.added} วัน` : "วันหยุดราชการครบแล้ว"); render(); } catch (err) { showError(err); }
   };
+  const setKind = (k) => {
+    calKind = k;
+    for (const b of bar.querySelectorAll("[data-kind]")) { const on = b.dataset.kind === k; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); }
+    nameIn.placeholder = k === "activity" ? "ชื่อวันกิจกรรม เช่น กีฬาสี ทัศนศึกษา" : "ชื่อวันหยุด เช่น วันปิยมหาราช";
+    document.getElementById("calSave").textContent = k === "activity" ? "บันทึกวันกิจกรรม" : "บันทึกวันหยุด";
+    drawBar();
+  };
+  for (const b of bar.querySelectorAll("[data-kind]")) b.onclick = () => setKind(b.dataset.kind);
   document.getElementById("calCancel").onclick = () => { calSel = null; redraw(); };
   const save = async () => {
     const name = nameIn.value.trim();
-    if (!name) { nameIn.focus(); return toast("กรอกชื่อวันหยุด", "bad"); }
-    try { const r = await api(`/api/calendar?${yq}`, { method: "POST", body: { from: calSel.a, to: calSel.b, name } }); toast(`เพิ่มวันหยุด ${r.added} วัน`); calSel = null; render(); } catch (err) { showError(err); }
+    if (!name) { nameIn.focus(); return toast(`กรอกชื่อ${KIND_LABEL[calKind]}`, "bad"); }
+    try { const r = await api(`/api/calendar?${yq}`, { method: "POST", body: { from: calSel.a, to: calSel.b, name, kind: calKind } }); toast(`เพิ่ม${KIND_LABEL[calKind]} ${r.added} วัน`); calSel = null; render(); } catch (err) { showError(err); }
   };
   document.getElementById("calSave").onclick = save;
   nameIn.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") { calSel = null; redraw(); } };

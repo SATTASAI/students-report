@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-24";
+export const SCHEMA_VERSION = "gr-25";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -311,6 +311,8 @@ export const ADDED_COLUMNS = [
   ["gr_courses", "edit_granted_at", "TEXT"],
   // gr-22: เลขรุ่นข้อมูลคะแนน/ผลของรายวิชา — เพิ่มทุกครั้งที่บันทึก ใช้กันการส่งผลด้วยข้อมูลที่ครูยังไม่เห็น
   ["gr_courses", "data_rev", "INTEGER NOT NULL DEFAULT 0"],
+  // ปฏิทิน: 'holiday' = วันหยุด (ไม่นับวันเรียน) · 'activity' = วันกิจกรรม (ยังนับเป็นวันเรียน แสดงสีเขียว)
+  ["gr_holidays", "kind", "TEXT NOT NULL DEFAULT 'holiday'"],
 ];
 
 async function addMissingColumns(env) {

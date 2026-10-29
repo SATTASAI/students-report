@@ -19,7 +19,7 @@ export async function handleCalendar(request, env, user, parts, method, url) {
     const cal = await schoolCalendar(env, year.id);
     const window = await yearWindow(env, year.id);
     const important_days = window ? importantDaysBetween(window.from, window.to) : [];
-    return json({ year, terms: cal.terms, holidays: cal.holidays, important_days, school_days: cal.days.length, can_edit: !!(user.is_admin && user.can_import) });
+    return json({ year, terms: cal.terms, holidays: cal.holidays, activities: cal.activities, important_days, school_days: cal.days.length, can_edit: !!(user.is_admin && user.can_import) });
   }
   requireAdmin(user);
   if (!user.can_import) fail(403, "ตั้งปฏิทินได้เฉพาะผู้ดูแลระบบและทีมวัดและประเมินผล");
@@ -32,8 +32,10 @@ export async function handleCalendar(request, env, user, parts, method, url) {
   }
   if (method === "POST") {
     const b = await readJson(request);
+    const kind = b.kind === "activity" ? "activity" : "holiday";
+    const label = kind === "activity" ? "วันกิจกรรม" : "วันหยุด";
     const name = text(b.name, 120);
-    if (!name) fail(400, "กรอกชื่อวันหยุด");
+    if (!name) fail(400, `กรอกชื่อ${label}`);
     const from = b.from, to = b.to || b.from;
     if (!validDate(from) || !validDate(to) || to < from) fail(400, "วันที่ไม่ถูกต้อง");
     const dates = [];
@@ -43,23 +45,28 @@ export async function handleCalendar(request, env, user, parts, method, url) {
     }
     if (!dates.length) fail(400, "ช่วงวันที่ไม่มีวันจันทร์–ศุกร์");
     if (dates.length > 120) fail(400, "เพิ่มได้ครั้งละไม่เกิน 120 วัน");
-    // วันหยุดไม่ใช่วันเรียน — ล้างบันทึกขาด/ลาของวันนั้น (ถ้าครูเผลอใส่ไว้)
-    await batchAll(env, dates.flatMap((d) => [
-      env.DB.prepare(`INSERT INTO gr_holidays (academic_year_id, holiday_date, name, created_by) VALUES (?,?,?,?)
-        ON CONFLICT(academic_year_id, holiday_date) DO UPDATE SET name = excluded.name`).bind(year.id, d, name, user.id),
+    // วันเรียนเปลี่ยนเมื่อเพิ่มวันหยุด หรือเปลี่ยนวันหยุดเดิมเป็นวันกิจกรรม
+    const ph = dates.map(() => "?").join(",");
+    const wasHoliday = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM gr_holidays WHERE academic_year_id = ? AND COALESCE(kind,'holiday') = 'holiday' AND holiday_date IN (${ph})`).bind(year.id, ...dates).first()).n;
+    const upsert = (d) => env.DB.prepare(`INSERT INTO gr_holidays (academic_year_id, holiday_date, name, kind, created_by) VALUES (?,?,?,?,?)
+        ON CONFLICT(academic_year_id, holiday_date) DO UPDATE SET name = excluded.name, kind = excluded.kind`).bind(year.id, d, name, kind, user.id);
+    // วันหยุดไม่ใช่วันเรียน — ล้างบันทึกขาด/ลาของวันนั้น (ถ้าครูเผลอใส่ไว้) · วันกิจกรรมยังเป็นวันเรียน ไม่ล้าง
+    await batchAll(env, dates.flatMap((d) => kind === "activity" ? [upsert(d)] : [
+      upsert(d),
       env.DB.prepare("DELETE FROM gr_attendance WHERE academic_year_id = ? AND att_date = ?").bind(year.id, d),
       env.DB.prepare("DELETE FROM gr_daily_logs WHERE academic_year_id = ? AND log_date = ?").bind(year.id, d),
     ]));
-    await audit(env, user, "calendar.add", { year: year.id, from, to, name, days: dates.length });
-    await logLockedCourses(env, user, year.id, null, "ฝ่ายวัดผลแก้ปฏิทินวันหยุด", `เพิ่มวันหยุด "${name}" ${from}${to !== from ? ` ถึง ${to}` : ""} — ร้อยละมาเรียน/มส อาจเปลี่ยน`);
+    await audit(env, user, "calendar.add", { year: year.id, from, to, name, kind, days: dates.length });
+    if (kind === "holiday" || wasHoliday) await logLockedCourses(env, user, year.id, null, "ฝ่ายวัดผลแก้ปฏิทินวันหยุด", `เพิ่ม${label} "${name}" ${from}${to !== from ? ` ถึง ${to}` : ""} — ร้อยละมาเรียน/มส อาจเปลี่ยน`);
     return json({ ok: true, added: dates.length });
   }
   if (method === "DELETE" && parts[2]) {
     const d = parts[2];
     if (!validDate(d)) fail(400, "วันที่ไม่ถูกต้อง");
+    const row = await env.DB.prepare("SELECT COALESCE(kind,'holiday') AS kind FROM gr_holidays WHERE academic_year_id = ? AND holiday_date = ?").bind(year.id, d).first();
     await env.DB.prepare("DELETE FROM gr_holidays WHERE academic_year_id = ? AND holiday_date = ?").bind(year.id, d).run();
-    await audit(env, user, "calendar.delete", { year: year.id, date: d });
-    await logLockedCourses(env, user, year.id, null, "ฝ่ายวัดผลแก้ปฏิทินวันหยุด", `ลบวันหยุด ${d} — ร้อยละมาเรียน/มส อาจเปลี่ยน`);
+    await audit(env, user, "calendar.delete", { year: year.id, date: d, kind: row?.kind });
+    if (row?.kind !== "activity") await logLockedCourses(env, user, year.id, null, "ฝ่ายวัดผลแก้ปฏิทินวันหยุด", `ลบวันหยุด ${d} — ร้อยละมาเรียน/มส อาจเปลี่ยน`);
     return json({ ok: true });
   }
   fail(405, "ไม่รองรับ");
