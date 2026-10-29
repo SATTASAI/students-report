@@ -14,6 +14,7 @@ import { handleMoves } from "./routes/moves.js";
 import { handleRoster } from "./routes/roster.js";
 import { handleCalendar } from "./routes/calendar.js";
 import { applySecurityHeaders } from "./lib/auth-sessions.js";
+import { handleActivity } from "./routes/usage.js";
 
 // header ความปลอดภัยชุดเดียวกับระบบบริหารโรงเรียน (HSTS, CSP, nosniff, กันการฝังหน้าเว็บ) — ดู src/lib/auth-sessions.js
 const withHeaders = (response) => applySecurityHeaders(response);
@@ -32,6 +33,8 @@ async function routeApi(request, env, url) {
   if (parts[1] === "auth" && parts[2] === "logout" && method === "POST") return logout(request, env);
 
   const user = await currentUser(request, env);
+  // สัญญาณเวลาใช้งาน (ทุกบทบาท รวมผู้ชมภายนอก) — รายงานดูได้ที่ระบบบริหารโรงเรียน เมนู การเข้าใช้งาน
+  if (parts[1] === "activity") return handleActivity(request, env, user, parts, method);
   if (user?.role === "viewer" && !viewerMayAccess(method, url.pathname)) {
     return json({ error: "บัญชีผู้ชมภายนอกดูได้อย่างเดียว ไม่สามารถใช้งานส่วนนี้ได้", code: "VIEWER_READ_ONLY" }, 403);
   }

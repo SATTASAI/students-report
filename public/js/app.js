@@ -232,8 +232,28 @@ function startLockObserver() {
   lockInactive();
 }
 
+// ตรวจสอบการเข้าใช้งาน: ส่งสัญญาณทุก 60 วินาทีเฉพาะตอนหน้าจอเปิดอยู่ (รายงานอยู่ที่ระบบบริหารโรงเรียน)
+let usageTimer = null, usageStarted = false, usageStopped = false;
+function usagePing(end) {
+  if (usageStopped) return;
+  const body = JSON.stringify({ end: !!end });
+  if (end && navigator.sendBeacon) { navigator.sendBeacon("/api/activity/ping", new Blob([body], { type: "application/json" })); return; }
+  fetch("/api/activity/ping", { method: "POST", headers: { "Content-Type": "application/json" }, body, credentials: "same-origin", keepalive: true })
+    .then((r) => { if (r.status === 401) { usageStopped = true; clearInterval(usageTimer); usageTimer = null; } }).catch(() => {});
+}
+function startUsagePing() {
+  if (usageStarted) return;
+  usageStarted = true;
+  const start = () => { if (usageTimer || usageStopped) return; usagePing(false); usageTimer = setInterval(() => usagePing(false), 60000); };
+  const stop = () => { if (!usageTimer) return; clearInterval(usageTimer); usageTimer = null; usagePing(true); };
+  document.addEventListener("visibilitychange", () => (document.visibilityState === "visible" ? start() : stop()));
+  window.addEventListener("pagehide", stop);
+  if (document.visibilityState === "visible") start();
+}
+
 export async function shell(active) {
   startLockObserver();
+  startUsagePing();
   const yearParam = selectedYear();
   let me;
   try {
