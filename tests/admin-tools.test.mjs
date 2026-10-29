@@ -51,6 +51,29 @@ test("ปฏิทินวันหยุด: ตารางมาเรีย
   assert.ok((await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2026-11`, null, { expect: 200 })).data.days.includes("2026-11-03"));
 });
 
+test("ปฏิทิน: วันกิจกรรม (สีเขียว) ยังนับเป็นวันเรียน ไม่ล้างการเช็คชื่อ และเปลี่ยนเป็นวันหยุดได้", async () => {
+  const { call } = await setup();
+  const sid = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.students[0].id;
+  await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, { changes: [{ student_id: sid, date: "2026-11-05", code: "ข" }] }, { expect: 200 });
+  const before = (await call("admin", "GET", "/api/calendar", null, { expect: 200 })).data.school_days;
+  await call("admin", "POST", "/api/calendar", { from: "2026-11-05", to: "2026-11-06", name: "กีฬาสี", kind: "activity" }, { expect: 200 });
+  const cal = (await call("admin", "GET", "/api/calendar", null, { expect: 200 })).data;
+  assert.equal(cal.school_days, before);
+  assert.deepEqual(cal.activities.map((h) => h.holiday_date), ["2026-11-05", "2026-11-06"]);
+  assert.ok(!cal.holidays.some((h) => h.holiday_date === "2026-11-05"));
+  let g = (await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2026-11`, null, { expect: 200 })).data;
+  assert.ok(g.days.includes("2026-11-05"));
+  assert.equal(g.records[sid]["2026-11-05"], "ข");
+  assert.equal(g.activities.length, 2);
+  await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, { changes: [{ student_id: sid, date: "2026-11-06", code: "ล" }] }, { expect: 200 });
+  // เปลี่ยนเป็นวันหยุด → ไม่ใช่วันเรียน ล้างบันทึก
+  await call("admin", "POST", "/api/calendar", { from: "2026-11-05", name: "กีฬาสี" }, { expect: 200 });
+  g = (await call("t1", "GET", `/api/homeroom/attendance?${Q}&month=2026-11`, null, { expect: 200 })).data;
+  assert.ok(!g.days.includes("2026-11-05"));
+  assert.equal(g.records[sid]["2026-11-05"], undefined);
+  assert.equal(g.records[sid]["2026-11-06"], "ล");
+});
+
 test("มส อัตโนมัติ: มาเรียนต่ำกว่าเกณฑ์ (นับวันขาด/ลา ไม่นับมาสาย) → ผลการเรียน มส ทั้งหน้ารายวิชาและ ปพ.6", async () => {
   const { call, c } = await setup();
   const kids = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.students;

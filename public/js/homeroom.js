@@ -818,6 +818,7 @@ async function renderAttendance() {
   att.days = att.days.filter(inTermDay);
   const columns = logColumns(att).filter((c) => inTermDay(c.date));
   const schoolDays = new Set(att.days);
+  const actOf = new Map((att.activities || []).map((h) => [h.holiday_date, h.name]));
   const idx = att.months.indexOf(att.month);
   const codeOf = (sid, d) => att.records[sid]?.[d] || "";
   const counts = (sid) => { const c = { "ข": 0, "ล": 0, "ป": 0, "ส": 0 }; for (const [date, v] of Object.entries(att.records[sid] || {})) if (schoolDays.has(date) && v in c) c[v]++; return c; };
@@ -832,13 +833,14 @@ async function renderAttendance() {
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
     ${att.holidays?.length ? `<p class="muted small" style="margin:0 0 8px">วันหยุดเดือนนี้ (คอลัมน์สีแดง): ${att.holidays.map((h) => `${new Date(`${h.holiday_date}T00:00:00`).getDate()} ${esc(h.name)}`).join(" · ")}</p>` : ""}
+    ${att.activities?.length ? `<p class="muted small" style="margin:0 0 8px">วันกิจกรรมเดือนนี้ (คอลัมน์สีเขียว · เช็คชื่อตามปกติ): ${att.activities.map((h) => `${new Date(`${h.holiday_date}T00:00:00`).getDate()} ${esc(h.name)}`).join(" · ")}</p>` : ""}
     ${columns.length ? `<div class="sheet-wrap"><table class="sheet att-sheet log-sheet" id="sheet">
       <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
-        ${columns.map((c) => { const d = c.date, dt = new Date(`${d}T00:00:00`); return `<th class="col-head att-day ${c.off ? "log-off" : ""} ${d === att.today ? "today" : ""}" title="${esc(c.off || "วันเรียน")}"><span class="wd">${WD[dt.getDay()]}</span><b>${dt.getDate()}</b></th>`; }).join("")}
+        ${columns.map((c) => { const d = c.date, dt = new Date(`${d}T00:00:00`); return `<th class="col-head att-day ${c.off ? "log-off" : ""} ${!c.off && actOf.has(d) ? "att-act" : ""} ${d === att.today ? "today" : ""}" title="${esc(c.off || (actOf.has(d) ? `วันกิจกรรม: ${actOf.get(d)}` : "วันเรียน"))}"><span class="wd">${WD[dt.getDay()]}</span><b>${dt.getDate()}</b></th>`; }).join("")}
         ${Object.keys(ATT).map((k) => `<th class="col-head att-sum" data-tip="${ATT[k]} (วัน) ในเดือนนี้">${k}</th>`).join("")}</tr></thead>
       <tbody>${data.students.map((s, ri) => { const c = counts(s.id); return `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}">
         <td class="stick no">${s.number ?? ""}</td><td class="stick name" title="${esc(s.name)}">${esc(s.name)}</td>
-        ${columns.map((c) => { const d = c.date; if (c.off) return ri === 0 ? `<td class="log-off" rowspan="${data.students.length}" title="${esc(c.off)}"><span>${esc(c.off)}</span></td>` : ""; const v = codeOf(s.id, d); return `<td class="cell att ${v ? `c-${v}` : ""} ${d === att.today ? "today" : ""}"><input data-date="${d}" value="${esc(v)}" maxlength="2" autocomplete="off" aria-label="${esc(s.name)} ${d}"></td>`; }).join("")}
+        ${columns.map((c) => { const d = c.date; if (c.off) return ri === 0 ? `<td class="log-off" rowspan="${data.students.length}" title="${esc(c.off)}"><span>${esc(c.off)}</span></td>` : ""; const v = codeOf(s.id, d); return `<td class="cell att ${v ? `c-${v}` : ""} ${actOf.has(d) ? "att-act" : ""} ${d === att.today ? "today" : ""}"><input data-date="${d}" value="${esc(v)}" maxlength="2" autocomplete="off" aria-label="${esc(s.name)} ${d}"></td>`; }).join("")}
         ${Object.keys(ATT).map((k) => `<td class="calc att-sum" data-n="${k}">${c[k] || ""}</td>`).join("")}</tr>`; }).join("")}</tbody>
     </table></div>
     <p class="muted small" style="margin-top:10px">พิมพ์ ข ล ป หรือ ส (ส = มาสาย) แล้วกด Enter ลงไปคนถัดไป · ลูกศรเลื่อนช่อง · ลบตัวอักษร = มาเรียน · วันเสาร์ อาทิตย์ และวันหยุดแสดงเป็นคอลัมน์สีแดง กรอกไม่ได้และไม่นับเป็นวันเรียน

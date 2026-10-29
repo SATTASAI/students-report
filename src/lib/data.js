@@ -420,12 +420,14 @@ export async function absenceCounts(env, yearId, studentIds) {
 // วันเรียนของปี: จันทร์–ศุกร์ในช่วงภาคเรียน (academic_terms) ที่ไม่ใช่วันหยุด (gr_holidays)
 export async function schoolCalendar(env, yearId) {
   await ensureGovernmentHolidays(env, yearId);
-  const [{ results: terms }, { results: holidays }] = await Promise.all([
+  const [{ results: terms }, { results: allDays }] = await Promise.all([
     env.DB.prepare("SELECT term_number, start_date, end_date FROM academic_terms WHERE academic_year_id = ? ORDER BY term_number").bind(yearId).all(),
-    env.DB.prepare(`SELECT h.holiday_date, h.name, CASE WHEN s.name = h.name THEN 1 ELSE 0 END AS gov FROM gr_holidays h
+    env.DB.prepare(`SELECT h.holiday_date, h.name, COALESCE(h.kind, 'holiday') AS kind, CASE WHEN s.name = h.name AND COALESCE(h.kind, 'holiday') = 'holiday' THEN 1 ELSE 0 END AS gov FROM gr_holidays h
       LEFT JOIN gr_holiday_seeds s ON s.academic_year_id = h.academic_year_id AND s.holiday_date = h.holiday_date
       WHERE h.academic_year_id = ? ORDER BY h.holiday_date`).bind(yearId).all(),
   ]);
+  // วันกิจกรรม (kind = 'activity') ยังนับเป็นวันเรียน — แยกออกจากวันหยุด
+  const holidays = allDays.filter((h) => h.kind !== "activity"), activities = allDays.filter((h) => h.kind === "activity");
   const off = new Map(holidays.map((h) => [h.holiday_date, h.name]));
   const days = [];
   for (const t of terms) {
@@ -434,7 +436,7 @@ export async function schoolCalendar(env, yearId) {
       if (wd !== 0 && wd !== 6 && !off.has(iso)) days.push(iso);
     }
   }
-  return { terms, holidays, off, days, isSchoolDay: (iso) => days.includes(iso) };
+  return { terms, holidays, activities, off, days, isSchoolDay: (iso) => days.includes(iso) };
 }
 // ช่วงวันของปีการศึกษา: วันเริ่ม–สิ้นสุดปี รวมกับช่วงภาคเรียน
 export async function yearWindow(env, yearId) {

@@ -202,7 +202,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     const terms = cal.terms;
     const inTerm = (d) => terms.some((t) => d >= t.start_date && d <= t.end_date);
     if (method === "GET") {
-      const { month, months, days, today, holidays } = monthSheet(cal, url);
+      const { month, months, days, today, holidays, activities } = monthSheet(cal, url);
       const records = {};
       if (ids.size) {
         const { results } = await env.DB.prepare(
@@ -210,7 +210,7 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
         ).bind(year.id, `${month}-%`, ...ids).all();
         for (const r of results) (records[r.student_id] ||= {})[r.att_date] = r.code;
       }
-      return json({ year, grade, room, month, months, days, today, records, codes: ATT_CODES, terms, holidays, edit: await homeroomEditState(env, user, year.id, grade, room) });
+      return json({ year, grade, room, month, months, days, today, records, codes: ATT_CODES, terms, holidays, activities, edit: await homeroomEditState(env, user, year.id, grade, room) });
     }
     if (method === "PUT") {
       await assertHomeroomWritable(env, user, year.id, grade, room);
@@ -551,7 +551,7 @@ export function monthSheet(cal, url) {
     const [y, mm] = m.split("-").map(Number);
     m = mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, "0")}`;
   }
-  return { month, months, days, today, holidays: cal.holidays.filter((h) => h.holiday_date.startsWith(month)) };
+  return { month, months, days, today, holidays: cal.holidays.filter((h) => h.holiday_date.startsWith(month)), activities: (cal.activities || []).filter((h) => h.holiday_date.startsWith(month)) };
 }
 
 // แบ่งวันเรียนของเดือนเป็นสัปดาห์ (จันทร์–ศุกร์) สำหรับตรวจสุขภาพ — เอา 4 สัปดาห์แรกที่มีวันเรียน
