@@ -656,3 +656,12 @@ body.term-mode .tabs { border-bottom-color: var(--line); }
 
 /* บันทึกประจำวัน: คอลัมน์วันหยุดเป็นสีแดงในทั้งสองภาค (ชนะสีพื้นของภาคเรียน) */
 :root[data-term] .sheet.log-sheet thead th.log-off, :root[data-term] .log-sheet tfoot td.log-off, .log-sheet tfoot td.log-off { background: #fde4e4; }
+
+/* ความคืบหน้ารายครู: ยุบรายวิชา กดดู */
+.course-fold summary{cursor:pointer;color:var(--primary,#2b3a8f);font-weight:600;white-space:nowrap;list-style:none}
+.course-fold summary::-webkit-details-marker{display:none}
+.course-fold summary::before{content:"▸ ";}
+.course-fold[open] summary::before{content:"▾ ";}
+.course-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-width:180px}
+.course-chip{display:inline-block;padding:2px 8px;border-radius:99px;background:#eef1fb;color:#2b3a8f;text-decoration:none;white-space:nowrap;font-size:12px}
+.course-chip.done{background:#e3f4ec;color:#1f7a3d}

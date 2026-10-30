@@ -36,9 +36,9 @@ async function renderProgress() {
   view.innerHTML = `<div class="panel"><div class="panel-head"><h2>ความคืบหน้ารายครู</h2><span class="muted small">เรียงจากกรอกน้อยที่สุด</span></div>
     <div class="table-wrap"><table class="list"><thead><tr><th>ครู</th><th class="num">รายวิชา</th><th>กรอกแล้ว</th><th class="num">ส่งผลแล้ว</th><th>รายวิชา</th></tr></thead>
     <tbody>${rows.map((r) => `<tr><td class="nm">${esc(r.name)}</td><td class="num">${r.list.length}</td>
-      <td style="min-width:140px"><span class="small muted">${r.avg}%</span><div class="meter ${r.avg >= 100 ? "done" : ""}"><i style="width:${r.avg}%"></i></div></td>
+      <td style="min-width:90px"><span class="small muted">${r.avg}%</span><div class="meter ${r.avg >= 100 ? "done" : ""}"><i style="width:${r.avg}%"></i></div></td>
       <td class="num">${r.locked}/${r.list.length}</td>
-      <td class="small">${r.list.map((c) => `<a href="/course.html?id=${c.id}&year=${Y}" title="${c.progress}%">${esc(c.code)} ${esc(c.grade_level)}/${esc(c.classroom)}</a>`).join(", ")}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">ยังไม่มีรายวิชา</td></tr>`}</tbody></table></div></div>`;
+      <td class="small"><details class="course-fold"><summary>ดูรายวิชา (${r.list.length})</summary><div class="course-chips">${r.list.map((c) => `<a class="course-chip${c.locked ? " done" : ""}" href="/course.html?id=${c.id}&year=${Y}" title="${c.progress}%">${esc(c.code)} ${esc(c.grade_level)}/${esc(c.classroom)}</a>`).join("")}</div></details></td></tr>`).join("") || `<tr><td colspan="5" class="empty">ยังไม่มีรายวิชา</td></tr>`}</tbody></table></div></div>`;
 }
 
 async function renderSummary() {
