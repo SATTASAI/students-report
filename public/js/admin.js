@@ -683,6 +683,11 @@ async function renderSettings() {
       <option value="code" ${s.roster_order === "code" ? "selected" : ""}>เรียงตามเลขประจำตัวอย่างเดียว</option></select></label>
     <p class="muted small">ต้องตรงกับรายชื่อที่ครูใช้ใน Excel เพราะการวางคะแนนจะลงตามลำดับเลขที่</p>
     <label class="check" style="margin-top:14px"><input type="checkbox" name="entry_open" ${s.entry_open ? "checked" : ""}> เปิดให้ครูกรอก/แก้ไขคะแนน</label>
+    <label class="field" style="margin-top:14px;max-width:420px">เผยแพร่ ปพ.6 ให้ผู้ปกครองดูที่ <a href="/parent" target="_blank" rel="noopener">/parent</a><select name="parent_pp6_term">
+      <option value="0" ${!s.parent_pp6_term ? "selected" : ""}>ปิด (ยังไม่เผยแพร่)</option>
+      <option value="1" ${s.parent_pp6_term == 1 ? "selected" : ""}>ภาคเรียนที่ 1</option>
+      <option value="2" ${s.parent_pp6_term == 2 ? "selected" : ""}>ภาคเรียนที่ 2 (สรุปทั้งปี)</option></select></label>
+    <p class="muted small">ผู้ปกครองกรอกเลขบัตรประชาชนและวันเกิดของนักเรียนเพื่อดู ปพ.6 ของปีการศึกษาปัจจุบัน · ผิด 5 ครั้งใน 15 นาที ระบบให้รอ 15 นาที</p>
     <h2 style="margin-top:24px">ข้อมูลบนเอกสาร</h2>
     <div class="form-grid">
       <label class="field">ชื่อโรงเรียน<input name="school_name" value="${esc(s.school_name)}" maxlength="120"></label>

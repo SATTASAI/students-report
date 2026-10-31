@@ -15,6 +15,7 @@ import { handleRoster } from "./routes/roster.js";
 import { handleCalendar } from "./routes/calendar.js";
 import { applySecurityHeaders } from "./lib/auth-sessions.js";
 import { handleActivity } from "./routes/usage.js";
+import { parentPp6 } from "./routes/parent.js";
 
 // header ความปลอดภัยชุดเดียวกับระบบบริหารโรงเรียน (HSTS, CSP, nosniff, กันการฝังหน้าเว็บ) — ดู src/lib/auth-sessions.js
 const withHeaders = (response) => applySecurityHeaders(response);
@@ -31,6 +32,8 @@ async function routeApi(request, env, url) {
 
   if (parts[1] === "auth" && parts[2] === "login" && method === "POST") return login(request, env);
   if (parts[1] === "auth" && parts[2] === "logout" && method === "POST") return logout(request, env);
+  // ผู้ปกครอง/บุคคลภายนอกดู ปพ.6 ด้วยเลขบัตรประชาชน + วันเกิด (ไม่ต้องเข้าสู่ระบบ)
+  if (parts[1] === "parent" && parts[2] === "pp6" && method === "POST") return parentPp6(request, env);
 
   const user = await currentUser(request, env);
   // สัญญาณเวลาใช้งาน (ทุกบทบาท รวมผู้ชมภายนอก) — รายงานดูได้ที่ระบบบริหารโรงเรียน เมนู การเข้าใช้งาน

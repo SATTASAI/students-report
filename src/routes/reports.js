@@ -44,7 +44,7 @@ async function roomParams(env, user, url, { allowHomeroom = true } = {}) {
 }
 
 // ข้อมูลสำหรับ ปพ.6 และไฟล์ส่งออกของห้อง
-async function roomReport(env, year, grade, room, onlyStudent) {
+export async function roomReport(env, year, grade, room, onlyStudent) {
   let roster = await roomRoster(env, year.id, grade, room);
   if (onlyStudent) roster = roster.filter((s) => s.id === onlyStudent);
   const ids = roster.map((s) => s.id);

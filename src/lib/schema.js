@@ -299,6 +299,7 @@ export const ADDED_COLUMNS = [
   ["gr_courses", "returned_at", "TEXT"],
   ["gr_courses", "returned_by", "INTEGER"],
   ["gr_settings", "school_address", "TEXT"],
+  ["gr_settings", "parent_pp6_term", "INTEGER"], // เผยแพร่ ปพ.6 ให้ผู้ปกครองดูที่ /parent: 0/ว่าง = ปิด, 1 = ภาคเรียนที่ 1, 2 = ภาคเรียนที่ 2 (สรุปทั้งปี)
   // gr-8: ครู → ฝ่ายวัดผลตรวจ → ผู้บริหารอนุมัติ
   ["gr_courses", "reviewed_at", "TEXT"],
   ["gr_courses", "reviewed_by", "INTEGER"], // บรรทัดที่อยู่บนปก ปพ.5 เช่น อำเภอแก่งกระจาน จังหวัดเพชรบุรี

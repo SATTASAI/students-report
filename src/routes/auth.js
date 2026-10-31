@@ -37,7 +37,7 @@ export async function login(request, env) {
   return json({ ok: true, user: { id: user.id, full_name: user.full_name, role: user.role } }, 200, { "Set-Cookie": buildSessionCookie(token) });
 }
 
-async function recordFailure(env, key) {
+export async function recordFailure(env, key) {
   await env.DB.prepare(`INSERT INTO auth_login_throttles (throttle_key, failure_count, first_failed_at, last_failed_at, locked_until)
     VALUES (?, 1, datetime('now'), datetime('now'), NULL)
     ON CONFLICT(throttle_key) DO UPDATE SET

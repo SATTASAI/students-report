@@ -7,7 +7,7 @@ export const DEFAULT_SETTINGS = {
   school_name: "โรงเรียนบ้านป่าเด็ง", school_area: "", director_name: "", academic_head_name: "",
   measurement_head_name: "", entry_open: 1, roster_order: "gender",
   indicator_pass_pct_t2: null, deputy_director_name: "", affiliation: "สำนักงานคณะกรรมการการศึกษาขั้นพื้นฐาน",
-  pilot_rooms: null, school_address: "อำเภอแก่งกระจาน จังหวัดเพชรบุรี",
+  pilot_rooms: null, school_address: "อำเภอแก่งกระจาน จังหวัดเพชรบุรี", parent_pp6_term: 0,
 };
 
 export async function listYears(env) {

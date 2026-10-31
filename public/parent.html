@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตรวจสอบผลการเรียน (ปพ.6) — สำหรับผู้ปกครอง</title>
+<link rel="icon" href="/logo.png">
+<link rel="stylesheet" href="/css/app.css" id="appCss">
+</head>
+<body>
+<main class="auth" id="formView">
+  <div class="auth-card">
+    <img src="/logo.png" alt="ตราโรงเรียน">
+    <h1>ตรวจสอบผลการเรียน</h1>
+    <p class="muted">สำหรับผู้ปกครอง — กรอกข้อมูลของนักเรียนเพื่อดูแบบรายงานผลการพัฒนาคุณภาพผู้เรียนรายบุคคล (ปพ.6)</p>
+    <form id="f" autocomplete="off">
+      <div class="err" id="err" hidden></div>
+      <label class="field">เลขบัตรประจำตัวประชาชนของนักเรียน (13 หลัก)<input name="national_id" inputmode="numeric" maxlength="17" required placeholder="1234567890123" autofocus></label>
+      <label class="field">วันเกิดของนักเรียน (วว/ดด/ปปปป พ.ศ.)<input name="birth_date" inputmode="numeric" maxlength="10" required placeholder="15/06/2560"></label>
+      <div data-turnstile class="turnstile-box"></div>
+      <button class="btn primary" id="go">ดูผลการเรียน</button>
+    </form>
+  </div>
+</main>
+<div id="resultView" hidden><div id="doc"></div></div>
+<script src="/js/turnstile.js"></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=onSchoolTurnstile" async defer></script>
+<script type="module">
+import { toolbar } from "/print/print.js";
+import { renderPp6 } from "/print/pp6-render.js";
+
+const f = document.getElementById("f"), err = document.getElementById("err"), go = document.getElementById("go");
+// พิมพ์วันเกิดเป็นตัวเลขล้วน → ใส่ / ให้อัตโนมัติ
+f.birth_date.addEventListener("input", (e) => {
+  if (e.inputType?.startsWith("delete")) return;
+  const v = e.target.value.replace(/\D/g, "").slice(0, 8);
+  e.target.value = v.length > 4 ? `${v.slice(0, 2)}/${v.slice(2, 4)}/${v.slice(4)}` : v.length > 2 ? `${v.slice(0, 2)}/${v.slice(2)}` : v;
+});
+f.onsubmit = async (e) => {
+  e.preventDefault();
+  err.hidden = true; go.disabled = true; go.textContent = "กำลังตรวจสอบ…";
+  try {
+    const res = await fetch("/api/parent/pp6", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ national_id: f.national_id.value, birth_date: f.birth_date.value, turnstile_token: SchoolTurnstile.token() }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `ตรวจสอบไม่สำเร็จ (${res.status})`);
+    show(data);
+  } catch (ex) {
+    err.textContent = ex.message; err.hidden = false; SchoolTurnstile.reset();
+  } finally { go.disabled = false; go.textContent = "ดูผลการเรียน"; }
+};
+
+function show({ term, report: d }) {
+  document.getElementById("appCss").remove();
+  const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "/print/print.css"; document.head.append(css);
+  document.getElementById("formView").remove();
+  document.getElementById("resultView").hidden = false;
+  // จอโทรศัพท์: ย่อแผ่น A4 ให้พอดีความกว้างจอ (คืนขนาดจริงตอนพิมพ์)
+  const doc = document.getElementById("doc");
+  const fit = () => { doc.style.zoom = innerWidth < 830 ? String(innerWidth / 830) : ""; };
+  fit(); addEventListener("resize", fit);
+  addEventListener("beforeprint", () => { doc.style.zoom = ""; }); addEventListener("afterprint", fit);
+  const st = d.students[0];
+  toolbar(`ปพ.6 ${st.name} ภาคเรียนที่ ${term}${term === 2 ? " (สรุปทั้งปี)" : ""} ปีการศึกษา ${d.year.year_be}`, ' <button id="again">ตรวจสอบนักเรียนคนอื่น</button>');
+  document.getElementById("thaiNum")?.closest("label")?.remove(); // สลับเลขไทยต้องโหลดหน้าใหม่ ซึ่งจะล้างผลที่ตรวจสอบแล้ว
+  document.getElementById("again").onclick = () => location.reload();
+  document.title = `ปพ.6 ${st.name} ภาค${term} ${d.year.year_be}`;
+  document.getElementById("doc").innerHTML = renderPp6(d, term);
+}
+</script>
+</body>
+</html>

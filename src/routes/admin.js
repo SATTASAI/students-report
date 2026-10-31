@@ -82,7 +82,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
         deputy_director_name: (Array.isArray(b.deputy_director_names) ? b.deputy_director_names : String(b.deputy_director_name ?? "").split("\n"))
           .map((x) => text(x, 120)).filter(Boolean).slice(0, 5).join("\n"),
         academic_head_name: text(b.academic_head_name, 120), measurement_head_name: text(b.measurement_head_name, 120),
-        entry_open: b.entry_open ? 1 : 0, roster_order: b.roster_order === "code" ? "code" : "gender",
+        entry_open: b.entry_open ? 1 : 0, parent_pp6_term: [1, 2].includes(Number(b.parent_pp6_term)) ? Number(b.parent_pp6_term) : 0, roster_order: b.roster_order === "code" ? "code" : "gender",
       };
       // เกณฑ์ผ่าน/เกณฑ์เวลาเรียนเปลี่ยนผลของรายวิชาที่ส่งแล้วได้ — ต้องยืนยันก่อน (confirm_locked)
       const before = await getSettings(env, year.id);
@@ -698,7 +698,7 @@ export async function handleAdmin(request, env, user, parts, method, url) {
 
 // บันทึกค่าตั้งของปี เฉพาะคอลัมน์ที่ส่งมา (คอลัมน์อื่นคงเดิม)
 const SETTING_COLUMNS = ["collect_ratio", "indicator_pass_pct", "indicator_pass_pct_t2", "attendance_pass_pct", "school_name", "school_area",
-  "affiliation", "school_address", "director_name", "deputy_director_name", "academic_head_name", "measurement_head_name", "entry_open", "roster_order", "pilot_rooms"];
+  "affiliation", "school_address", "director_name", "deputy_director_name", "academic_head_name", "measurement_head_name", "entry_open", "roster_order", "pilot_rooms", "parent_pp6_term"];
 async function upsertSettings(env, yearId, values, user) {
   const cols = Object.keys(values).filter((k) => SETTING_COLUMNS.includes(k));
   await env.DB.prepare("INSERT OR IGNORE INTO gr_settings (academic_year_id) VALUES (?)").bind(yearId).run();
