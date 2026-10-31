@@ -19,9 +19,9 @@ async function setup() {
   return { env, admin, s, st, kinder };
 }
 
-test("ผู้ปกครองดู ปพ.6: ปิดอยู่ไม่ได้ · เปิดแล้วเห็นเฉพาะคนเดียว · ข้อมูลผิดไม่บอกว่ามีเลขประจำตัว · อนุบาลไม่ได้", async () => {
+test("ผู้ปกครองดู ปพ.6: ปิดอยู่ไม่ได้ · เปิดแล้วเห็นเฉพาะคนเดียว · ข้อมูลผิดไม่บอกว่ามีเลขบัตร · อนุบาลไม่ได้", async () => {
   const { env, admin, s, st, kinder } = await setup();
-  const body = { student_code: st.student_code, password: st.national_id.slice(-8) };
+  const body = { national_id: st.national_id, password: st.student_code };
   assert.equal((await call(env, "POST", "/api/parent/pp6", body)).status, 403);
   assert.equal((await call(env, "PUT", "/api/admin/settings", { ...s, parent_pp6_term: 1 }, admin)).status, 200);
   const ok = await call(env, "POST", "/api/parent/pp6", body);
@@ -29,25 +29,25 @@ test("ผู้ปกครองดู ปพ.6: ปิดอยู่ไม่
   assert.equal(ok.data.term, 1);
   assert.equal(ok.data.report.students.length, 1);
   assert.equal(ok.data.report.students[0].id, st.id);
-  const bad = await call(env, "POST", "/api/parent/pp6", { ...body, password: "00000000" }, null, "2.2.2.2");
-  const none = await call(env, "POST", "/api/parent/pp6", { ...body, student_code: "nope" }, null, "2.2.2.2");
+  const bad = await call(env, "POST", "/api/parent/pp6", { ...body, password: "99999" }, null, "2.2.2.2");
+  const none = await call(env, "POST", "/api/parent/pp6", { ...body, national_id: "9999999999999" }, null, "2.2.2.2");
   assert.equal(bad.status, 404); assert.equal(none.status, 404); assert.equal(bad.data.error, none.data.error);
-  assert.equal((await call(env, "POST", "/api/parent/pp6", { student_code: kinder.student_code, password: kinder.national_id.slice(-8) }, null, "3.3.3.3")).status, 404);
-  assert.equal((await call(env, "POST", "/api/parent/pp6", { ...body, password: "123" })).status, 400);
+  assert.equal((await call(env, "POST", "/api/parent/pp6", { national_id: kinder.national_id, password: kinder.student_code }, null, "3.3.3.3")).status, 404);
+  assert.equal((await call(env, "POST", "/api/parent/pp6", { ...body, national_id: "123" })).status, 400);
 });
 
 test("ผู้ปกครองดู ปพ.6: ผิด 5 ครั้งต่อ IP ถูกล็อก แม้ข้อมูลถูกก็รอ", async () => {
   const { env, admin, s, st } = await setup();
   await call(env, "PUT", "/api/admin/settings", { ...s, parent_pp6_term: 2 }, admin);
-  for (let i = 0; i < 5; i++) assert.equal((await call(env, "POST", "/api/parent/pp6", { student_code: st.student_code, password: "00000000" }, null, "4.4.4.4")).status, 404);
-  assert.equal((await call(env, "POST", "/api/parent/pp6", { student_code: st.student_code, password: st.national_id.slice(-8) }, null, "4.4.4.4")).status, 429);
-  const other = await call(env, "POST", "/api/parent/pp6", { student_code: st.student_code, password: st.national_id.slice(-8) }, null, "5.5.5.5");
+  for (let i = 0; i < 5; i++) assert.equal((await call(env, "POST", "/api/parent/pp6", { national_id: st.national_id, password: "99999" }, null, "4.4.4.4")).status, 404);
+  assert.equal((await call(env, "POST", "/api/parent/pp6", { national_id: st.national_id, password: st.student_code }, null, "4.4.4.4")).status, 429);
+  const other = await call(env, "POST", "/api/parent/pp6", { national_id: st.national_id, password: st.student_code }, null, "5.5.5.5");
   assert.equal(other.status, 200); assert.equal(other.data.term, 2);
 });
 
 test("ระบบผู้ปกครอง: ปุ่มเปิด/ปิดของฝ่ายวัดผล", async () => {
   const { env, admin, st } = await setup();
-  const body = { student_code: st.student_code, password: st.national_id.slice(-8) };
+  const body = { national_id: st.national_id, password: st.student_code };
   assert.equal((await call(env, "PUT", "/api/admin/parent", { term: 2 }, admin)).status, 200);
   const ok = await call(env, "POST", "/api/parent/pp6", body);
   assert.equal(ok.status, 200); assert.equal(ok.data.term, 2);

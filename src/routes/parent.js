@@ -1,14 +1,14 @@
-// หน้าผู้ปกครอง (/parent): ดู ปพ.6 ด้วยเลขประจำตัวนักเรียน + รหัสผ่าน = เลขบัตรประจำตัวประชาชน 8 ตัวท้าย ไม่ต้องเข้าสู่ระบบ
+// หน้าผู้ปกครอง (/parent): ดู ปพ.6 ด้วย ID = เลขบัตรประจำตัวประชาชน 13 หลัก + รหัสผ่าน = เลขประจำตัวนักเรียน ไม่ต้องเข้าสู่ระบบ
 // - เปิดเฉพาะเมื่อผู้ดูแลเลือก "เผยแพร่ ปพ.6 ให้ผู้ปกครอง" ในเกณฑ์การวัดผลของปีการศึกษาปัจจุบัน
 // - จำกัดการลอง: ผิด 5 ครั้งใน 15 นาทีต่อ IP → รอ 15 นาที (ตาราง auth_login_throttles เดียวกับหน้าเข้าสู่ระบบ)
-// - ข้อความผิดพลาดเหมือนกันทุกกรณี ไม่บอกว่าเลขประจำตัวมีอยู่ในระบบหรือไม่
+// - ข้อความผิดพลาดเหมือนกันทุกกรณี ไม่บอกว่าเลขบัตรมีอยู่ในระบบหรือไม่
 import { json, readJson, fail } from "../lib/http.js";
 import { verifyTurnstile, TURNSTILE_ERROR } from "../lib/auth-sessions.js";
 import { resolveYear, getSettings, isPrimaryGrade, inPilot, LEFT_STATUSES } from "../lib/data.js";
 import { recordFailure } from "./auth.js";
 import { roomReport } from "./reports.js";
 
-const NOT_FOUND = "เลขประจำตัวนักเรียนหรือรหัสผ่านไม่ถูกต้อง";
+const NOT_FOUND = "เลขบัตรประจำตัวประชาชนหรือรหัสผ่านไม่ถูกต้อง";
 
 export async function parentPp6(request, env) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
@@ -19,10 +19,10 @@ export async function parentPp6(request, env) {
   }
 
   const body = await readJson(request);
-  const code = String(body.student_code || "").trim().slice(0, 30);
-  const pin = String(body.password || "").replace(/\D/g, "");
-  if (!code) fail(400, "กรุณากรอกเลขประจำตัวนักเรียน");
-  if (pin.length !== 8) fail(400, "รหัสผ่านคือเลขบัตรประจำตัวประชาชนของนักเรียน 8 ตัวท้าย");
+  const nid = String(body.national_id || "").replace(/\D/g, "");
+  const code = String(body.password || "").trim().slice(0, 30);
+  if (nid.length !== 13) fail(400, "เลขบัตรประจำตัวประชาชนต้องมี 13 หลัก");
+  if (!code) fail(400, "กรุณากรอกรหัสผ่าน (เลขประจำตัวนักเรียน)");
   if (!(await verifyTurnstile(env, body.turnstile_token, request)).ok) fail(400, TURNSTILE_ERROR);
 
   const year = await resolveYear(env, null);
@@ -31,9 +31,8 @@ export async function parentPp6(request, env) {
   if (term !== 1 && term !== 2) return json({ error: "โรงเรียนยังไม่เปิดให้ตรวจสอบผลการเรียน" }, 403);
 
   const notFound = async () => { await recordFailure(env, key); return json({ error: NOT_FOUND }, 404); };
-  const st = await env.DB.prepare(`SELECT id, national_id FROM students WHERE student_code = ? AND national_id IS NOT NULL LIMIT 1`).bind(code).first();
-  const nid = String(st?.national_id || "").replace(/\D/g, "");
-  if (!st || nid.length !== 13 || nid.slice(-8) !== pin) return notFound();
+  const st = await env.DB.prepare("SELECT id FROM students WHERE national_id = ? AND student_code = ? LIMIT 1").bind(nid, code).first();
+  if (!st) return notFound();
   // ห้องของนักเรียน ณ ภาคเรียนล่าสุดของปีปัจจุบัน
   const en = await env.DB.prepare(
     `SELECT se.grade_level, se.classroom, se.status FROM student_enrollments se JOIN academic_terms t ON t.id = se.academic_term_id

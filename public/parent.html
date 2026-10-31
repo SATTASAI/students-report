@@ -15,8 +15,8 @@
     <p class="muted">สำหรับผู้ปกครอง — กรอกข้อมูลของนักเรียนเพื่อดูแบบรายงานผลการพัฒนาคุณภาพผู้เรียนรายบุคคล (ปพ.6)</p>
     <form id="f" >
       <div class="err" id="err" hidden></div>
-      <label class="field">เลขประจำตัวนักเรียน<input name="student_code" inputmode="numeric" maxlength="30" required autocomplete="username" autofocus></label>
-      <label class="field">รหัสผ่าน (เลขบัตรประจำตัวประชาชนของนักเรียน 8 ตัวท้าย)<input name="password" type="password" inputmode="numeric" maxlength="8" required autocomplete="current-password"></label>
+      <label class="field">ID (เลขบัตรประจำตัวประชาชนของนักเรียน 13 หลัก)<input name="national_id" inputmode="numeric" maxlength="17" required autocomplete="username" autofocus></label>
+      <label class="field">รหัสผ่าน (เลขประจำตัวนักเรียน)<input name="password" type="password" inputmode="numeric" maxlength="30" required autocomplete="current-password"></label>
       <div data-turnstile class="turnstile-box"></div>
       <button class="btn primary" id="go">ดูผลการเรียน</button>
     </form>
@@ -35,7 +35,7 @@ f.onsubmit = async (e) => {
   err.hidden = true; go.disabled = true; go.textContent = "กำลังตรวจสอบ…";
   try {
     const res = await fetch("/api/parent/pp6", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ student_code: f.student_code.value, password: f.password.value, turnstile_token: SchoolTurnstile.token() }) });
+      body: JSON.stringify({ national_id: f.national_id.value, password: f.password.value, turnstile_token: SchoolTurnstile.token() }) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `ตรวจสอบไม่สำเร็จ (${res.status})`);
     show(data);
