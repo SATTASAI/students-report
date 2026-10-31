@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-25";
+export const SCHEMA_VERSION = "gr-26";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -299,6 +299,7 @@ export const ADDED_COLUMNS = [
   ["gr_courses", "returned_at", "TEXT"],
   ["gr_courses", "returned_by", "INTEGER"],
   ["gr_settings", "school_address", "TEXT"],
+  // gr-26
   ["gr_settings", "parent_pp6_term", "INTEGER"], // เผยแพร่ ปพ.6 ให้ผู้ปกครองดูที่ /parent: 0/ว่าง = ปิด, 1 = ภาคเรียนที่ 1, 2 = ภาคเรียนที่ 2 (สรุปทั้งปี)
   // gr-8: ครู → ฝ่ายวัดผลตรวจ → ผู้บริหารอนุมัติ
   ["gr_courses", "reviewed_at", "TEXT"],
