@@ -677,7 +677,7 @@ async function renderParent() {
     <div class="panel-head"><h2>ระบบผู้ปกครอง ปีการศึกษา ${me.year.year_be}</h2></div>
     <p>สถานะ: <span class="tag ${term ? "ok" : "warn"}">${label}</span></p>
     <div class="actions" style="flex-wrap:wrap">${btn(1, "เปิด ภาคเรียนที่ 1")}${btn(2, "เปิด ภาคเรียนที่ 2 (สรุปทั้งปี)")}${btn(0, "ปิดระบบ")}</div>
-    <p class="muted small" style="margin-top:14px">ผู้ปกครองเข้าที่ <a href="/parent" target="_blank" rel="noopener">${esc(location.origin)}/parent</a> ด้วยเลขประจำตัวนักเรียน + รหัสผ่าน (เลขบัตรประชาชนของนักเรียน 8 ตัวท้าย) · ผิด 5 ครั้งใน 15 นาที ระบบให้รอ 15 นาที</p>
+    <p class="muted small" style="margin-top:14px">ผู้ปกครองเข้าที่ <a href="/parent" target="_blank" rel="noopener">${esc(location.origin)}/parent</a> ด้วย ID = เลขบัตรประชาชนของนักเรียน + รหัสผ่าน = เลขประจำตัวนักเรียน · ผิด 5 ครั้งใน 15 นาที ระบบให้รอ 15 นาที</p>
     <a class="btn" href="/parent" target="_blank" rel="noopener">เปิดหน้าผู้ปกครอง</a></div>`;
   for (const b of view.querySelectorAll("[data-term]")) b.onclick = async () => {
     try { await api("/api/admin/parent", { method: "PUT", body: { year: Y, term: Number(b.dataset.term) } }); toast(Number(b.dataset.term) ? "เปิดระบบผู้ปกครองแล้ว" : "ปิดระบบผู้ปกครองแล้ว"); render(); } catch (err) { showError(err); }
@@ -704,7 +704,7 @@ async function renderSettings() {
       <option value="0" ${!s.parent_pp6_term ? "selected" : ""}>ปิด (ยังไม่เผยแพร่)</option>
       <option value="1" ${s.parent_pp6_term == 1 ? "selected" : ""}>ภาคเรียนที่ 1</option>
       <option value="2" ${s.parent_pp6_term == 2 ? "selected" : ""}>ภาคเรียนที่ 2 (สรุปทั้งปี)</option></select></label>
-    <p class="muted small">ผู้ปกครองเข้าด้วยเลขประจำตัวนักเรียน + รหัสผ่าน (เลขบัตรประชาชน 8 ตัวท้าย) เพื่อดู ปพ.6 ของปีการศึกษาปัจจุบัน · ผิด 5 ครั้งใน 15 นาที ระบบให้รอ 15 นาที</p>
+    <p class="muted small">ผู้ปกครองเข้าด้วย ID = เลขบัตรประชาชนของนักเรียน + รหัสผ่าน = เลขประจำตัวนักเรียน เพื่อดู ปพ.6 ของปีการศึกษาปัจจุบัน · ผิด 5 ครั้งใน 15 นาที ระบบให้รอ 15 นาที</p>
     <h2 style="margin-top:24px">ข้อมูลบนเอกสาร</h2>
     <div class="form-grid">
       <label class="field">ชื่อโรงเรียน<input name="school_name" value="${esc(s.school_name)}" maxlength="120"></label>
