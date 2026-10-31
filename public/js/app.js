@@ -173,6 +173,7 @@ function roleMenu(role, me) {
     { href: "/logs.html", icon: "list", label: "บันทึกประจำวัน" },
     { href: "/admin.html#bank", icon: "bank", label: "คลังตัวชี้วัด" },
     { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม" },
+    { href: "/admin.html#parent", icon: "people", label: "ระบบผู้ปกครอง" },
     { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
     { href: "/sar.html", icon: "award", label: "ข้อมูล SAR" },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },

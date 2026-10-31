@@ -23,7 +23,7 @@ const GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
 // ส่วนของหน้า เลือกจากเมนูซ้ายผ่าน #hash
 const SECTIONS = {
   start: "เริ่มต้นปีการศึกษา", subjects: "รายวิชา", import: "นำเข้าจาก Excel", courses: "ครูผู้สอน", homerooms: "ครูประจำชั้น",
-  students: "นักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียน", sync: "ดึงข้อมูลจากระบบทะเบียน", review: "ตรวจผลการเรียน", requests: "คำขอแก้ไข", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน", backup: "สำรองและกู้คืนข้อมูล",
+  students: "นักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียน", sync: "ดึงข้อมูลจากระบบทะเบียน", review: "ตรวจผลการเรียน", requests: "คำขอแก้ไข", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", parent: "ระบบผู้ปกครอง", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน", backup: "สำรองและกู้คืนข้อมูล",
 };
 const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves", "students", "calendar", "requests"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super)
   && !(["sync", "backup"].includes(k) && me.user.role !== "superadmin")
@@ -48,7 +48,7 @@ function renderTabs() {
 async function render() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   try {
-    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), requests: renderRequests, sync: renderSync, bank: renderBank, settings: renderSettings, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit, backup: () => renderBackup(view) })[tab]();
+    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), requests: renderRequests, sync: renderSync, bank: renderBank, settings: renderSettings, parent: renderParent, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit, backup: () => renderBackup(view) })[tab]();
   } catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong>${esc(err.message)}</div>`; }
 }
 
@@ -667,6 +667,23 @@ async function showBankGroup(g) {
 }
 
 // ---------- เกณฑ์และผู้ลงนาม ----------
+// ---------- ระบบผู้ปกครอง (/parent) ----------
+async function renderParent() {
+  const { settings: s } = await api(`/api/admin/settings?${yq}`);
+  const term = Number(s.parent_pp6_term) || 0;
+  const label = ["ปิดอยู่", "เปิด — ปพ.6 ภาคเรียนที่ 1", "เปิด — ปพ.6 ภาคเรียนที่ 2 (สรุปทั้งปี)"][term];
+  const btn = (t, text) => `<button class="btn ${term === t ? "primary" : ""}" data-term="${t}" ${term === t ? "disabled" : ""}>${text}</button>`;
+  view.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2>ระบบผู้ปกครอง ปีการศึกษา ${me.year.year_be}</h2></div>
+    <p>สถานะ: <span class="tag ${term ? "ok" : "warn"}">${label}</span></p>
+    <div class="actions" style="flex-wrap:wrap">${btn(1, "เปิด ภาคเรียนที่ 1")}${btn(2, "เปิด ภาคเรียนที่ 2 (สรุปทั้งปี)")}${btn(0, "ปิดระบบ")}</div>
+    <p class="muted small" style="margin-top:14px">ผู้ปกครองเข้าที่ <a href="/parent" target="_blank" rel="noopener">${esc(location.origin)}/parent</a> ด้วยเลขประจำตัวนักเรียน + รหัสผ่าน (เลขบัตรประชาชนของนักเรียน 8 ตัวท้าย) · ผิด 5 ครั้งใน 15 นาที ระบบให้รอ 15 นาที</p>
+    <a class="btn" href="/parent" target="_blank" rel="noopener">เปิดหน้าผู้ปกครอง</a></div>`;
+  for (const b of view.querySelectorAll("[data-term]")) b.onclick = async () => {
+    try { await api("/api/admin/parent", { method: "PUT", body: { year: Y, term: Number(b.dataset.term) } }); toast(Number(b.dataset.term) ? "เปิดระบบผู้ปกครองแล้ว" : "ปิดระบบผู้ปกครองแล้ว"); render(); } catch (err) { showError(err); }
+  };
+}
+
 async function renderSettings() {
   const { settings: s } = await api(`/api/admin/settings?${yq}`);
   view.innerHTML = `<form class="panel" id="setForm">
