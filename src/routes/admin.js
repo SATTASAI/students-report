@@ -100,6 +100,15 @@ export async function handleAdmin(request, env, user, parts, method, url) {
   }
 
   // ห้องนำร่อง: เปิดใช้ระบบเฉพาะห้องที่เลือก (ว่าง = ทุกห้อง)
+  // หน้าผู้ปกครอง (/parent): เปิด ปพ.6 ภาค 1 / ภาค 2 หรือปิด
+  if (section === "parent" && method === "PUT") {
+    const b = await readJson(request);
+    const year = await resolveYear(env, b.year);
+    const term = [1, 2].includes(Number(b.term)) ? Number(b.term) : 0;
+    await upsertSettings(env, year.id, { parent_pp6_term: term }, user);
+    await audit(env, user, "parent.set", { year: year.id, term });
+    return json({ ok: true, term });
+  }
   if (section === "pilot" && method === "PUT") {
     const b = await readJson(request);
     const year = await resolveYear(env, b.year);

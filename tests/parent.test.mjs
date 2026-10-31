@@ -44,3 +44,13 @@ test("ผู้ปกครองดู ปพ.6: ผิด 5 ครั้งต
   const other = await call(env, "POST", "/api/parent/pp6", { student_code: st.student_code, password: st.national_id.slice(-8) }, null, "5.5.5.5");
   assert.equal(other.status, 200); assert.equal(other.data.term, 2);
 });
+
+test("ระบบผู้ปกครอง: ปุ่มเปิด/ปิดของฝ่ายวัดผล", async () => {
+  const { env, admin, st } = await setup();
+  const body = { student_code: st.student_code, password: st.national_id.slice(-8) };
+  assert.equal((await call(env, "PUT", "/api/admin/parent", { term: 2 }, admin)).status, 200);
+  const ok = await call(env, "POST", "/api/parent/pp6", body);
+  assert.equal(ok.status, 200); assert.equal(ok.data.term, 2);
+  assert.equal((await call(env, "PUT", "/api/admin/parent", { term: 0 }, admin)).status, 200);
+  assert.equal((await call(env, "POST", "/api/parent/pp6", body)).status, 403);
+});
