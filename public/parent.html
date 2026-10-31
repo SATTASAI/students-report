@@ -13,10 +13,10 @@
     <img src="/logo.png" alt="ตราโรงเรียน">
     <h1>ตรวจสอบผลการเรียน</h1>
     <p class="muted">สำหรับผู้ปกครอง — กรอกข้อมูลของนักเรียนเพื่อดูแบบรายงานผลการพัฒนาคุณภาพผู้เรียนรายบุคคล (ปพ.6)</p>
-    <form id="f" autocomplete="off">
+    <form id="f" >
       <div class="err" id="err" hidden></div>
-      <label class="field">เลขบัตรประจำตัวประชาชนของนักเรียน (13 หลัก)<input name="national_id" inputmode="numeric" maxlength="17" required placeholder="1234567890123" autofocus></label>
-      <label class="field">วันเกิดของนักเรียน (วว/ดด/ปปปป พ.ศ.)<input name="birth_date" inputmode="numeric" maxlength="10" required placeholder="15/06/2560"></label>
+      <label class="field">เลขประจำตัวนักเรียน<input name="student_code" inputmode="numeric" maxlength="30" required autocomplete="username" autofocus></label>
+      <label class="field">รหัสผ่าน (เลขบัตรประจำตัวประชาชนของนักเรียน 8 ตัวท้าย)<input name="password" type="password" inputmode="numeric" maxlength="8" required autocomplete="current-password"></label>
       <div data-turnstile class="turnstile-box"></div>
       <button class="btn primary" id="go">ดูผลการเรียน</button>
     </form>
@@ -30,18 +30,12 @@ import { toolbar } from "/print/print.js";
 import { renderPp6 } from "/print/pp6-render.js";
 
 const f = document.getElementById("f"), err = document.getElementById("err"), go = document.getElementById("go");
-// พิมพ์วันเกิดเป็นตัวเลขล้วน → ใส่ / ให้อัตโนมัติ
-f.birth_date.addEventListener("input", (e) => {
-  if (e.inputType?.startsWith("delete")) return;
-  const v = e.target.value.replace(/\D/g, "").slice(0, 8);
-  e.target.value = v.length > 4 ? `${v.slice(0, 2)}/${v.slice(2, 4)}/${v.slice(4)}` : v.length > 2 ? `${v.slice(0, 2)}/${v.slice(2)}` : v;
-});
 f.onsubmit = async (e) => {
   e.preventDefault();
   err.hidden = true; go.disabled = true; go.textContent = "กำลังตรวจสอบ…";
   try {
     const res = await fetch("/api/parent/pp6", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ national_id: f.national_id.value, birth_date: f.birth_date.value, turnstile_token: SchoolTurnstile.token() }) });
+      body: JSON.stringify({ student_code: f.student_code.value, password: f.password.value, turnstile_token: SchoolTurnstile.token() }) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `ตรวจสอบไม่สำเร็จ (${res.status})`);
     show(data);

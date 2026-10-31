@@ -1,24 +1,14 @@
-// หน้าผู้ปกครอง (/parent): ดู ปพ.6 ของนักเรียนด้วยเลขบัตรประจำตัวประชาชน + วันเกิด (วว/ดด/ปปปป พ.ศ.) ไม่ต้องเข้าสู่ระบบ
+// หน้าผู้ปกครอง (/parent): ดู ปพ.6 ด้วยเลขประจำตัวนักเรียน + รหัสผ่าน = เลขบัตรประจำตัวประชาชน 8 ตัวท้าย ไม่ต้องเข้าสู่ระบบ
 // - เปิดเฉพาะเมื่อผู้ดูแลเลือก "เผยแพร่ ปพ.6 ให้ผู้ปกครอง" ในเกณฑ์การวัดผลของปีการศึกษาปัจจุบัน
 // - จำกัดการลอง: ผิด 5 ครั้งใน 15 นาทีต่อ IP → รอ 15 นาที (ตาราง auth_login_throttles เดียวกับหน้าเข้าสู่ระบบ)
-// - ข้อความผิดพลาดเหมือนกันทุกกรณี ไม่บอกว่าเลขบัตรมีอยู่ในระบบหรือไม่
+// - ข้อความผิดพลาดเหมือนกันทุกกรณี ไม่บอกว่าเลขประจำตัวมีอยู่ในระบบหรือไม่
 import { json, readJson, fail } from "../lib/http.js";
 import { verifyTurnstile, TURNSTILE_ERROR } from "../lib/auth-sessions.js";
 import { resolveYear, getSettings, isPrimaryGrade, inPilot, LEFT_STATUSES } from "../lib/data.js";
 import { recordFailure } from "./auth.js";
 import { roomReport } from "./reports.js";
 
-const NOT_FOUND = "ไม่พบข้อมูล กรุณาตรวจสอบเลขบัตรประจำตัวประชาชนและวันเกิดอีกครั้ง";
-
-// "15/06/2560" (พ.ศ.) → "2017-06-15" · รูปแบบไม่ถูกต้อง → null
-export function parseThaiDate(v) {
-  const m = String(v || "").trim().match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-  if (!m) return null;
-  const d = Number(m[1]), mo = Number(m[2]), y = Number(m[3]) - 543;
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  if (y < 1900 || dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
-  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
+const NOT_FOUND = "เลขประจำตัวนักเรียนหรือรหัสผ่านไม่ถูกต้อง";
 
 export async function parentPp6(request, env) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
@@ -29,10 +19,10 @@ export async function parentPp6(request, env) {
   }
 
   const body = await readJson(request);
-  const nid = String(body.national_id || "").replace(/\D/g, "");
-  const birth = parseThaiDate(body.birth_date);
-  if (nid.length !== 13) fail(400, "เลขบัตรประจำตัวประชาชนต้องมี 13 หลัก");
-  if (!birth) fail(400, "วันเกิดต้องอยู่ในรูปแบบ วว/ดด/ปปปป (พ.ศ.) เช่น 15/06/2560");
+  const code = String(body.student_code || "").trim().slice(0, 30);
+  const pin = String(body.password || "").replace(/\D/g, "");
+  if (!code) fail(400, "กรุณากรอกเลขประจำตัวนักเรียน");
+  if (pin.length !== 8) fail(400, "รหัสผ่านคือเลขบัตรประจำตัวประชาชนของนักเรียน 8 ตัวท้าย");
   if (!(await verifyTurnstile(env, body.turnstile_token, request)).ok) fail(400, TURNSTILE_ERROR);
 
   const year = await resolveYear(env, null);
@@ -41,8 +31,9 @@ export async function parentPp6(request, env) {
   if (term !== 1 && term !== 2) return json({ error: "โรงเรียนยังไม่เปิดให้ตรวจสอบผลการเรียน" }, 403);
 
   const notFound = async () => { await recordFailure(env, key); return json({ error: NOT_FOUND }, 404); };
-  const st = await env.DB.prepare("SELECT id FROM students WHERE national_id = ? AND birth_date = ? LIMIT 1").bind(nid, birth).first();
-  if (!st) return notFound();
+  const st = await env.DB.prepare(`SELECT id, national_id FROM students WHERE student_code = ? AND national_id IS NOT NULL LIMIT 1`).bind(code).first();
+  const nid = String(st?.national_id || "").replace(/\D/g, "");
+  if (!st || nid.length !== 13 || nid.slice(-8) !== pin) return notFound();
   // ห้องของนักเรียน ณ ภาคเรียนล่าสุดของปีปัจจุบัน
   const en = await env.DB.prepare(
     `SELECT se.grade_level, se.classroom, se.status FROM student_enrollments se JOIN academic_terms t ON t.id = se.academic_term_id
