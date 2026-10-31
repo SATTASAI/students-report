@@ -687,7 +687,7 @@ async function renderSettings() {
       <option value="0" ${!s.parent_pp6_term ? "selected" : ""}>ปิด (ยังไม่เผยแพร่)</option>
       <option value="1" ${s.parent_pp6_term == 1 ? "selected" : ""}>ภาคเรียนที่ 1</option>
       <option value="2" ${s.parent_pp6_term == 2 ? "selected" : ""}>ภาคเรียนที่ 2 (สรุปทั้งปี)</option></select></label>
-    <p class="muted small">ผู้ปกครองกรอกเลขบัตรประชาชนและวันเกิดของนักเรียนเพื่อดู ปพ.6 ของปีการศึกษาปัจจุบัน · ผิด 5 ครั้งใน 15 นาที ระบบให้รอ 15 นาที</p>
+    <p class="muted small">ผู้ปกครองเข้าด้วยเลขประจำตัวนักเรียน + รหัสผ่าน (เลขบัตรประชาชน 8 ตัวท้าย) เพื่อดู ปพ.6 ของปีการศึกษาปัจจุบัน · ผิด 5 ครั้งใน 15 นาที ระบบให้รอ 15 นาที</p>
     <h2 style="margin-top:24px">ข้อมูลบนเอกสาร</h2>
     <div class="form-grid">
       <label class="field">ชื่อโรงเรียน<input name="school_name" value="${esc(s.school_name)}" maxlength="120"></label>
