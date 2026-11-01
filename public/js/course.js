@@ -1039,7 +1039,7 @@ function drawBuilder() {
             <button type="button" class="icon-btn sm" data-mv="${ui}:-1" ${ui ? "" : "disabled"} aria-label="เลื่อนหน่วยที่ ${ui + 1} ขึ้น">↑</button>
             <button type="button" class="icon-btn sm" data-mv="${ui}:1" ${ui < B.units.length - 1 ? "" : "disabled"} aria-label="เลื่อนหน่วยที่ ${ui + 1} ลง">↓</button></span></td>
           <td class="c-title"><textarea data-uf="${ui}:title" maxlength="300" rows="2" placeholder="ชื่อหน่วย" aria-label="ชื่อหน่วยการเรียนรู้ที่ ${ui + 1}">${esc(u.title)}</textarea></td>
-          <td class="c-std">${stdList(u.items).map((x) => `<div>${esc(x)}</div>`).join("") || '<span class="muted">–</span>'}</td>
+          <td class="c-std">${stdList(u.items).map((x) => `<div title="${esc(stdInfo(x).std_text || "")}">${esc(x)}</div>`).join("") || '<span class="muted">–</span>'}</td>
           <td class="c-ind">${u.items.map((it, ii) => indRow(it, `u${ui}`, ii)).join("")}
             <button type="button" class="btn small" data-pick="${ui}">${ICONS.plus} เลือก${W}</button></td>
           <td class="c-hr"><input data-uf="${ui}:hours" inputmode="decimal" value="${esc(u.hours)}" aria-label="ชั่วโมง หน่วยที่ ${ui + 1}"></td>
@@ -1130,7 +1130,17 @@ function bankGroups(list) {
     if (!m.has(key)) m.set(key, []);
     m.get(key).push(b);
   }
-  return [...m];
+  // เรียงตามสาระ/มาตรฐาน (ท 1.1, ท 2.1 …) ข้อที่ไม่มีมาตรฐานไว้ท้าย
+  const num = (k) => { const x = stdOf(k.replace(/^มาตรฐาน /, "")).match(/(\d+)\.(\d+)/); return x ? Number(x[1]) * 100 + Number(x[2]) : 1e9; };
+  return [...m].sort((a, b) => num(a[0]) - num(b[0]));
+}
+// ข้อมูลสาระ/มาตรฐานจากคลัง (เซิร์ฟเวอร์แนบมากับตัวชี้วัด)
+const stdInfo = (std) => (bankCache || []).find((b) => b.std === std) || {};
+// หัวกลุ่มในหน้าต่างเลือก: ขึ้นชื่อสาระเมื่อเปลี่ยนสาระ + ข้อความมาตรฐาน
+function groupHead(label, prevLabel) {
+  const std = label.replace(/^มาตรฐาน /, ""), info = stdInfo(std), prev = stdInfo(prevLabel?.replace(/^มาตรฐาน /, "") || "");
+  return { strand: info.strand && info.strand !== prev.strand ? `<div class="pick-strand">${esc(info.strand)}</div>` : "",
+    text: info.std_text ? `<div class="std-text">${esc(info.std_text)}</div>` : "" };
 }
 const kindTag = (b) => (b.kind && !b.kind.startsWith("ผล") ? ` <span class="tag ${b.kind === "ปลายทาง" ? "ok" : ""}">${esc(b.kind)}</span>` : "");
 const normCode = (c) => String(c || "").replace(/\s+/g, " ").replace(/\s*\/\s*/g, "/").replace(/\s*\.\s*/g, ".").trim();
@@ -1141,6 +1151,7 @@ function findBox(d) {
     const q = box.value.trim().toLowerCase();
     for (const r of d.querySelectorAll("[data-row]")) r.hidden = q && !r.textContent.toLowerCase().includes(q);
     for (const g of d.querySelectorAll(".pick-std")) g.hidden = ![...g.querySelectorAll("[data-row]")].some((r) => !r.hidden);
+    for (const h of d.querySelectorAll(".pick-strand")) { let n = h.nextElementSibling, any = false; while (n && !n.classList.contains("pick-strand")) { if (n.classList.contains("pick-std") && !n.hidden) any = true; n = n.nextElementSibling; } h.hidden = !any; }
   };
 }
 
@@ -1163,11 +1174,11 @@ async function pickToUnits() {
     title: `เลือก${W}จากคลัง — จัดเข้าหลายหน่วยในครั้งเดียว`, wide: true, okText: "ใช้ที่เลือก",
     body: `<p class="muted small" style="margin-top:0">เลือกหน่วยให้แต่ละข้อ หรือเลือกหน่วยให้ทั้งมาตรฐานจากหัวกลุ่ม · "+ หน่วยใหม่" = สร้างหน่วยใหม่ 1 หน่วยต่อมาตรฐาน · ข้อที่เลือก "ไม่ใช้" จะเอาออกจากโครงสร้าง</p>
       <input type="search" class="pick-find" placeholder="ค้นหารหัสหรือข้อความ" aria-label="ค้นหา${W}">
-      ${groups.map(([label, l]) => `<div class="pick-group pick-std"><div class="pick-head"><b>${esc(label)}</b> <span class="muted small">${l.length} ข้อ</span>
-          <label class="pick-all">ทั้งกลุ่ม →<select data-gset aria-label="จัด${esc(label)}ทั้งกลุ่มเข้าหน่วย"><option value="-">เลือกหน่วย…</option>${opts("-", false)}</select></label></div>
+      ${groups.map(([label, l], gi) => { const h = groupHead(label, groups[gi - 1]?.[0]); return `${h.strand}<div class="pick-group pick-std"><div class="pick-head"><b>${esc(label)}</b> <span class="muted small">${l.length} ข้อ</span>
+          <label class="pick-all">ทั้งกลุ่ม →<select data-gset aria-label="จัด${esc(label)}ทั้งกลุ่มเข้าหน่วย"><option value="-">เลือกหน่วย…</option>${opts("-", false)}</select></label></div>${h.text}
           <div class="pick-rows">${l.map((b) => { const i = idx++; flat.push(b); const cur = at.get(itemKey(b)) || "";
             return `<div class="pick-urow" data-row><span><b>${esc(b.code || "")}</b> ${esc(b.title)}${kindTag(b)}</span>
-              <select name="a${i}" aria-label="หน่วยของ ${esc(b.code || b.title.slice(0, 30))}" class="${cur ? "on" : ""}">${opts(cur, cur === "loose")}</select></div>`; }).join("")}</div></div>`).join("")}`,
+              <select name="a${i}" aria-label="หน่วยของ ${esc(b.code || b.title.slice(0, 30))}" class="${cur ? "on" : ""}">${opts(cur, cur === "loose")}</select></div>`; }).join("")}</div></div>`; }).join("")}`,
     onOpen: (d) => {
       const mark = (s) => s.classList.toggle("on", !!s.value);
       for (const s of d.querySelectorAll("select[name]")) s.onchange = () => mark(s);
@@ -1285,9 +1296,9 @@ async function pickIndicators(ui) {
   let idx = 0; const flatList = [];
   const res = await dialog({
     title: `เลือก${W} — หน่วยที่ ${ui + 1}${u.title ? ` ${u.title}` : ""}`, wide: true, okText: "ใช้ที่เลือก",
-    body: `${groups.length ? `<input type="search" class="pick-find" placeholder="ค้นหารหัสหรือข้อความ" aria-label="ค้นหา${W}">` + groups.map(([label, l]) => `<div class="pick-group pick-std"><div class="pick-head"><b>${esc(label)}</b> <span class="muted small">${l.length} ข้อ</span>
-          <button type="button" class="btn small" data-gall>เลือกทั้งกลุ่ม</button></div>
-          <div style="display:grid;gap:6px">${l.map((b) => { flatList.push(b); return row(b, idx++); }).join("")}</div></div>`).join("")
+    body: `${groups.length ? `<input type="search" class="pick-find" placeholder="ค้นหารหัสหรือข้อความ" aria-label="ค้นหา${W}">` + groups.map(([label, l], gi) => { const h = groupHead(label, groups[gi - 1]?.[0]); return `${h.strand}<div class="pick-group pick-std"><div class="pick-head"><b>${esc(label)}</b> <span class="muted small">${l.length} ข้อ</span>
+          <button type="button" class="btn small" data-gall>เลือกทั้งกลุ่ม</button></div>${h.text}
+          <div style="display:grid;gap:6px">${l.map((b) => { flatList.push(b); return row(b, idx++); }).join("")}</div></div>`; }).join("")
         : `<p class="muted">ยังไม่มี${W}ของวิชานี้ในคลัง</p>`}
       <details class="pick-group" ${groups.length ? "" : "open"}><summary>พิมพ์${W}เอง (ไม่มีในคลัง)</summary>
         <p class="muted small">บรรทัดละ 1 ข้อ เช่น <code>ท 1.1 ป.4/1 อ่านออกเสียงบทร้อยแก้ว…</code></p>
