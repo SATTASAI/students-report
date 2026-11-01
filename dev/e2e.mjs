@@ -11,6 +11,7 @@ const browser = await chromium.launch(process.env.CHROME ? { executablePath: pro
 
 async function newPage(viewport = { width: 1366, height: 860 }) {
   const ctx = await browser.newContext({ viewport, locale: "th-TH" });
+  await ctx.addInitScript(() => localStorage.setItem("sr-full-nav", "1"));
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`pageerror ${page.url()}: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/fonts\.googleapis|cdnjs|ERR_|Failed to load resource/.test(m.text())) errors.push(`console ${page.url()}: ${m.text()}`); });

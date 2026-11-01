@@ -6,8 +6,10 @@ const { chromium } = require("playwright-core");
 const BASE = "http://localhost:8787", OUT = process.argv[2] || "/tmp";
 const errors = [];
 const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
+// ชุดทดสอบนี้ตรวจหน้าเว็บแบบโหลดทั้งหน้า (ไม่ใช้ iframe — ดู dev/e2e-frame-nav.mjs)
+const fullNav = async (ctx) => { await ctx.addInitScript(() => localStorage.setItem("sr-full-nav", "1")); return ctx.newPage(); };
 async function login(email, viewport = { width: 1366, height: 900 }) {
-  const p = await (await browser.newContext({ viewport, locale: "th-TH" })).newPage();
+  const p = await (await fullNav(await browser.newContext({ viewport, locale: "th-TH" })));
   p.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   await p.goto(`${BASE}/login.html`);
   await p.fill("input[name=email]", email); await p.fill("input[name=password]", "test-password-1"); await p.click("#go");
@@ -106,7 +108,7 @@ if (grade.trim() !== "4") errors.push(`เกรดนักเรียนย�
 await t.screenshot({ path: `${OUT}/m4-sheet.png` });
 
 // มือถือ: หน้าคะแนนยกมาไม่ล้นจอ
-const m = await (await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: await t.context().storageState() })).newPage();
+const m = await (await fullNav(await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: await t.context().storageState() })));
 await m.goto(`${BASE}/homeroom.html?${Q}#carry`);
 await m.waitForSelector("[data-save]");
 await m.screenshot({ path: `${OUT}/m5-mobile-carry.png` });

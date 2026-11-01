@@ -10,8 +10,10 @@ const BASE = "http://localhost:8787", OUT = process.argv[2] || "/tmp";
 const errors = [];
 const check = (cond, msg) => { if (!cond) errors.push(msg); };
 const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
+// ชุดทดสอบนี้ตรวจหน้าเว็บแบบโหลดทั้งหน้า (ไม่ใช้ iframe — ดู dev/e2e-frame-nav.mjs)
+const fullNav = async (ctx) => { await ctx.addInitScript(() => localStorage.setItem("sr-full-nav", "1")); return ctx.newPage(); };
 async function login(email, viewport = { width: 1366, height: 900 }) {
-  const p = await (await browser.newContext({ viewport, locale: "th-TH" })).newPage();
+  const p = await (await fullNav(await browser.newContext({ viewport, locale: "th-TH" })));
   p.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   await p.goto(`${BASE}/login.html`);
   await p.fill("input[name=email]", email); await p.fill("input[name=password]", "test-password-1"); await p.click("#go");
@@ -161,7 +163,7 @@ const ksid = Number(await krow.getAttribute("data-sid"));
 check(Object.values(kd.comments[ksid]?.[2] || kd.comments[ksid]?.[1] || {}).includes("ร่าเริงแจ่มใส"), "อนุบาล: แก้คำผิดแล้วต้องบันทึก");
 
 // มือถือ
-const m = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, storageState: await t.context().storageState() })).newPage();
+const m = await (await fullNav(await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, storageState: await t.context().storageState() })));
 await m.goto(`${BASE}/homeroom.html?${Q}`);
 await m.waitForSelector("#tabs button");
 await m.click('#tabs button[data-tab="comments"]');
