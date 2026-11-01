@@ -2,6 +2,12 @@
 
 export const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// หน้าที่เปิดอยู่ใน iframe ของโครงหน้า (กดเมนูแล้วโหลดเฉพาะเนื้อหา ไม่โหลดเมนูใหม่ทั้งหน้า)
+const HOST = (() => { try { return window.parent !== window && window.parent.__srShell ? window.parent.__srShell : null; } catch { return null; } })();
+export const EMBED = !!HOST;
+// เปลี่ยนหน้าทั้งหน้าต่าง (ออกจากระบบ, หมดเวลาเข้าระบบ, สลับภาค) ต้องเปลี่ยนที่หน้าต่างบนสุด
+const topLoc = () => (EMBED ? window.parent.location : location);
+
 export class ApiError extends Error {
   constructor(status, data) { super(data?.error || `เกิดข้อผิดพลาด (${status})`); this.status = status; this.data = data; }
 }
@@ -19,7 +25,7 @@ export async function api(path, { method = "GET", body } = {}) {
   }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && !path.startsWith("/api/auth/")) {
-    location.href = `/login.html?next=${encodeURIComponent(location.pathname + location.search)}`;
+    topLoc().href = `/login.html?next=${encodeURIComponent(location.pathname + location.search)}`;
     throw new ApiError(401, data);
   }
   if (!res.ok) throw new ApiError(res.status, data);
@@ -62,7 +68,7 @@ export function switchTerm(t) {
   rememberTerm(t);
   const u = new URL(location.href);
   u.searchParams.set("term", t);
-  location.href = u.toString();
+  topLoc().href = u.toString();
 }
 // ช่วงวันที่ของภาค (จาก academic_terms) เช่น "1 พ.ค. – 10 ต.ค. 2569"
 export function termRange(me, t) {
@@ -254,7 +260,7 @@ function startUsagePing() {
 
 export async function shell(active) {
   startLockObserver();
-  startUsagePing();
+  if (!EMBED) startUsagePing(); // ใน iframe ให้หน้าต่างหลักส่งสัญญาณแทน (ไม่นับซ้ำ)
   const yearParam = selectedYear();
   let me;
   try {
@@ -273,7 +279,7 @@ export async function shell(active) {
   }
   rememberYear(me.year.id);
   // หน้าที่ทำงานรายภาค: หน้าแรก รายวิชา ประจำชั้น กิจกรรม บันทึกประจำวัน คลังเอกสาร
-  const termPage = ["home", "activities", "logs", "docs"].includes(active);
+  const termPage = ["home", "activities", "logs", "docs", "calendar"].includes(active);
   me.term = selectedTerm(me);
   rememberTerm(me.term);
   // สีทั้งหน้าเปลี่ยนตามภาค (ภาค 1 #CDB4DB · ภาค 2 #FFAFCC) เฉพาะหน้าที่ทำงานรายภาค
@@ -295,6 +301,7 @@ export async function shell(active) {
   }
   try { localStorage.setItem("sr-role", role); } catch { /* */ }
   me.role = role;
+  if (EMBED) { embedShell(me, termPage); return me; }
 
   const drawMenu = () => roleMenu(role, me).map((m) => `<a href="${m.href}" class="nav-item" ${sameItem(m.href) ? 'aria-current="page"' : ""}>${MI[m.icon]}<span>${esc(m.label)}</span></a>`).join("");
   const side = document.createElement("aside");
@@ -305,7 +312,7 @@ export async function shell(active) {
       aria-label="ภาคเรียน: ตอนนี้ภาคเรียนที่ ${me.term} — กดเพื่อสลับไปภาคเรียนที่ ${me.term === 1 ? 2 : 1}">
       <span class="tt-label ${me.term === 1 ? "on" : ""}">ภาค 1</span><span class="tt-track" aria-hidden="true"><span class="tt-knob"></span></span><span class="tt-label ${me.term === 2 ? "on" : ""}">ภาค 2</span></button>`;
   side.innerHTML = `
-    ${termPage ? `<div class="term-top"><span class="term-top-title">ภาคเรียน</span>${termToggle()}</div>` : ""}
+    <div class="term-top"><span class="term-top-title">ภาคเรียน</span>${termToggle()}</div>
     <a class="brand" href="/"><img src="/logo.png" alt=""><div><strong>รายงานผลการเรียน</strong><span>${esc(me.settings.school_name || "โรงเรียนบ้านป่าเด็ง")}</span></div></a>
     <div class="side-ctl">
       <label>บทบาท<select id="roleSel" ${roles.length < 2 ? "disabled" : ""}>${roles.map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${ROLES[r].label}</option>`).join("")}</select></label>
@@ -332,7 +339,8 @@ export async function shell(active) {
   scrim.onclick = () => setOpen(false);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
   side.addEventListener("click", (e) => { if (e.target.closest("a.nav-item")) setOpen(false); });
-  window.addEventListener("hashchange", () => { side.querySelector("#sideNav").innerHTML = drawMenu(); });
+  const redrawMenu = () => { side.querySelector("#sideNav").innerHTML = drawMenu(); };
+  window.addEventListener("hashchange", redrawMenu);
   side.querySelector("#roleSel").onchange = (e) => {
     try { localStorage.setItem("sr-role", e.target.value); } catch { /* */ }
     const href = roleMenu(e.target.value, me)[0].href;
@@ -349,23 +357,136 @@ export async function shell(active) {
   side.querySelector("#logoutBtn").onclick = logout;
   // กดสวิตช์: เลื่อนปุ่มให้เห็นก่อน แล้วโหลดหน้าเดิมในภาคเรียนใหม่
   const flip = (el) => { el.setAttribute("aria-checked", String(me.term === 1)); el.classList.add("moving"); setTimeout(() => switchTerm(me.term === 1 ? 2 : 1), 180); };
-  if (termPage) {
-    // แถบสีบอกภาคเรียนที่กำลังทำงาน (สีเดียวกับการ์ดภาคเรียนในหน้าแรก)
-    document.body.classList.add("term-mode");
-    const band = document.createElement("div");
-    band.className = `term-band t${me.term}`;
-    band.id = "termBand";
-    const other = me.term === 1 ? 2 : 1;
-    band.innerHTML = `<span class="term-dot" aria-hidden="true"></span><span><b>${TERM_LABEL[me.term]}</b> ปีการศึกษา ${esc(me.year.year_be)}${termRange(me, me.term) ? ` <span class="term-dates">(${esc(termRange(me, me.term))})</span>` : ""}
-      <span class="term-note">${me.term === 1 ? "กรอกและพิมพ์ข้อมูลของภาคเรียนที่ 1" : "กรอกข้อมูลภาคเรียนที่ 2 · สรุปผลทั้งปี (รวมภาคเรียนที่ 1)"}</span></span>
-      <button type="button" class="btn small" data-term="${other}">ไป${TERM_LABEL[other]}</button>`;
-    band.querySelector("button").onclick = () => switchTerm(other);
-    const main = document.getElementById("main");
-    (main || document.body).prepend(band);
-    mbar.querySelector(".role-chip").insertAdjacentHTML("beforebegin", termToggle("mini"));
-  }
+  mbar.querySelector(".role-chip").insertAdjacentHTML("beforebegin", termToggle("mini"));
   for (const el of document.querySelectorAll(".term-toggle")) el.onclick = () => flip(el);
+  frameNav({ side, mbar, redrawMenu, term: me.term });
+  // แถบสีบอกภาคเรียนที่กำลังทำงาน (สีเดียวกับการ์ดภาคเรียนในหน้าแรก)
+  if (termPage) termBand(me);
   return me;
+}
+
+// แถบสีบอกภาคเรียน (ใช้ทั้งหน้าปกติและหน้าใน iframe)
+function termBand(me) {
+  document.body.classList.add("term-mode");
+  const band = document.createElement("div");
+  band.className = `term-band t${me.term}`;
+  band.id = "termBand";
+  const other = me.term === 1 ? 2 : 1;
+  band.innerHTML = `<span class="term-dot" aria-hidden="true"></span><span><b>${TERM_LABEL[me.term]}</b> ปีการศึกษา ${esc(me.year.year_be)}${termRange(me, me.term) ? ` <span class="term-dates">(${esc(termRange(me, me.term))})</span>` : ""}
+    <span class="term-note">${me.term === 1 ? "กรอกและพิมพ์ข้อมูลของภาคเรียนที่ 1" : "กรอกข้อมูลภาคเรียนที่ 2 · สรุปผลทั้งปี (รวมภาคเรียนที่ 1)"}</span></span>
+    <button type="button" class="btn small" data-term="${other}">ไป${TERM_LABEL[other]}</button>`;
+  band.querySelector("button").onclick = () => switchTerm(other);
+  const main = document.getElementById("main");
+  (main || document.body).prepend(band);
+}
+
+// ---------- หน้าใน iframe: ไม่วาดเมนู แจ้งหน้าต่างหลักให้เปลี่ยน URL/เมนู/สีภาค ----------
+function embedShell(me, termPage) {
+  document.body.classList.add("embedded");
+  if (termPage) termBand(me);
+  const sync = () => HOST.sync(window, { termPage });
+  sync();
+  window.addEventListener("hashchange", sync);
+  // ลิงก์ไปหน้าอื่นในระบบ → ให้หน้าต่างหลักเปลี่ยนเฉพาะเนื้อหา (URL บนแถบที่อยู่เปลี่ยนตาม)
+  document.addEventListener("click", (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest?.("a[href]");
+    if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+    const u = new URL(a.href, location.href);
+    if (u.origin !== location.origin || /^\/(api|print)\//.test(u.pathname) || /^\/(login|parent)\.html$/.test(u.pathname)) return;
+    if (u.pathname + u.search === location.pathname + location.search) return; // เปลี่ยนแค่ # ในหน้าเดิม
+    e.preventDefault();
+    HOST.go(u.href);
+  });
+}
+
+// ---------- หน้าต่างหลัก: กดเมนูแล้วโหลดเฉพาะเนื้อหาใน iframe (เมนูซ้ายอยู่กับที่ ไม่กระพริบ) ----------
+// หน้าแรกที่เปิดยังแสดงตามปกติ เมื่อไปหน้าอื่นจะซ่อนไว้แล้วแสดง iframe แทน
+// iframe ใหม่ซ่อนไว้จนเนื้อหาพร้อม แล้วจึงสลับกับอันเดิม · สลับบทบาท/ปี/ภาค ยังโหลดทั้งหน้า
+function frameNav({ side, mbar, redrawMenu, term }) {
+  // ปิดได้ด้วย localStorage "sr-full-nav" = "1" (กลับไปโหลดทั้งหน้าแบบเดิม — ใช้ในชุดทดสอบหน้าเว็บเดิม)
+  try { if (localStorage.getItem("sr-full-nav") === "1") return; } catch { /* */ }
+  let frame = null, pending = null;
+  const key = (l) => l.pathname + l.search;
+  const setTermMode = (on) => {
+    if (on) document.documentElement.dataset.term = String(term); else delete document.documentElement.dataset.term;
+    document.body.classList.toggle("term-mode", !!on);
+  };
+  const fitTop = () => document.documentElement.style.setProperty("--mbar-h", `${mbar.offsetHeight}px`);
+  window.addEventListener("resize", fitTop);
+  // หน้าที่มีข้อมูลรอบันทึก (beforeunload) → ถามก่อนเปลี่ยนหน้า
+  const canLeave = async (win) => {
+    let busy = false;
+    try { const ev = new Event("beforeunload", { cancelable: true }); win.dispatchEvent(ev); busy = ev.defaultPrevented; } catch { /* */ }
+    return !busy || confirmBox("ออกจากหน้านี้?", "ยังมีข้อมูลที่กำลังบันทึกหรือยังไม่ได้บันทึก ถ้าออกตอนนี้ข้อมูลนั้นอาจหาย", "ออกจากหน้า", true);
+  };
+  const reveal = (f) => {
+    if (pending !== f) return;
+    pending = null;
+    f.classList.remove("loading");
+    if (frame) frame.remove();
+    frame = f;
+  };
+  // รอให้หน้าใหม่แสดงเนื้อหา (#main ไม่ซ่อน) ก่อนสลับ ไม่เกิน 1.5 วินาที
+  const revealWhenReady = (f) => {
+    const t0 = performance.now();
+    const tick = () => {
+      if (pending !== f) return;
+      let ready = false;
+      try { const m = f.contentDocument?.getElementById("main"); ready = !m || !m.hidden; } catch { ready = true; }
+      if (ready || performance.now() - t0 > 1500) reveal(f); else requestAnimationFrame(tick);
+    };
+    tick();
+  };
+  async function go(href, { push = true } = {}) {
+    const u = new URL(href, location.href);
+    if (u.origin !== location.origin) { location.href = u.href; return; }
+    const cur = frame ? frame.contentWindow : window;
+    if (!pending && key(u) === key(cur.location)) { // หน้าเดิม เปลี่ยนแค่แท็บ (#)
+      if (u.hash !== cur.location.hash) cur.location.hash = u.hash;
+      return;
+    }
+    if (frame && !pending && !(await canLeave(frame.contentWindow))) {
+      if (!push) history.pushState(null, "", frame.contentWindow.location.href);
+      return;
+    }
+    if (pending) pending.remove();
+    fitTop();
+    const f = document.createElement("iframe");
+    f.className = "sr-frame loading";
+    f.title = "เนื้อหา";
+    f.src = u.href;
+    pending = f;
+    f.addEventListener("load", () => setTimeout(() => reveal(f), 1500), { once: true });
+    document.body.append(f);
+    document.body.classList.add("framed");
+    if (push) history.pushState(null, "", u.href);
+    redrawMenu();
+  }
+  // หน้าใน iframe แจ้งมา (โหลดเสร็จ/เปลี่ยนแท็บ) → ตาม URL ชื่อหน้า เมนู และสีภาค
+  function sync(win, { termPage }) {
+    const f = [pending, frame].find((x) => x && x.contentWindow === win);
+    if (!f) return;
+    if (f === pending) revealWhenReady(f);
+    else if (pending) return;
+    try {
+      if (win.location.href !== location.href) history.replaceState(null, "", win.location.href);
+      document.title = win.document.title;
+    } catch { /* */ }
+    setTermMode(termPage);
+    redrawMenu();
+  }
+  window.__srShell = { go, sync };
+  window.addEventListener("popstate", () => go(location.href, { push: false }));
+  const intercept = (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest("a[href]");
+    if (!a || a.target || !a.matches(".nav-item, .brand")) return;
+    e.preventDefault();
+    go(a.href);
+  };
+  side.addEventListener("click", intercept);
+  mbar.addEventListener("click", intercept);
 }
 
 // แท็บในหน้าที่ใช้ #hash (เมนูซ้ายลิงก์ตรงมาได้)
@@ -376,7 +497,7 @@ export function hashTab(allowed, fallback) {
 
 export async function logout() {
   await api("/api/auth/logout", { method: "POST" }).catch(() => {});
-  location.href = "/login.html";
+  topLoc().href = "/login.html";
 }
 
 // กล่องยืนยัน/ฟอร์ม

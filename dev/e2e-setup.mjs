@@ -7,8 +7,10 @@ const BASE = "http://localhost:8787";
 const OUT = process.argv[2] || "/tmp";
 const errors = [];
 const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
+// ชุดทดสอบนี้ตรวจหน้าเว็บแบบโหลดทั้งหน้า (ไม่ใช้ iframe — ดู dev/e2e-frame-nav.mjs)
+const fullNav = async (ctx) => { await ctx.addInitScript(() => localStorage.setItem("sr-full-nav", "1")); return ctx.newPage(); };
 async function newPage(viewport) {
-  const page = await (await browser.newContext({ viewport, locale: "th-TH" })).newPage();
+  const page = await (await fullNav(await browser.newContext({ viewport, locale: "th-TH" })));
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/fonts\.googleapis|cdnjs|ERR_|Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
   return page;
