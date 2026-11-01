@@ -1,3 +1,4 @@
+import { withStandards } from "../lib/standards.js";
 import { json, readJson, fail, requireAdmin, requireViewer, intParam, text, audit, batchAll, HttpError, requireImporter } from "../lib/http.js";
 import { securityAlert, superadminIds } from "../lib/auth-sessions.js";
 import { HOMEROOM_GRANT_DAYS, nowSql } from "../lib/edit-requests.js";
@@ -687,7 +688,8 @@ export async function handleAdmin(request, env, user, parts, method, url) {
     if (method === "GET" && idPart === "list") {
       const g = text(url.searchParams.get("grade"), 10), a = text(url.searchParams.get("area"), 80), s = text(url.searchParams.get("subject"), 20);
       const { results } = await env.DB.prepare(`SELECT id, code, title, kind FROM gr_indicator_bank WHERE grade_level = ? AND learning_area = ? AND COALESCE(subject_code, '') = ? ORDER BY id`).bind(g, a, s).all();
-      return json({ indicators: results });
+      results.sort((x, y) => (!x.code) - (!y.code) || compareThai(x.code, y.code) || x.id - y.id); // เรียงตามสาระ/มาตรฐาน
+      return json({ indicators: withStandards(a, results) });
     }
     if (method === "DELETE" && idPart) {
       await env.DB.prepare("DELETE FROM gr_indicator_bank WHERE id = ?").bind(intParam(idPart)).run();

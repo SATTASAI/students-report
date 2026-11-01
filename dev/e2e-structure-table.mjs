@@ -48,6 +48,8 @@ check(await t.locator(".b-table tbody tr.b-row").count() === 1, "เริ่ม
 // 1) เลือกจากคลัง: มาตรฐาน ท 1.1 → หน่วยที่ 1, ท 2.1 → หน่วยใหม่
 await t.click("#bBank");
 await t.waitForSelector("dialog[open] .pick-std");
+check((await t.locator("dialog[open] .pick-strand").first().innerText()) === "สาระที่ 1 การอ่าน", "ควรมีหัวสาระที่ 1 การอ่าน");
+check((await t.locator("dialog[open] .std-text").first().innerText()).startsWith("ใช้กระบวนการอ่านสร้างความรู้"), "ควรแสดงข้อความมาตรฐาน ท 1.1");
 const stdBox = (code) => t.locator("dialog[open] .pick-std", { has: t.locator(`.pick-head > b:text-is("มาตรฐาน ${code}")`) });
 const n11 = await stdBox("ท 1.1").locator("select[name]").count();
 const n21 = await stdBox("ท 2.1").locator("select[name]").count();

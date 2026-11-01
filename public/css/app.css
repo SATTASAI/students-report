@@ -717,3 +717,6 @@ body.framed > :not(.sidebar):not(.mobilebar):not(.scrim):not(.sr-frame):not(dial
 .pick-urow select { min-height: 32px; font-size: 13px; }
 .pick-urow select.on { border-color: var(--ok); background: var(--ok-bg); color: var(--ok); font-weight: 600; }
 @media (max-width: 640px) { .pick-urow { grid-template-columns: 1fr; } .b-addrows { margin-left: 0; } }
+.pick-strand { margin: 14px 0 6px; font-weight: 700; color: var(--ink); font-size: 15px; }
+.pick-strand:first-of-type { margin-top: 4px; }
+.std-text { font-size: 13px; color: var(--muted); margin: -4px 0 8px; line-height: 1.45; }

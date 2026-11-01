@@ -655,8 +655,8 @@ async function showBankGroup(g) {
   const { indicators } = await api(`/api/admin/indicator-bank/list?${q}`);
   await dialog({
     title: `คลังตัวชี้วัด ${g.grade_level} ${g.subject_code || g.learning_area}`, wide: true, okText: "", cancelText: "ปิด",
-    body: `<div style="display:grid;gap:6px" id="bankList">${indicators.map((x) => `<div class="actions" style="justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--line-soft);padding:4px 0" data-row="${x.id}">
-      <span><b>${esc(x.code)}</b> ${esc(x.title)}${x.kind && !x.kind.startsWith("ผล") ? ` <span class="tag">${esc(x.kind)}</span>` : ""}</span>
+    body: `<div style="display:grid;gap:6px" id="bankList">${indicators.map((x, i) => `${x.strand && x.strand !== indicators[i - 1]?.strand ? `<div class="pick-strand">${esc(x.strand)}</div>` : ""}${x.std && x.std !== indicators[i - 1]?.std ? `<div><b>มาตรฐาน ${esc(x.std)}</b>${x.std_text ? `<div class="std-text" style="margin:2px 0 0">${esc(x.std_text)}</div>` : ""}</div>` : ""}<div class="actions" style="justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--line-soft);padding:4px 0" data-row="${x.id}">
+      <span><b>${esc(x.code)}</b> ${esc(x.title)}${x.kind && !x.kind.startsWith("ผล") ? ` <span class="tag ${x.kind === "ปลายทาง" ? "ok" : ""}">${esc(x.kind)}</span>` : ""}</span>
       ${CAN_IMPORT ? `<button class="btn small" data-del="${x.id}">ลบ</button>` : ""}</div>`).join("")}</div>`,
     onOpen: (d) => {
       for (const b of d.querySelectorAll("[data-del]")) b.onclick = async () => {

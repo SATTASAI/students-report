@@ -3,6 +3,7 @@ import { assertCourseAccess, courseBundle, loadCourse, canViewCourse, studentNam
 import { clean, computeStudentResult, resultWithAttendance, validateRemedial, structureIssues, indicatorWord, indicatorResult, submissionChecks } from "../../public/js/grading.js";
 import { gradeSettings, getSettings, assessmentsFor, ITEM_ORDER_SQL, ITEM_ORDER_BY, compareThai } from "../lib/data.js";
 import { ADMIN_ROLES } from "../lib/http.js";
+import { withStandards } from "../lib/standards.js";
 
 const MAX_ITEMS_PER_COURSE = 80;
 
@@ -431,7 +432,7 @@ async function handleCoursesInner(request, env, user, parts, method, url) {
     ).bind(course.grade_level, course.learning_area, String(course.code || "").replace(/\s+/g, "")).all();
     // เรียงรหัสแบบตัวเลข: ท 1.1 ป.4/2 มาก่อน ท 1.1 ป.4/10 · ตัวชี้วัดที่ไม่มีรหัสไว้ท้าย ตามลำดับที่เพิ่ม
     results.sort((a, b) => (!a.code) - (!b.code) || compareThai(a.code, b.code) || a.id - b.id);
-    return json({ indicators: results });
+    return json({ indicators: withStandards(course.learning_area, results) });
   }
 
 
