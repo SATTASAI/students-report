@@ -1,16 +1,25 @@
-// เข้าระบบคะแนนพฤติกรรม (publicservice) ต่อจากระบบนี้โดยไม่ต้องเข้าสู่ระบบใหม่
-// ออกตั๋วอายุ 60 วินาที ใช้ได้ครั้งเดียว (publicservice เก็บ jti ไว้ใน ps_sso_tickets) แล้วส่งต่อไป /api/auth/sso
-// ตั๋วมี purpose จึงใช้แทน cookie เข้าสู่ระบบไม่ได้ (sessionIsActive ปฏิเสธ)
-import { signJWT } from "../lib/crypto.js";
-
+// เมนู "รายงานพฤติกรรม": เปิดระบบคะแนนพฤติกรรม (publicservice) โดยไม่ต้องล็อกอินซ้ำ
+// ใช้กลไกเดียวกับระบบบริหารโรงเรียน (banpadeng-school-db src/routes/publicservice-sso.js):
+// ออกรหัสใช้ครั้งเดียว อายุ 60 วินาที ใน publicservice_sso_codes (D1 ร่วม) → publicservice /sso แลกเป็น session ของตัวเอง
 export const PUBLICSERVICE_URL = "https://publicservice.banpadengschool.ac.th";
 
+async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export async function ssoPublicservice(env, user) {
-  let target = `${PUBLICSERVICE_URL}/`;
-  if (user && user.role !== "viewer") {
-    const jti = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
-    const t = await signJWT({ sub: user.id, sv: Number(user.session_version || 1), purpose: "sso-publicservice", jti }, env.JWT_SECRET, 60);
-    target = `${PUBLICSERVICE_URL}/api/auth/sso?t=${encodeURIComponent(t)}`;
-  }
-  return new Response(null, { status: 302, headers: { Location: target, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+  const headers = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
+  if (!user || user.role === "viewer") return new Response(null, { status: 302, headers: { ...headers, Location: `${PUBLICSERVICE_URL}/` } });
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS publicservice_sso_codes (
+    code_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, session_version INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL)`).run();
+  const code = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM publicservice_sso_codes WHERE expires_at < ?").bind(now),
+    env.DB.prepare("INSERT INTO publicservice_sso_codes (code_hash, user_id, session_version, expires_at) VALUES (?, ?, ?, ?)")
+      .bind(await sha256Hex(code), user.id, Number(user.session_version ?? 1), now + 60),
+  ]);
+  return new Response(null, { status: 302, headers: { ...headers, Location: `${PUBLICSERVICE_URL}/sso?code=${code}` } });
 }
