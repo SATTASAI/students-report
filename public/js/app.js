@@ -163,7 +163,7 @@ function roleMenu(role, me) {
     // กิจกรรมพัฒนาผู้เรียน (ปพ.5.1) มีเฉพาะ ป.1–6 — ครูประจำชั้นอนุบาลไม่เห็นเมนูที่เปิดแล้วว่าง
     ...(me.homerooms.some((h) => /^ป\./.test(h.grade_level)) ? [{ href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" }] : []),
     ...(me.homerooms.length ? [{ href: "/logs.html", icon: "list", label: "บันทึกประจำวัน" }, { href: "/calendar.html", icon: "clock", label: "ปฏิทินวันหยุด" }] : []),
-    { href: "https://publicservice.banpadengschool.ac.th/", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
+    { href: "/api/sso/publicservice", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   if (role === "measure") return [
@@ -184,7 +184,7 @@ function roleMenu(role, me) {
     { href: "/admin.html#parent", icon: "people", label: "ระบบผู้ปกครอง" },
     { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
     { href: "/sar.html", icon: "award", label: "ข้อมูล SAR" },
-    { href: "https://publicservice.banpadengschool.ac.th/", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
+    { href: "/api/sso/publicservice", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   if (role === "viewer") return [
@@ -197,7 +197,7 @@ function roleMenu(role, me) {
     { href: "/admin.html#approve", icon: "check", label: "อนุมัติผลการเรียน" },
     { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
     { href: "/sar.html", icon: "award", label: "ข้อมูล SAR" },
-    { href: "https://publicservice.banpadengschool.ac.th/", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
+    { href: "/api/sso/publicservice", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   return [
@@ -206,7 +206,7 @@ function roleMenu(role, me) {
     { href: "/admin.html#sync", icon: "upload", label: "ดึงข้อมูลจากระบบทะเบียน" },
     { href: "/admin.html#audit", icon: "clock", label: "ประวัติการใช้งาน" },
     { href: "/admin.html#backup", icon: "save", label: "สำรองและกู้คืนข้อมูล" },
-    { href: "https://publicservice.banpadengschool.ac.th/", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
+    { href: "/api/sso/publicservice", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
 }
