@@ -407,6 +407,37 @@ export async function assessmentsFor(env, yearId, studentIds) {
     ).bind(yearId, ...chunk).all();
     for (const r of results) (out[r.student_id] ||= {})[r.item_key] = r.value;
   }
+  // คะแนนพฤติกรรม (ระบบ publicservice) ต่ำกว่า 50 ในภาคใด → กิจกรรมเพื่อสังคมและสาธารณประโยชน์ภาคนั้น "มผ" (จุดประสงค์)
+  // คำนวณสดทุกครั้ง ไม่เขียนลง gr_assessments — ปพ.5/ปพ.6/ปพ.1/หน้ากิจกรรม อ่านจากฟังก์ชันนี้ทั้งหมด
+  const behavior = await behaviorScores(env, yearId, studentIds);
+  for (const [sid, terms] of Object.entries(behavior)) {
+    for (const [term, score] of Object.entries(terms)) if (score < BEHAVIOR_PASS_MIN) (out[sid] ||= {})[`act_social_o${term}`] = "มผ";
+  }
+  return out;
+}
+
+// คะแนนพฤติกรรม: เริ่ม 100 ต่อภาค ตัด/เพิ่มได้ ไม่เกิน 100 ไม่ต่ำกว่า 0 — สูตรเดียวกับ foldScore ใน repo publicservice (src/lib/schema.js)
+// คืน { student_id: { term: score } } เฉพาะคนที่มีรายการ · ยังไม่มีตาราง ps_behavior_records (ยังไม่ติดตั้ง publicservice) = {}
+export const BEHAVIOR_PASS_MIN = 50;
+export async function behaviorScores(env, yearId, studentIds) {
+  const out = {};
+  for (let i = 0; i < studentIds.length; i += 90) {
+    const chunk = studentIds.slice(i, i + 90);
+    if (!chunk.length) continue;
+    let results;
+    try {
+      ({ results } = await env.DB.prepare(
+        `SELECT student_id, term_number, points FROM ps_behavior_records
+          WHERE academic_year_id = ? AND cancelled_at IS NULL AND student_id IN (${chunk.map(() => "?").join(",")})
+          ORDER BY id`
+      ).bind(yearId, ...chunk).all());
+    } catch (e) {
+      if (/no such table/i.test(String(e?.message))) return {};
+      throw e;
+    }
+    // ไล่ตามลำดับที่บันทึก: คะแนนไม่เกิน 100 ไม่ต่ำกว่า 0 ทุกขณะ (เพิ่มตอนเต็ม 100 ไม่สะสมไว้)
+    for (const r of results) { const t = (out[r.student_id] ||= {}); t[r.term_number] = Math.max(0, Math.min(100, (t[r.term_number] ?? 100) + Number(r.points))); }
+  }
   return out;
 }
 
