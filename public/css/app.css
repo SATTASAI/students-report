@@ -516,6 +516,26 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-ส input {
 .log-sheet.health .wk-start { border-left: 2px solid var(--line); }
 .log-sheet td.att-sum.bad { color: var(--bad); font-weight: 600; text-align: center; }
 @media print { .log-forms, .col-all { display: none !important; } }
+/* กิจกรรมโฮมรูม */
+.hr-sign-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; font-size: 14px; }
+.hr-sign-bar img.sig { height: 40px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.hr-sheet td, .hr-sheet th { vertical-align: top; padding: 6px 8px; }
+.hr-sheet td.calc { text-align: center; }
+.hr-sheet .hr-date { white-space: nowrap; }
+.hr-sheet .hr-date .wd { color: var(--muted); }
+.hr-sheet tr.today td { background: #fff8e1; }
+.hr-sheet .hr-topics { min-width: 260px; }
+.hr-sheet .hr-topics ol { margin: 0 0 4px; padding-left: 20px; }
+.hr-sheet .hr-note { width: 100%; min-width: 120px; font: inherit; font-size: 14px; }
+.hr-sheet .hr-sig { text-align: center; min-width: 130px; }
+.hr-sheet .hr-sig img.sig { display: block; height: 36px; margin: 0 auto; }
+.hr-sheet .hr-sig small { display: block; color: var(--muted); }
+.hr-bank { display: grid; gap: 10px; margin-top: 10px; max-height: 50vh; overflow: auto; }
+.hr-group b { display: block; font-size: 13px; margin-bottom: 4px; }
+.hr-chip { font: inherit; font-size: 13px; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 10px; margin: 0 4px 4px 0; cursor: pointer; }
+.hr-chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.hr-chip .x { margin-left: 6px; opacity: .7; }
+.sig-pad { width: 100%; max-width: 480px; aspect-ratio: 480 / 180; border: 1px dashed var(--line); border-radius: 8px; background: #fff; touch-action: none; display: block; }
 
 /* ---------- ข้อมูล SAR ---------- */
 .sar-table td { vertical-align: top; }

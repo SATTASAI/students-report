@@ -341,6 +341,11 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
     const ids = new Set(roster.map((s) => s.id)), writable = writableIds(roster);
     const cal = await schoolCalendar(env, year.id);
     const inTerm = (d) => !cal.terms.length || cal.terms.some((t) => d >= t.start_date && d <= t.end_date);
+    if (method === "GET" && url.searchParams.get("type") === "homeroom") return json(await homeroomSheet(env, user, year, grade, room, roster, cal, url, canEdit));
+    if (method === "PUT" && url.searchParams.get("type") === "homeroom") {
+      if (!canEdit) fail(403, "บันทึกได้เฉพาะครูประจำชั้นของห้องนี้");
+      return json(await saveHomeroom(env, user, year, grade, room, cal, await readJson(request)));
+    }
     if (method === "GET") {
       const type = url.searchParams.get("type") || "milk";
       if (!DAILY_LOGS[type] && type !== "health") fail(400, "ไม่รู้จักแบบบันทึกนี้");
@@ -390,6 +395,37 @@ export async function handleHomeroom(request, env, user, parts, method, url) {
       await audit(env, user, "logs.update", { grade, room, changes: stmts.length });
       return json({ ok: true, saved: stmts.length });
     }
+  }
+
+  // ---------- ลายเซ็นอิเล็กทรอนิกส์ของผู้ใช้ (วาด/อัปโหลดครั้งเดียว ใช้ลงนามซ้ำ) ----------
+  if (sub === "signature") {
+    if (method === "PUT") {
+      const b = await readJson(request);
+      const img = String(b.image || "");
+      if (!SIGN_RE.test(img)) fail(400, "รูปลายเซ็นไม่ถูกต้อง (png หรือ jpg)");
+      if (img.length > SIGN_MAX) fail(400, "รูปลายเซ็นใหญ่เกินไป — ลองครอบให้เล็กลง");
+      await env.DB.prepare(`INSERT INTO gr_signatures (user_id, image, updated_at) VALUES (?,?,datetime('now'))
+        ON CONFLICT(user_id) DO UPDATE SET image = excluded.image, updated_at = datetime('now')`).bind(user.id, img).run();
+      await audit(env, user, "signature.update", {});
+    } else if (method === "DELETE") {
+      await env.DB.prepare("DELETE FROM gr_signatures WHERE user_id = ?").bind(user.id).run();
+    } else if (method !== "GET") fail(405, "ไม่รองรับ");
+    const r = await env.DB.prepare("SELECT image FROM gr_signatures WHERE user_id = ?").bind(user.id).first();
+    return json({ ok: true, image: r?.image || null });
+  }
+
+  // ---------- หัวข้อโฮมรูมของครู (คลังส่วนตัว) ----------
+  if (sub === "topic-bank") {
+    if (method === "POST") {
+      const body = text(String((await readJson(request)).body ?? "").replace(/\s+/g, " "), HR_TOPIC_MAX);
+      if (!body) fail(400, "กรุณาพิมพ์หัวข้อ");
+      const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM gr_homeroom_topic_bank WHERE user_id = ?").bind(user.id).first();
+      if (n.n >= 300) fail(400, "คลังหัวข้อเต็ม (300 หัวข้อ)");
+      await env.DB.prepare("INSERT OR IGNORE INTO gr_homeroom_topic_bank (user_id, body) VALUES (?,?)").bind(user.id, body).run();
+    } else if (method === "DELETE" && parts[3]) {
+      await env.DB.prepare("DELETE FROM gr_homeroom_topic_bank WHERE id = ? AND user_id = ?").bind(intParam(parts[3]), user.id).run();
+    } else fail(405, "ไม่รองรับ");
+    return json({ ok: true, own: await topicBankOf(env, user.id) });
   }
 
   // ---------- คะแนนยกมาจาก ปพ.6 ของโรงเรียนเดิม (นักเรียนย้ายเข้าระหว่างปี) ----------
@@ -566,4 +602,82 @@ export function weeksOf(days) {
   const out = groups.slice(0, HEALTH_WEEKS).map((g, i) => ({ week: i + 1, from: g.from, to: g.to }));
   while (out.length < HEALTH_WEEKS) out.push({ week: out.length + 1, from: null, to: null });
   return out;
+}
+
+// ---------- กิจกรรมโฮมรูม ----------
+const SIGN_RE = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+=*$/;
+const SIGN_MAX = 300_000;
+export const HR_TOPIC_MAX = 200;
+const topicBankOf = async (env, uid) => (await env.DB.prepare("SELECT id, body FROM gr_homeroom_topic_bank WHERE user_id = ? ORDER BY id").bind(uid).all()).results;
+const cleanTopics = (v) => [...new Set((Array.isArray(v) ? v : String(v ?? "").split("\n")).map((x) => String(x).replace(/\s+/g, " ").trim()).filter(Boolean))];
+
+// ตารางรายเดือน: 1 แถวต่อวันเรียน · ครั้งที่ = ลำดับวันเรียนในภาคเรียน · มาเรียน/ขาด จากบันทึกการมาเรียน (ข ล ป = ขาด, มาสาย = มา)
+async function homeroomSheet(env, user, year, grade, room, roster, cal, url, canEdit) {
+  const { month, months, days, today, holidays, activities } = monthSheet(cal, url);
+  const active = roster.filter((s) => s.enrollment_status === "enrolled").map((s) => s.id);
+  const [logs, att, sig, own, settings, teachers] = await Promise.all([
+    env.DB.prepare("SELECT log_date, topics, note, signed_by, signed_name, sign_image, signed_at FROM gr_homeroom_logs WHERE academic_year_id = ? AND grade_level = ? AND classroom = ? AND log_date LIKE ?")
+      .bind(year.id, grade, room, `${month}-%`).all().then((r) => r.results),
+    active.length ? env.DB.prepare(`SELECT att_date, COUNT(*) AS n FROM gr_attendance WHERE academic_year_id = ? AND att_date LIKE ? AND code IN ('ข','ล','ป') AND student_id IN (${active.map(() => "?").join(",")}) GROUP BY att_date`)
+      .bind(year.id, `${month}-%`, ...active).all().then((r) => r.results) : [],
+    canEdit ? env.DB.prepare("SELECT image FROM gr_signatures WHERE user_id = ?").bind(user.id).first() : null,
+    canEdit ? topicBankOf(env, user.id) : [],
+    getSettings(env, year.id), homeroomNames(env, year.id, grade, room),
+  ]);
+  const absentBy = new Map(att.map((a) => [a.att_date, a.n]));
+  const termOf = (d) => cal.terms.find((t) => d >= t.start_date && d <= t.end_date);
+  const entries = {}, counts = {}, seq = {};
+  for (const l of logs) entries[l.log_date] = { topics: l.topics ? l.topics.split("\n") : [], note: l.note, signed_by: l.signed_by, signed_name: l.signed_name, sign_image: l.sign_image, signed_at: l.signed_at };
+  for (const d of days) {
+    const t = termOf(d);
+    seq[d] = (t ? cal.days.filter((x) => x >= t.start_date && x <= t.end_date) : days).indexOf(d) + 1;
+    if (d <= today) { const ab = absentBy.get(d) || 0; counts[d] = { present: active.length - ab, absent: ab }; }
+  }
+  return { year, grade, room, can_edit: canEdit, type: "homeroom", month, months, days, today, holidays, activities, terms: cal.terms,
+    entries, counts, seq, total: active.length, my_signature: sig?.image || null, own_topics: own,
+    school: { name: settings.school_name, director: settings.director_name }, teachers };
+}
+
+// changes: [{date, topics: [..], note}] · sign: [{date, on: true|false}]
+// แก้เรื่องที่อบรม/หมายเหตุหลังลงนามแล้ว → ลายเซ็นถูกล้าง ต้องลงนามใหม่
+async function saveHomeroom(env, user, year, grade, room, cal, b) {
+  const okDate = (d) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) fail(400, `วันที่ ${d} ไม่ถูกต้อง`);
+    if (!cal.isSchoolDay(d)) fail(400, `${d} ไม่ใช่วันเรียน`);
+  };
+  const key = [year.id, grade, room];
+  const stmts = [];
+  for (const c of (Array.isArray(b.changes) ? b.changes : []).slice(0, 100)) {
+    const d = String(c.date || ""); okDate(d);
+    const topics = cleanTopics(c.topics);
+    if (topics.length > 20) fail(400, "เลือกได้ไม่เกิน 20 เรื่องต่อวัน");
+    if (topics.some((t) => t.length > HR_TOPIC_MAX)) fail(400, `หัวข้อยาวได้ไม่เกิน ${HR_TOPIC_MAX} ตัวอักษร`);
+    const note = String(c.note ?? "").replace(/\s+/g, " ").trim();
+    if (note.length > 300) fail(400, "หมายเหตุยาวได้ไม่เกิน 300 ตัวอักษร");
+    stmts.push(topics.length || note
+      ? env.DB.prepare(`INSERT INTO gr_homeroom_logs (academic_year_id, grade_level, classroom, log_date, topics, note, updated_by, updated_at) VALUES (?,?,?,?,?,?,?,datetime('now'))
+          ON CONFLICT(academic_year_id, grade_level, classroom, log_date) DO UPDATE SET
+            signed_by = CASE WHEN topics = excluded.topics AND note = excluded.note THEN signed_by END,
+            signed_name = CASE WHEN topics = excluded.topics AND note = excluded.note THEN signed_name END,
+            sign_image = CASE WHEN topics = excluded.topics AND note = excluded.note THEN sign_image END,
+            signed_at = CASE WHEN topics = excluded.topics AND note = excluded.note THEN signed_at END,
+            topics = excluded.topics, note = excluded.note, updated_by = excluded.updated_by, updated_at = datetime('now')`).bind(...key, d, topics.join("\n"), note, user.id)
+      : env.DB.prepare("DELETE FROM gr_homeroom_logs WHERE academic_year_id = ? AND grade_level = ? AND classroom = ? AND log_date = ?").bind(...key, d));
+  }
+  const signs = (Array.isArray(b.sign) ? b.sign : []).slice(0, 100);
+  let sig = null;
+  if (signs.some((s) => s.on)) {
+    sig = await env.DB.prepare("SELECT s.image, u.full_name FROM gr_signatures s JOIN users u ON u.id = s.user_id WHERE s.user_id = ?").bind(user.id).first();
+    if (!sig) fail(400, "ยังไม่ได้ตั้งลายเซ็นอิเล็กทรอนิกส์");
+  }
+  for (const s of signs) {
+    const d = String(s.date || ""); okDate(d);
+    stmts.push(s.on
+      ? env.DB.prepare("UPDATE gr_homeroom_logs SET signed_by = ?, signed_name = ?, sign_image = ?, signed_at = datetime('now') WHERE academic_year_id = ? AND grade_level = ? AND classroom = ? AND log_date = ? AND topics <> ''")
+        .bind(user.id, sig.full_name, sig.image, ...key, d)
+      : env.DB.prepare("UPDATE gr_homeroom_logs SET signed_by = NULL, signed_name = NULL, sign_image = NULL, signed_at = NULL WHERE academic_year_id = ? AND grade_level = ? AND classroom = ? AND log_date = ?").bind(...key, d));
+  }
+  await batchAll(env, stmts);
+  if (stmts.length) await audit(env, user, "homeroom_log.update", { grade, room, changes: stmts.length });
+  return { ok: true, saved: stmts.length };
 }

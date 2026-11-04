@@ -312,3 +312,9 @@
 - ระบบแยก repo `SATTASAI/publicservice` บันทึกตัด/เพิ่มคะแนนพฤติกรรมลง `ps_behavior_records` (D1 เดียวกัน) เริ่มภาคละ 100
 - `assessmentsFor` (src/lib/data.js) เรียก `behaviorScores`: ภาคใดต่ำกว่า 50 → `act_social_o<ภาค>` = "มผ" (คำนวณสด ไม่เขียน gr_assessments) — ปพ.5/ปพ.6/ปพ.1/หน้ากิจกรรม ได้ผลเดียวกัน; ยังไม่มีตาราง = ไม่กระทบ
 - สูตรต้องตรงกับ `foldScore` ใน publicservice/src/lib/schema.js · ทดสอบ: tests/behavior.test.mjs
+
+## กิจกรรมโฮมรูม (4 พ.ย. 2569) — ตาราง gr-27
+- แท็บที่ 6 ใน /logs.html (type=homeroom): 1 แถวต่อวันเรียน · ครั้งที่ = ลำดับวันเรียนในภาค · มาเรียน/ขาด นับจาก gr_attendance (ข ล ป = ขาด) แสดงถึงวันนี้
+- เรื่องที่อบรม: เลือกจากร่าง HOMEROOM_TOPICS (logbook-data.js) + วันสำคัญของเดือน + คลังของครู (gr_homeroom_topic_bank, /api/homeroom/topic-bank) หรือพิมพ์เอง
+- ลายเซ็นอิเล็กทรอนิกส์: วาด/อัปโหลดครั้งเดียว (gr_signatures, /api/homeroom/signature) · ลงนามเก็บสำเนารูป+ชื่อในแถว (gr_homeroom_logs) · แก้เรื่อง/หมายเหตุหลังลงนาม → ล้างลายเซ็น
+- ส่งออก Excel และพิมพ์ PDF (แนวตั้ง) ผ่านปุ่มเดิม

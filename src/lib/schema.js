@@ -6,7 +6,7 @@ import BANK_2569_KINDER from "../data/indicator-bank-2569-kinder.js";
 // ตั้งใจไม่ใส่ FOREIGN KEY ไปยังตารางของระบบบริหารโรงเรียน (users, students, academic_years)
 // เพื่อไม่ให้การลบผู้ใช้/นักเรียนในระบบนั้นล้มเหลวเพราะติดข้อมูลของระบบนี้
 
-export const SCHEMA_VERSION = "gr-26";
+export const SCHEMA_VERSION = "gr-27";
 
 export const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS gr_settings (
@@ -279,6 +279,29 @@ export const SCHEMA_SQL = [
     body TEXT NOT NULL,
     updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (academic_year_id, term_number, student_id, field))`,
+  // gr-27: กิจกรรมโฮมรูม — 1 แถวต่อห้องต่อวันเรียน (topics คั่นด้วยขึ้นบรรทัด) · ลงนามด้วยลายเซ็นอิเล็กทรอนิกส์ (เก็บสำเนารูป ณ เวลาลงนาม)
+  `CREATE TABLE IF NOT EXISTS gr_homeroom_logs (
+    academic_year_id INTEGER NOT NULL,
+    grade_level TEXT NOT NULL,
+    classroom TEXT NOT NULL,
+    log_date TEXT NOT NULL,
+    topics TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    signed_by INTEGER, signed_name TEXT, sign_image TEXT, signed_at TEXT,
+    updated_by INTEGER, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (academic_year_id, grade_level, classroom, log_date))`,
+  // ลายเซ็นอิเล็กทรอนิกส์ของผู้ใช้ (วาดหรืออัปโหลดครั้งเดียว ใช้ซ้ำ) — data URL png/jpeg
+  `CREATE TABLE IF NOT EXISTS gr_signatures (
+    user_id INTEGER PRIMARY KEY,
+    image TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  // หัวข้อโฮมรูมที่ครูบันทึกไว้ใช้ซ้ำ (เสริมจากคลังของระบบ)
+  `CREATE TABLE IF NOT EXISTS gr_homeroom_topic_bank (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, body))`,
 ];
 
 // คอลัมน์ที่เพิ่มหลังเวอร์ชันแรก — เพิ่มเฉพาะที่ยังไม่มี (ALTER TABLE ADD COLUMN ไม่แตะข้อมูลเดิม)
