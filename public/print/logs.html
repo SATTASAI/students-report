@@ -25,13 +25,18 @@
   .logbook .signs { grid-template-columns: 1fr 1fr; margin-top: 6mm; gap: 4mm 14mm; break-inside: avoid; }
   .logbook .sign .line { height: 7mm; }
   .logbook tr { break-inside: avoid; }
+  .logbook table.hr td { height: auto; min-height: 9mm; vertical-align: top; padding: 1mm 1.5mm; }
+  .logbook table.hr td.tp { text-align: left; }
+  .logbook table.hr td.tp ol { margin: 0; padding-left: 5mm; }
+  .logbook table.hr td.sg img { height: 9mm; max-width: 34mm; display: block; margin: 0 auto; }
+  .logbook table.hr td.sg small { font-size: 11pt; }
 </style>
 </head>
 <body>
 <div id="doc"><div class="status">กำลังเตรียมเอกสาร…</div></div>
 <script type="module">
 import { esc, params, get, toolbar, status, td, directorTitleHtml } from "/print/print.js";
-import { LOG_TITLE, LOG_DONE, headerLine, dailyModel, healthModel, weekRange, weekdayOf, dayNum, logColumns } from "/js/logbook-data.js";
+import { LOG_TITLE, LOG_DONE, headerLine, dailyModel, healthModel, weekRange, weekdayOf, dayNum, logColumns, homeroomModel, thaiDate } from "/js/logbook-data.js";
 const p = params();
 const base = new URLSearchParams({ grade: p.get("grade") || "", room: p.get("room") || "" });
 if (p.get("year")) base.set("year", p.get("year"));
@@ -80,7 +85,23 @@ function healthPage(d) {
     ${signs(d)}`;
 }
 
-document.getElementById("doc").innerHTML = pages.map((d) => `<div class="sheet land logbook">${d.type === "health" ? healthPage(d) : dailyPage(d)}</div>`).join("");
+function homeroomPage(d) {
+  const head = `<h1>${LOG_TITLE.homeroom}</h1><div class="sub">${esc(d.school.name)} · ${td(headerLine(d))}</div>`;
+  if (!d.days.length) return `${head}<p class="center" style="margin-top:20mm">เดือนนี้ไม่มีวันเรียน</p>`;
+  const rows = homeroomModel(d);
+  return `${head}
+    <table class="t hr"><colgroup><col style="width:11mm"><col style="width:27mm"><col><col style="width:14mm"><col style="width:12mm"><col style="width:26mm"><col style="width:36mm"></colgroup>
+    <thead><tr><th>ครั้งที่</th><th>วันที่</th><th>เรื่องที่อบรม / ชี้แจง</th><th>มาเรียน<br>(คน)</th><th>ขาด<br>(คน)</th><th>หมายเหตุ</th><th>ลายเซ็น<br>ครูประจำชั้น</th></tr></thead>
+    <tbody>${rows.map((r) => `<tr><td>${td(r.seq)}</td><td>${weekdayOf(r.date)} ${td(thaiDate(r.date))}</td>
+      <td class="tp">${r.topics.length ? `<ol>${r.topics.map((t) => `<li>${esc(t)}</li>`).join("")}</ol>` : ""}</td>
+      <td>${td(r.present)}</td><td>${td(r.absent)}</td><td class="tp">${esc(r.note)}</td>
+      <td class="sg">${r.signed ? `<img src="${esc(r.sign_image)}" alt=""><small>(${esc(r.signed_name)})</small>` : ""}</td></tr>`).join("")}</tbody></table>
+    <div class="legend">นักเรียนทั้งหมด ${td(d.total)} คน · มาเรียน/ขาด จากบันทึกการมาเรียน (ขาด = ขาดเรียน ลากิจ ลาป่วย)</div>
+    ${signs(d)}`;
+}
+
+document.getElementById("doc").innerHTML = pages.map((d) => d.type === "homeroom" ? `<div class="sheet logbook">${homeroomPage(d)}</div>`
+  : `<div class="sheet land logbook">${d.type === "health" ? healthPage(d) : dailyPage(d)}</div>`).join("");
 </script>
 </body>
 </html>

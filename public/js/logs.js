@@ -2,7 +2,7 @@
 // หน้าละ 1 เดือน วันในตารางมาจากปฏิทินวันหยุด · ส่งออก Excel (.xlsx) และพิมพ์/บันทึกเป็น PDF ได้ทั้งเดือนนี้และทั้งปีการศึกษา
 import { shell, api, esc, toast, showError, params, dialog, monthsOfTerm, TERM_LABEL } from "/js/app.js";
 import { loadXlsx } from "/js/export.js";
-import { LOG_FORMS, LOG_TITLE, ABS_LABEL, monthLabel, dayShort, weekdayOf, dayNum, dailyModel, healthModel, weekRange, sheetForMonth, logColumns } from "/js/logbook-data.js";
+import { LOG_FORMS, LOG_TITLE, ABS_LABEL, monthLabel, dayShort, weekdayOf, dayNum, dailyModel, healthModel, weekRange, sheetForMonth, logColumns, HOMEROOM_TOPICS, monthTopics, homeroomModel, thaiDate } from "/js/logbook-data.js";
 
 const me = await shell("logs");
 const view = document.getElementById("view");
@@ -17,7 +17,7 @@ const termMonth = (m) => {
   const now = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
   return now >= a && now <= b ? now : a;
 };
-document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} · ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ และตรวจสุขภาพ — วันในตารางตามปฏิทินวันหยุด`;
+document.getElementById("yearLine").textContent = `ปีการศึกษา ${me.year.year_be} · ดื่มนม แปรงฟัน อาหารกลางวัน เขตรับผิดชอบ ตรวจสุขภาพ และกิจกรรมโฮมรูม — วันในตารางตามปฏิทินวันหยุด`;
 
 let meta;
 // บทบาทครู → เฉพาะห้องที่ตนเป็นครูประจำชั้น · บทบาทวัดผล → ดูทุกห้อง แต่บันทึกได้เฉพาะห้องของตน
@@ -35,7 +35,7 @@ let logType = params().get("type") || sessionStorage.getItem("sr-hr-log") || "mi
 if (!LOG_FORMS.some(([k]) => k === logType)) logType = "milk";
 let month = sessionStorage.getItem("sr-hr-month") || "";
 const pending = new Map(); // "ห้อง|sid|type|date" → "" | 1 | ok | no
-let saving = false, timer, d;
+let saving = false, timer, d, hrBusy = 0;
 const roomQ = (r = room) => { const [g, c] = r.split("/"); return `year=${Y}&grade=${encodeURIComponent(g)}&room=${encodeURIComponent(c)}${SCOPE}`; };
 
 async function load() {
@@ -79,7 +79,7 @@ function showState(err) {
   if (!el) return;
   el.className = "save-state";
   if (err) { el.classList.add("error"); el.innerHTML = `บันทึกไม่สำเร็จ <button class="btn small" id="retry">ลองอีกครั้ง</button>`; document.getElementById("retry").onclick = flush; }
-  else if (saving || pending.size) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
+  else if (saving || pending.size || hrBusy) { el.classList.add("pending"); el.textContent = "กำลังบันทึก…"; }
   else el.textContent = "บันทึกแล้ว";
 }
 
@@ -112,7 +112,7 @@ function draw() {
       </span>
       <span class="save-state" id="saveState">บันทึกแล้ว</span>
     </div>
-    ${d.holidays?.length ? `<p class="muted small" style="margin:0 0 8px">วันหยุดเดือนนี้${logType === "health" ? "" : " (คอลัมน์สีแดง)"}: ${d.holidays.map((h) => `${dayNum(h.holiday_date)} ${esc(h.name)}`).join(" · ")}</p>` : ""}
+    ${d.holidays?.length ? `<p class="muted small" style="margin:0 0 8px">วันหยุดเดือนนี้${logType === "health" || logType === "homeroom" ? "" : " (คอลัมน์สีแดง)"}: ${d.holidays.map((h) => `${dayNum(h.holiday_date)} ${esc(h.name)}`).join(" · ")}</p>` : ""}
     ${d.can_edit ? "" : `<p class="note" style="margin:0 0 8px">ดูอย่างเดียว — บันทึกได้เฉพาะครูประจำชั้นของห้อง ${esc(room)}</p>`}
     <div id="logSheet"></div>`;
   const go = async (m) => { await settle(); month = m; sessionStorage.setItem("sr-hr-month", m); load().catch(showError); };
@@ -126,7 +126,7 @@ function draw() {
   };
   document.getElementById("xlsxBtn").onclick = () => exportXlsx().catch(showError);
   document.getElementById("pdfBtn").onclick = () => printPdf().catch(showError);
-  if (logType === "health") drawHealth(); else drawDaily();
+  if (logType === "health") drawHealth(); else if (logType === "homeroom") drawHomeroom(); else drawDaily();
   if (!d.can_edit) {
     for (const b of view.querySelectorAll("#logSheet .tick, #logSheet .col-all")) b.disabled = true;
     document.getElementById("saveState").hidden = true;
@@ -241,6 +241,155 @@ function drawHealth() {
   });
 }
 
+// ---------- กิจกรรมโฮมรูม: 1 แถวต่อวันเรียน · เลือกหัวข้อจากร่างหรือพิมพ์เอง · ลงนามด้วยลายเซ็นอิเล็กทรอนิกส์ ----------
+async function hrSave(body) {
+  hrBusy++; showState();
+  try { await api(`/api/homeroom/logs?${roomQ()}&type=homeroom`, { method: "PUT", body }); hrBusy--; showState(); return true; }
+  catch (err) { hrBusy--; showState(err); showError(`บันทึกไม่ได้ — ${err.message}`); return false; }
+}
+function drawHomeroom() {
+  const box = document.getElementById("logSheet");
+  if (!d.days.length) { box.innerHTML = `<div class="panel empty"><strong>เดือนนี้ไม่มีวันเรียน</strong>อยู่นอกช่วงภาคเรียน หรือเป็นวันหยุดทั้งเดือน</div>`; return; }
+  const rows = homeroomModel(d), E = d.can_edit;
+  const sigCell = (r) => r.signed
+    ? `<img class="sig" src="${esc(r.sign_image)}" alt="ลายเซ็น ${esc(r.signed_name)}"><small>${esc(r.signed_name)}</small>${E ? `<button type="button" class="btn small ghost" data-unsign="${r.date}" data-tip="ยกเลิกการลงนาม">ยกเลิก</button>` : ""}`
+    : E && r.topics.length ? `<button type="button" class="btn small" data-sign="${r.date}">ลงนาม</button>` : "";
+  box.innerHTML = `
+    ${E ? `<div class="hr-sign-bar"><span>ลายเซ็นของฉัน:</span>${d.my_signature ? `<img class="sig" src="${esc(d.my_signature)}" alt="ลายเซ็นของฉัน">` : `<span class="muted">ยังไม่ได้ตั้งลายเซ็น</span>`}
+      <button type="button" class="btn small" id="sigBtn">${d.my_signature ? "เปลี่ยนลายเซ็น" : "ตั้งลายเซ็น"}</button>
+      <button type="button" class="btn small" id="signAll" ${d.my_signature ? "" : "disabled"}>ลงนามทุกวันที่บันทึกแล้ว</button></div>` : ""}
+    <div class="sheet-wrap"><table class="sheet hr-sheet" id="sheet">
+      <thead><tr><th class="col-head">ครั้งที่</th><th class="col-head">วันที่</th><th class="col-head" style="text-align:left">เรื่องที่อบรม / ชี้แจง</th>
+        <th class="col-head" data-tip="จากบันทึกการมาเรียน (มาสาย = มาเรียน)">มาเรียน</th><th class="col-head" data-tip="ขาด + ลากิจ + ลาป่วย จากบันทึกการมาเรียน">ขาด</th>
+        <th class="col-head">หมายเหตุ</th><th class="col-head">ลายเซ็นครูประจำชั้น</th></tr></thead>
+      <tbody>${rows.map((r) => `<tr data-d="${r.date}" class="${r.date === d.today ? "today" : ""}">
+        <td class="calc">${r.seq}</td><td class="hr-date"><span class="wd">${weekdayOf(r.date)}</span> ${thaiDate(r.date)}</td>
+        <td class="hr-topics">${r.topics.length ? `<ol>${r.topics.map((t) => `<li>${esc(t)}</li>`).join("")}</ol>` : `<span class="muted">—</span>`}
+          ${E ? `<button type="button" class="btn small" data-edit="${r.date}">${r.topics.length ? "แก้ไข" : "+ เลือกเรื่อง"}</button>` : ""}</td>
+        <td class="calc">${r.present}</td><td class="calc">${r.absent}</td>
+        <td>${E ? `<input class="hr-note" data-note="${r.date}" maxlength="300" value="${esc(r.note)}" aria-label="หมายเหตุ ${dayShort(r.date)}">` : esc(r.note)}</td>
+        <td class="hr-sig">${sigCell(r)}</td></tr>`).join("")}</tbody>
+    </table></div>
+    <p class="muted small" style="margin-top:10px">นักเรียนทั้งหมด ${d.total} คน · จำนวนมาเรียน/ขาดดึงจากบันทึกการมาเรียนอัตโนมัติ (แสดงถึงวันนี้) · แก้เรื่องที่อบรมหรือหมายเหตุหลังลงนาม ลายเซ็นจะถูกล้าง ต้องลงนามใหม่</p>`;
+  if (!E) return;
+  const entry = (date) => (d.entries[date] ||= { topics: [], note: "" });
+  const reload = () => load().catch(showError);
+  box.querySelector("#sigBtn").onclick = () => editSignature().then((ch) => ch && reload());
+  box.querySelector("#signAll").onclick = async () => {
+    const list = rows.filter((r) => r.topics.length && !r.signed).map((r) => ({ date: r.date, on: true }));
+    if (!list.length) return toast("ไม่มีวันที่รอลงนาม");
+    if (await hrSave({ sign: list })) reload();
+  };
+  box.addEventListener("click", async (e) => {
+    const ed = e.target.closest("[data-edit]");
+    if (ed) {
+      const date = ed.dataset.edit, cur = entry(date);
+      const topics = await pickTopics(date, cur.topics);
+      if (topics && await hrSave({ changes: [{ date, topics, note: cur.note || "" }] })) reload();
+      return;
+    }
+    const sg = e.target.closest("[data-sign]");
+    if (sg) { if (!d.my_signature) { if (await editSignature()) reload(); return; } if (await hrSave({ sign: [{ date: sg.dataset.sign, on: true }] })) reload(); return; }
+    const us = e.target.closest("[data-unsign]");
+    if (us && await hrSave({ sign: [{ date: us.dataset.unsign, on: false }] })) reload();
+  });
+  box.addEventListener("change", async (e) => {
+    const n = e.target.closest("[data-note]"); if (!n) return;
+    const date = n.dataset.note, cur = entry(date);
+    if ((cur.note || "") === n.value.trim()) return;
+    if (await hrSave({ changes: [{ date, topics: cur.topics, note: n.value }] })) reload();
+  });
+}
+
+// กล่องเลือกเรื่องที่อบรม: แตะหัวข้อร่างเพื่อเพิ่ม/เอาออก หรือพิมพ์เอง (1 บรรทัด = 1 เรื่อง)
+async function pickTopics(date, current) {
+  let own = d.own_topics || [];
+  const chip = (t, ownId) => `<button type="button" class="hr-chip" data-t="${esc(t)}">${esc(t)}${ownId ? `<span class="x" data-del="${ownId}" aria-label="ลบออกจากคลัง">×</span>` : ""}</button>`;
+  const groups = () => [
+    ...(monthTopics(d).length ? [["วันสำคัญเดือนนี้", monthTopics(d).map((t) => chip(t))]] : []),
+    ...(own.length ? [["คลังของฉัน", own.map((o) => chip(o.body, o.id))]] : []),
+    ...HOMEROOM_TOPICS.map(([g, list]) => [g, list.map((t) => chip(t))]),
+  ].map(([g, cs]) => `<div class="hr-group"><b>${esc(g)}</b><div>${cs.join("")}</div></div>`).join("");
+  const r = await dialog({
+    title: `เรื่องที่อบรม / ชี้แจง — ${weekdayOf(date)} ${thaiDate(date)}`, wide: true, okText: "บันทึก",
+    body: `<label class="field"><span>เรื่องที่อบรม (1 บรรทัด = 1 เรื่อง — แตะหัวข้อด้านล่างเพื่อเพิ่ม/เอาออก หรือพิมพ์เองก็ได้)</span>
+        <textarea name="topics" rows="4" id="hrText">${esc(current.join("\n"))}</textarea></label>
+      <label class="check"><input type="checkbox" name="keep"> เก็บเรื่องที่พิมพ์เองไว้ในคลังของฉัน (ใช้ซ้ำวันอื่น)</label>
+      <div id="hrBank" class="hr-bank">${groups()}</div>`,
+    onOpen: (dlg) => {
+      const ta = dlg.querySelector("#hrText"), bank = dlg.querySelector("#hrBank");
+      const lines = () => ta.value.split("\n").map((x) => x.trim()).filter(Boolean);
+      const mark = () => { const set = new Set(lines()); for (const b of bank.querySelectorAll(".hr-chip")) b.classList.toggle("on", set.has(b.dataset.t)); };
+      bank.addEventListener("click", async (e) => {
+        const del = e.target.closest("[data-del]");
+        if (del) {
+          e.stopPropagation();
+          try { own = (await api(`/api/homeroom/topic-bank/${del.dataset.del}`, { method: "DELETE" })).own; d.own_topics = own; bank.innerHTML = groups(); mark(); } catch (err) { showError(err); }
+          return;
+        }
+        const b = e.target.closest(".hr-chip"); if (!b) return;
+        const L = lines(), t = b.dataset.t;
+        ta.value = (L.includes(t) ? L.filter((x) => x !== t) : [...L, t]).join("\n");
+        mark();
+      });
+      ta.addEventListener("input", mark);
+      mark();
+    },
+  });
+  if (!r.ok) return null;
+  const topics = [...new Set(String(r.data.topics || "").split("\n").map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean))];
+  if (r.data.keep) {
+    const known = new Set([...HOMEROOM_TOPICS.flatMap(([, l]) => l), ...monthTopics(d), ...own.map((o) => o.body)]);
+    for (const t of topics.filter((x) => !known.has(x))) {
+      try { d.own_topics = (await api("/api/homeroom/topic-bank", { method: "POST", body: { body: t } })).own; } catch (err) { showError(err); break; }
+    }
+  }
+  return topics;
+}
+
+// ตั้งลายเซ็น: วาดบนจอ (นิ้ว/เมาส์/ปากกา) หรืออัปโหลดรูป → เก็บไว้ใช้ลงนามซ้ำ
+async function editSignature() {
+  const W = 480, H = 180;
+  let dirty = false, cv;
+  const r = await dialog({
+    title: "ลายเซ็นอิเล็กทรอนิกส์", okText: "บันทึกลายเซ็น",
+    body: `<p class="muted small" style="margin:0 0 8px">เซ็นในกรอบด้านล่าง หรืออัปโหลดรูปลายเซ็น (พื้นขาว) — ใช้ลงนามในแบบบันทึกกิจกรรมโฮมรูม</p>
+      <canvas id="sigPad" width="${W}" height="${H}" class="sig-pad"></canvas>
+      <div class="actions" style="margin-top:8px">
+        <button type="button" class="btn small" id="sigClear">ล้าง</button>
+        <label class="btn small">อัปโหลดรูป<input type="file" id="sigFile" accept="image/png,image/jpeg" hidden></label>
+        ${d.my_signature ? `<button type="button" class="btn small danger" id="sigDel">ลบลายเซ็นของฉัน</button>` : ""}
+      </div>`,
+    onOpen: (dlg) => {
+      cv = dlg.querySelector("#sigPad");
+      const ctx = cv.getContext("2d");
+      const blank = () => { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H); };
+      blank();
+      if (d.my_signature) { const im = new Image(); im.onload = () => ctx.drawImage(im, 0, 0, W, H); im.src = d.my_signature; }
+      const pos = (e) => { const b = cv.getBoundingClientRect(); return [(e.clientX - b.left) * W / b.width, (e.clientY - b.top) * H / b.height]; };
+      let down = false;
+      cv.addEventListener("pointerdown", (e) => { down = true; dirty = true; cv.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.moveTo(...pos(e)); });
+      cv.addEventListener("pointermove", (e) => { if (!down) return; ctx.lineWidth = 3; ctx.lineCap = ctx.lineJoin = "round"; ctx.strokeStyle = "#0d1b6e"; ctx.lineTo(...pos(e)); ctx.stroke(); });
+      cv.addEventListener("pointerup", () => { down = false; });
+      dlg.querySelector("#sigClear").onclick = () => { blank(); dirty = true; };
+      dlg.querySelector("#sigFile").onchange = (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        const im = new Image();
+        im.onload = () => { blank(); const k = Math.min(W / im.width, H / im.height); ctx.drawImage(im, (W - im.width * k) / 2, (H - im.height * k) / 2, im.width * k, im.height * k); dirty = true; URL.revokeObjectURL(im.src); };
+        im.src = URL.createObjectURL(f);
+      };
+      dlg.querySelector("#sigDel")?.addEventListener("click", async () => {
+        try { await api("/api/homeroom/signature", { method: "DELETE" }); d.my_signature = null; toast("ลบลายเซ็นแล้ว"); dlg.close(); load().catch(showError); } catch (err) { showError(err); }
+      });
+    },
+  });
+  if (!r.ok || !dirty) return false;
+  try {
+    const res = await api("/api/homeroom/signature", { method: "PUT", body: { image: cv.toDataURL("image/png") } });
+    d.my_signature = res.image; toast("บันทึกลายเซ็นแล้ว"); return true;
+  } catch (err) { showError(err); return false; }
+}
+
 // ---------- ส่งออก Excel / พิมพ์ PDF ----------
 async function pickScope(title) {
   const r = await dialog({
@@ -248,7 +397,7 @@ async function pickScope(title) {
     body: `<div style="display:grid;gap:10px">
       <label class="check"><input type="radio" name="scope" value="month" checked> เดือนนี้ (${monthLabel(d.month)})</label>
       <label class="check"><input type="radio" name="scope" value="year"> ทั้ง${TERM_LABEL[T]} (${d.months.length} เดือน)</label>
-      <label class="check"><input type="checkbox" name="all"> ทั้ง 5 แบบบันทึก (ไม่ใช่เฉพาะ${LOG_TITLE[logType].replace("แบบบันทึก", "")})</label></div>`,
+      <label class="check"><input type="checkbox" name="all"> ทั้ง ${LOG_FORMS.length} แบบบันทึก (ไม่ใช่เฉพาะ${LOG_TITLE[logType].replace("แบบบันทึก", "")})</label></div>`,
     okText: "ตกลง",
   });
   if (!r.ok) return null;

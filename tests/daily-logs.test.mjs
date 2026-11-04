@@ -221,3 +221,45 @@ test("บันทึกประจำวัน 4 แบบ: ตารางม
     });
   }
 });
+
+test("กิจกรรมโฮมรูม: บันทึกเรื่องที่อบรม นับมา/ขาดจากบันทึกการมาเรียน ลงนามด้วยลายเซ็น แก้แล้วลายเซ็นถูกล้าง", async () => {
+  const { call } = await setup();
+  const SIG = "data:image/png;base64,iVBORw0KGgo=";
+  const H = `/api/homeroom/logs?${Q}&type=homeroom`;
+  const sid = (await call("t1", "GET", `/api/homeroom?${Q}`, null, { expect: 200 })).data.students[0].id;
+  await call("t1", "PUT", `/api/homeroom/attendance?${Q}`, { changes: [{ student_id: sid, date: "2026-11-03", code: "ข" }] }, { expect: 200 });
+  let g = (await call("t1", "GET", `${H}&month=2026-11`, null, { expect: 200 })).data;
+  assert.equal(g.type, "homeroom");
+  assert.equal(g.seq["2026-11-03"], g.seq["2026-11-02"] + 1); // ครั้งที่ = ลำดับวันเรียนในภาคเรียน
+  assert.equal(g.counts["2026-11-03"].absent, 1);
+  assert.equal(g.counts["2026-11-03"].present, g.total - 1);
+  await call("t1", "PUT", H, { changes: [{ date: "2026-11-03", topics: ["การแต่งกายให้ถูกระเบียบ", " เรื่องที่พิมพ์เอง ", "การแต่งกายให้ถูกระเบียบ"], note: "ฝนตก" }] }, { expect: 200 });
+  await call("t1", "PUT", H, { changes: [{ date: "2026-11-07", topics: ["x"] }] }, { expect: 400 }); // วันเสาร์
+  await call("t1", "PUT", H, { sign: [{ date: "2026-11-03", on: true }] }, { expect: 400 }); // ยังไม่มีลายเซ็น
+  await call("t1", "PUT", "/api/homeroom/signature", { image: "javascript:alert(1)" }, { expect: 400 });
+  assert.equal((await call("t1", "PUT", "/api/homeroom/signature", { image: SIG }, { expect: 200 })).data.image, SIG);
+  await call("t1", "PUT", H, { sign: [{ date: "2026-11-03", on: true }] }, { expect: 200 });
+  g = (await call("t1", "GET", `${H}&month=2026-11`, null, { expect: 200 })).data;
+  const e = g.entries["2026-11-03"];
+  assert.deepEqual(e.topics, ["การแต่งกายให้ถูกระเบียบ", "เรื่องที่พิมพ์เอง"]);
+  assert.equal(e.note, "ฝนตก");
+  assert.equal(e.sign_image, SIG);
+  assert.ok(e.signed_name);
+  // บันทึกค่าเดิม → ลายเซ็นยังอยู่ · แก้ → ลายเซ็นถูกล้าง
+  await call("t1", "PUT", H, { changes: [{ date: "2026-11-03", topics: e.topics, note: "ฝนตก" }] }, { expect: 200 });
+  assert.ok((await call("t1", "GET", `${H}&month=2026-11`, null, { expect: 200 })).data.entries["2026-11-03"].signed_by);
+  await call("t1", "PUT", H, { changes: [{ date: "2026-11-03", topics: [...e.topics, "เพิ่ม"], note: "ฝนตก" }] }, { expect: 200 });
+  assert.equal((await call("t1", "GET", `${H}&month=2026-11`, null, { expect: 200 })).data.entries["2026-11-03"].signed_by, null);
+  // ครูห้องอื่นบันทึกไม่ได้ · ผู้ดูแลดูได้อย่างเดียว
+  await call("t2", "PUT", H, { changes: [{ date: "2026-11-04", topics: ["x"] }] }, { expect: 403 });
+  const a = (await call("admin", "GET", `${H}&month=2026-11`, null, { expect: 200 })).data;
+  assert.equal(a.can_edit, false); assert.equal(a.my_signature, null);
+  await call("admin", "PUT", H, { changes: [{ date: "2026-11-04", topics: ["x"] }] }, { expect: 403 });
+  // คลังหัวข้อของครู
+  const own = (await call("t1", "POST", "/api/homeroom/topic-bank", { body: "  หัวข้อ  ของฉัน " }, { expect: 200 })).data.own;
+  assert.deepEqual(own.map((o) => o.body), ["หัวข้อ ของฉัน"]);
+  assert.deepEqual((await call("t1", "DELETE", `/api/homeroom/topic-bank/${own[0].id}`, null, { expect: 200 })).data.own, []);
+  // ล้างทั้งแถว
+  await call("t1", "PUT", H, { changes: [{ date: "2026-11-03", topics: [], note: "" }] }, { expect: 200 });
+  assert.deepEqual((await call("t1", "GET", `${H}&month=2026-11`, null, { expect: 200 })).data.entries, {});
+});
