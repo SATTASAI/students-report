@@ -127,6 +127,7 @@ const MI = {
   bank: I('<path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/>'),
   gear: I('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   check: I('<path d="M20 6L9 17l-5-5"/>'),
+  smile: I('<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/>'),
   doc: I('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>'),
   key: I('<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>'),
   save: I('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/>'),
@@ -162,6 +163,7 @@ function roleMenu(role, me) {
     // กิจกรรมพัฒนาผู้เรียน (ปพ.5.1) มีเฉพาะ ป.1–6 — ครูประจำชั้นอนุบาลไม่เห็นเมนูที่เปิดแล้วว่าง
     ...(me.homerooms.some((h) => /^ป\./.test(h.grade_level)) ? [{ href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" }] : []),
     ...(me.homerooms.length ? [{ href: "/logs.html", icon: "list", label: "บันทึกประจำวัน" }, { href: "/calendar.html", icon: "clock", label: "ปฏิทินวันหยุด" }] : []),
+    { href: "https://publicservice.banpadengschool.ac.th/", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   if (role === "measure") return [
@@ -182,6 +184,7 @@ function roleMenu(role, me) {
     { href: "/admin.html#parent", icon: "people", label: "ระบบผู้ปกครอง" },
     { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
     { href: "/sar.html", icon: "award", label: "ข้อมูล SAR" },
+    { href: "https://publicservice.banpadengschool.ac.th/", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   if (role === "viewer") return [
@@ -194,6 +197,7 @@ function roleMenu(role, me) {
     { href: "/admin.html#approve", icon: "check", label: "อนุมัติผลการเรียน" },
     { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
     { href: "/sar.html", icon: "award", label: "ข้อมูล SAR" },
+    { href: "https://publicservice.banpadengschool.ac.th/", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
   return [
@@ -202,6 +206,7 @@ function roleMenu(role, me) {
     { href: "/admin.html#sync", icon: "upload", label: "ดึงข้อมูลจากระบบทะเบียน" },
     { href: "/admin.html#audit", icon: "clock", label: "ประวัติการใช้งาน" },
     { href: "/admin.html#backup", icon: "save", label: "สำรองและกู้คืนข้อมูล" },
+    { href: "https://publicservice.banpadengschool.ac.th/", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
 }
@@ -303,7 +308,7 @@ export async function shell(active) {
   me.role = role;
   if (EMBED) { embedShell(me, termPage); return me; }
 
-  const drawMenu = () => roleMenu(role, me).map((m) => `<a href="${m.href}" class="nav-item" ${sameItem(m.href) ? 'aria-current="page"' : ""}>${MI[m.icon]}<span>${esc(m.label)}</span></a>`).join("");
+  const drawMenu = () => roleMenu(role, me).map((m) => `<a href="${m.href}" class="nav-item" ${m.ext ? 'target="_blank" rel="noopener"' : sameItem(m.href) ? 'aria-current="page"' : ""}>${MI[m.icon]}<span>${esc(m.label)}</span></a>`).join("");
   const side = document.createElement("aside");
   side.className = "sidebar";
   side.id = "sidebar";
