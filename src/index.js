@@ -16,6 +16,7 @@ import { handleCalendar } from "./routes/calendar.js";
 import { applySecurityHeaders } from "./lib/auth-sessions.js";
 import { handleActivity } from "./routes/usage.js";
 import { parentPp6 } from "./routes/parent.js";
+import { ssoPublicservice } from "./routes/sso.js";
 
 // header ความปลอดภัยชุดเดียวกับระบบบริหารโรงเรียน (HSTS, CSP, nosniff, กันการฝังหน้าเว็บ) — ดู src/lib/auth-sessions.js
 const withHeaders = (response) => applySecurityHeaders(response);
@@ -38,6 +39,7 @@ async function routeApi(request, env, url) {
   const user = await currentUser(request, env);
   // สัญญาณเวลาใช้งาน (ทุกบทบาท รวมผู้ชมภายนอก) — รายงานดูได้ที่ระบบบริหารโรงเรียน เมนู การเข้าใช้งาน
   if (parts[1] === "activity") return handleActivity(request, env, user, parts, method);
+  if (parts[1] === "sso" && parts[2] === "publicservice" && method === "GET") return ssoPublicservice(env, user);
   if (user?.role === "viewer" && !viewerMayAccess(method, url.pathname)) {
     return json({ error: "บัญชีผู้ชมภายนอกดูได้อย่างเดียว ไม่สามารถใช้งานส่วนนี้ได้", code: "VIEWER_READ_ONLY" }, 403);
   }
