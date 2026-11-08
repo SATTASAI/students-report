@@ -1,5 +1,6 @@
 // ระบบรายงานผลการเรียน โรงเรียนบ้านป่าเด็ง (ป.1–ป.6)
 // Worker เดียว + static assets; ใช้ D1 และบัญชีผู้ใช้ร่วมกับ banpadeng-school-db
+import {handleSchoolPasskeys} from './routes/passkeys.js';
 import { json, HttpError, currentUser, viewerMayAccess } from "./lib/http.js";
 import { ensureSchema } from "./lib/schema.js";
 import { login, logout } from "./routes/auth.js";
@@ -31,6 +32,7 @@ async function routeApi(request, env, url) {
     if (origin && origin !== url.origin) return json({ error: "คำขอไม่ได้มาจากหน้าเว็บของระบบ" }, 403);
   }
 
+  if(url.pathname.startsWith("/api/passkeys"))return handleSchoolPasskeys(request,env);
   if (parts[1] === "auth" && parts[2] === "login" && method === "POST") return login(request, env);
   if (parts[1] === "auth" && parts[2] === "logout" && method === "POST") return logout(request, env);
   // ผู้ปกครอง/บุคคลภายนอกดู ปพ.6 ด้วยเลขบัตรประชาชน + วันเกิด (ไม่ต้องเข้าสู่ระบบ)
