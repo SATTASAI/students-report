@@ -38,7 +38,7 @@ for (const vp of [{ width: 1400, height: 900 }, { width: 390, height: 800 }]) {
   const t = await login("teacher1@test.local", vp);
   const mobile = vp.width < 1024;
   await t.evaluate(() => { window.__sameDoc = 1; });
-  const openMenu = async () => { if (mobile) await t.click("#menuBtn"); };
+  const openMenu = async () => { if (mobile) await t.click(".bb-more"); };
   // หน้าแรกเป็นหน้ารายภาค → มีสีภาค
   check(await t.evaluate(() => document.documentElement.dataset.term), `${vp.width}: หน้าแรกไม่มีสีภาค`);
   await openMenu();

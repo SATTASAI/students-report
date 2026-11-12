@@ -58,7 +58,7 @@ for (const [name, vp] of [["tablet", { width: 820, height: 1180 }], ["mobile", {
     if (box > 1) errors.push(`${name}: เมนูควรซ่อนอยู่`);
   }
   await m.screenshot({ path: `${OUT}/${name}-closed.png` });
-  await m.click("#menuBtn");
+  await m.click(".bb-more");
   await m.waitForTimeout(300);
   await m.screenshot({ path: `${OUT}/${name}-open.png` });
   await m.click('.side-nav a[href="/admin.html#subjects"]');
