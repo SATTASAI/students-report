@@ -31,13 +31,20 @@ export function mountAppBar({ tabs, icons, esc, side, setOpen, go }) {
   const bar = document.createElement("nav");
   bar.className = "bbar";
   bar.setAttribute("aria-label", "เมนูหลัก");
-  bar.innerHTML = `<span class="bb-pill" aria-hidden="true"></span>${tabs.map((t, i) => `<a class="bb-item" href="${t.href}" data-i="${i}">${icons[t.icon]}<span>${esc(t.short || t.label)}</span></a>`).join("")}
+  bar.innerHTML = `<span class="bb-pill" aria-hidden="true"></span><span class="bb-tabs"></span>
     <button type="button" class="bb-item bb-more" aria-controls="sidebar" aria-expanded="false">${icons.menu}<span>เพิ่มเติม</span></button>`;
   document.body.append(bar);
   document.body.classList.add("has-bbar");
   const pill = bar.querySelector(".bb-pill");
-  const items = [...bar.querySelectorAll("a.bb-item")];
   const more = bar.querySelector(".bb-more");
+  let items = [];
+  // วาดแท็บใหม่ (เมื่อสลับบทบาท/ปีการศึกษา) — ไม่สร้างแถบใหม่ทั้งแถบ
+  const setTabs = (next) => {
+    tabs = next;
+    bar.querySelector(".bb-tabs").innerHTML = tabs.map((t, i) => `<a class="bb-item" href="${t.href}" data-i="${i}">${icons[t.icon]}<span>${esc(t.short || t.label)}</span></a>`).join("");
+    items = [...bar.querySelectorAll("a.bb-item")];
+    update();
+  };
 
   const update = () => {
     const i = tabIndex(tabs, new URL(location.href));
@@ -46,7 +53,7 @@ export function mountAppBar({ tabs, icons, esc, side, setOpen, go }) {
     pill.classList.toggle("on", !!el);
     if (el) { pill.style.width = `${el.offsetWidth}px`; pill.style.transform = `translateX(${el.offsetLeft}px)`; }
   };
-  update();
+  setTabs(tabs);
   requestAnimationFrame(update);
   addEventListener("resize", update);
 
@@ -78,7 +85,7 @@ export function mountAppBar({ tabs, icons, esc, side, setOpen, go }) {
     requestAnimationFrame(update);
     return true;
   };
-  return { update, swipe };
+  return { update, swipe, setTabs };
 }
 
 function dragToClose(sheet, close) {

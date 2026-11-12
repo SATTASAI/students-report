@@ -64,8 +64,11 @@ export function withTerm(path, t) {
   if (validTerm(t)) u.searchParams.set("term", t);
   return u.pathname + u.search + u.hash;
 }
-// สลับภาค: จำไว้แล้วโหลดหน้าเดิมใหม่ด้วย ?term= ใหม่ (หน้าที่มีข้อมูลรอบันทึกจะถามก่อนออกเอง)
+// สลับภาค: ถ้ามีโครงหน้า (เมนูอยู่กับที่) โหลดใหม่เฉพาะเนื้อหา ไม่กระพริบ
+// ไม่เช่นนั้นจำไว้แล้วโหลดหน้าเดิมใหม่ด้วย ?term= ใหม่ (หน้าที่มีข้อมูลรอบันทึกจะถามก่อนออกเอง)
 export function switchTerm(t) {
+  const soft = EMBED ? HOST.soft : window.__srShell?.soft;
+  if (soft) { soft({ term: t }); return; }
   rememberTerm(t);
   const u = new URL(location.href);
   u.searchParams.set("term", t);
@@ -317,6 +320,7 @@ export async function shell(active) {
   if (EMBED) { embedShell(me, termPage); return me; }
   registerSW();
 
+  let tabs = [];
   const drawMenu = () => roleMenu(role, me).map((m) => `<a href="${m.href}" class="nav-item" ${m.ext ? 'target="_blank" rel="noopener"' : sameItem(m.href) ? 'aria-current="page"' : ""}>${MI[m.icon]}<span>${esc(m.label)}</span></a>`).join("");
   const side = document.createElement("aside");
   side.className = "sidebar";
@@ -334,7 +338,7 @@ export async function shell(active) {
     </div>
     <nav class="side-nav" id="sideNav" aria-label="เมนู">${drawMenu()}</nav>
     <div class="side-foot"><div class="who-box"><span class="avatar">${esc((me.user.full_name || "?").replace(/^(นางสาว|นาง|นาย|ครู)/, "").trim().slice(0, 1))}</span>
-      <span><b>${esc(me.user.full_name)}</b><small>${esc(ROLES[role].label)}</small></span></div>
+      <span><b>${esc(me.user.full_name)}</b><small id="whoRole">${esc(ROLES[role].label)}</small></span></div>
       ${role === "viewer" ? `<div class="small muted" style="padding:6px 10px">บัญชีผู้ชมภายนอก ดูได้อย่างเดียว · ซ่อนชื่อนักเรียน</div>` : `<a class="nav-item" href="https://system.banpadengschool.ac.th/account.html#devices" target="_blank" rel="noopener" title="ดูและออกจากระบบอุปกรณ์ที่ใช้บัญชีนี้ (เปิดในระบบบริหารโรงเรียน)">${MI.lock}<span>อุปกรณ์และความปลอดภัย</span></a>`}
       <button class="nav-item" id="logoutBtn">${MI.out}<span>ออกจากระบบ</span></button></div>`;
   const mbar = document.createElement("header");
@@ -357,6 +361,7 @@ export async function shell(active) {
   const redrawMenu = () => { side.querySelector("#sideNav").innerHTML = drawMenu(); appBar?.update(); };
   window.addEventListener("hashchange", redrawMenu);
   side.querySelector("#roleSel").onchange = (e) => {
+    if (nav) { soft({ role: e.target.value }); return; }
     try { localStorage.setItem("sr-role", e.target.value); } catch { /* */ }
     const href = roleMenu(e.target.value, me)[0].href;
     // หน้าเดียวกัน (ต่างแค่ #) เบราว์เซอร์จะไม่โหลดใหม่ → ต้องโหลดเองเพื่อวาดเมนูของบทบาทใหม่
@@ -364,6 +369,7 @@ export async function shell(active) {
     else location.href = href;
   };
   side.querySelector("#yearSel").onchange = (e) => {
+    if (nav) { soft({ year: e.target.value }); return; }
     rememberYear(e.target.value);
     const u = new URL(location.href);
     u.searchParams.set("year", e.target.value);
@@ -371,14 +377,69 @@ export async function shell(active) {
   };
   side.querySelector("#logoutBtn").onclick = logout;
   // กดสวิตช์: เลื่อนปุ่มให้เห็นก่อน แล้วโหลดหน้าเดิมในภาคเรียนใหม่
-  const flip = (el) => { el.setAttribute("aria-checked", String(me.term === 1)); el.classList.add("moving"); setTimeout(() => switchTerm(me.term === 1 ? 2 : 1), 180); };
+  const flip = (el) => {
+    if (nav) { soft({ term: me.term === 1 ? 2 : 1 }); return; }
+    el.setAttribute("aria-checked", String(me.term === 1)); el.classList.add("moving"); setTimeout(() => switchTerm(me.term === 1 ? 2 : 1), 180);
+  };
+  // อัปเดตสวิตช์ภาคทุกอัน (เมนูซ้าย + แถบบนมือถือ) ให้ตรงกับภาคปัจจุบัน
+  const paintTerm = () => {
+    for (const el of document.querySelectorAll(".term-toggle")) {
+      el.classList.remove("moving");
+      el.setAttribute("aria-checked", String(me.term === 2));
+      el.setAttribute("aria-label", `ภาคเรียน: ตอนนี้ภาคเรียนที่ ${me.term} — กดเพื่อสลับไปภาคเรียนที่ ${me.term === 1 ? 2 : 1}`);
+      const [a, b] = el.querySelectorAll(".tt-label");
+      a.classList.toggle("on", me.term === 1); b.classList.toggle("on", me.term === 2);
+    }
+    if (document.documentElement.dataset.term) document.documentElement.dataset.term = String(me.term);
+  };
+  // สลับภาค/บทบาท/ปีการศึกษาแบบไม่โหลดทั้งหน้า: เมนูอยู่กับที่ โหลดใหม่เฉพาะเนื้อหา
+  let switching = false;
+  async function soft({ term, role: newRole, year }) {
+    if (switching) return;
+    switching = true;
+    const roleSel = side.querySelector("#roleSel"), yearSel = side.querySelector("#yearSel");
+    try {
+      if (!(await nav.leaveOk())) { roleSel.value = role; yearSel.value = String(me.year.id); return; }
+      setOpen(false);
+      let target = new URL(location.href);
+      if (term) {
+        me.term = term;
+        rememberTerm(term);
+        target.searchParams.set("term", term);
+        paintTerm();
+      }
+      if (year) {
+        let next;
+        try { next = await api(`/api/me?year=${encodeURIComponent(year)}`); } catch (err) { yearSel.value = String(me.year.id); showError(err); return; }
+        next.term = me.term; next.role = role;
+        me = next;
+        rememberYear(me.year.id);
+        target.searchParams.set("year", me.year.id);
+        if (target.pathname === "/course.html") target = new URL(withYear(roleMenu(role, me)[0].href, me.year.id), location.href);
+      }
+      if (newRole) {
+        role = newRole;
+        me.role = role;
+        try { localStorage.setItem("sr-role", role); } catch { /* */ }
+        target = new URL(roleMenu(role, me)[0].href, location.href);
+        side.querySelector("#whoRole").textContent = ROLES[role].label;
+        mbar.querySelector(".role-chip").textContent = ROLES[role].short;
+      }
+      if (newRole || year) {
+        tabs = mobileTabs(roleMenu(role, me));
+        appBar.setTabs(tabs);
+      }
+      await nav.go(target.href, { force: true, skipCheck: true, push: !term || !!(newRole || year), dir: 0 });
+      redrawMenu();
+    } finally { switching = false; }
+  }
   mbar.querySelector(".role-chip").insertAdjacentHTML("beforebegin", termToggle("mini"));
   for (const el of document.querySelectorAll(".term-toggle")) el.onclick = () => flip(el);
-  const tabs = mobileTabs(roleMenu(role, me));
-  const nav = frameNav({ side, mbar, redrawMenu, term: me.term, tabs });
+  tabs = mobileTabs(roleMenu(role, me));
+  const nav = frameNav({ side, mbar, redrawMenu, getTerm: () => me.term, getTabs: () => tabs });
   // มือถือ: แถบเมนูล่าง + เมนูเพิ่มเติมแบบ sheet + ปัดสลับแท็บ/ดึงลงรีเฟรช
   appBar = mountAppBar({ tabs, icons: MI, esc, side, setOpen, go: nav?.go });
-  window.__srShell = Object.assign(window.__srShell || {}, { swipe: appBar.swipe });
+  window.__srShell = Object.assign(window.__srShell || {}, { swipe: appBar.swipe }, nav ? { soft } : {});
   gestures({ onSwipe: appBar.swipe, onRefresh: () => location.reload() });
   // แถบสีบอกภาคเรียนที่กำลังทำงาน (สีเดียวกับการ์ดภาคเรียนในหน้าแรก)
   if (termPage) termBand(me);
@@ -424,18 +485,18 @@ function embedShell(me, termPage) {
 // ---------- หน้าต่างหลัก: กดเมนูแล้วโหลดเฉพาะเนื้อหาใน iframe (เมนูซ้ายอยู่กับที่ ไม่กระพริบ) ----------
 // หน้าแรกที่เปิดยังแสดงตามปกติ เมื่อไปหน้าอื่นจะซ่อนไว้แล้วแสดง iframe แทน
 // iframe ใหม่ซ่อนไว้จนเนื้อหาพร้อม แล้วจึงสลับกับอันเดิม · สลับบทบาท/ปี/ภาค ยังโหลดทั้งหน้า
-function frameNav({ side, mbar, redrawMenu, term, tabs = [] }) {
+function frameNav({ side, mbar, redrawMenu, getTerm, getTabs }) {
   // ปิดได้ด้วย localStorage "sr-full-nav" = "1" (กลับไปโหลดทั้งหน้าแบบเดิม — ใช้ในชุดทดสอบหน้าเว็บเดิม)
   try { if (localStorage.getItem("sr-full-nav") === "1") return; } catch { /* */ }
   let frame = null, pending = null;
   const key = (l) => l.pathname + l.search;
   const setTermMode = (on) => {
-    if (on) document.documentElement.dataset.term = String(term); else delete document.documentElement.dataset.term;
+    if (on) document.documentElement.dataset.term = String(getTerm()); else delete document.documentElement.dataset.term;
     document.body.classList.toggle("term-mode", !!on);
   };
   const fitTop = () => document.documentElement.style.setProperty("--mbar-h", `${mbar.offsetHeight}px`);
   // ทิศทางของการเลื่อนหน้า: ไปแท็บทางขวา = เลื่อนเข้าจากขวา · ย้อนกลับ = จากซ้าย
-  const dirFor = (u) => { const a = tabIndex(tabs, new URL(location.href)), b = tabIndex(tabs, u); return a >= 0 && b >= 0 && b < a ? -1 : 1; };
+  const dirFor = (u) => { const tabs = getTabs(), a = tabIndex(tabs, new URL(location.href)), b = tabIndex(tabs, u); return a >= 0 && b >= 0 && b < a ? -1 : 1; };
   const bar = document.createElement("div");
   bar.className = "sr-progress";
   document.body.append(bar);
@@ -453,7 +514,13 @@ function frameNav({ side, mbar, redrawMenu, term, tabs = [] }) {
     const old = frame;
     frame = f;
     f.classList.remove("loading");
-    if (f.dataset.dir && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (f.dataset.dir === "0" && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      // สลับภาค/บทบาท/ปี: เนื้อหาใหม่ค่อยๆ ปรากฏแทนของเดิม (ไม่เลื่อน)
+      f.classList.add("enter-fade");
+      const done = () => { f.classList.remove("enter-fade"); old?.remove(); };
+      f.addEventListener("animationend", done, { once: true });
+      setTimeout(done, 400);
+    } else if (f.dataset.dir && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
       f.classList.add(f.dataset.dir === "-1" ? "enter-back" : "enter");
       const done = () => { f.classList.remove("enter", "enter-back"); old?.remove(); };
       f.addEventListener("animationend", done, { once: true });
@@ -471,15 +538,15 @@ function frameNav({ side, mbar, redrawMenu, term, tabs = [] }) {
     };
     tick();
   };
-  async function go(href, { push = true, dir } = {}) {
+  async function go(href, { push = true, dir, force = false, skipCheck = false } = {}) {
     const u = new URL(href, location.href);
     if (u.origin !== location.origin) { location.href = u.href; return; }
     const cur = frame ? frame.contentWindow : window;
-    if (!pending && key(u) === key(cur.location)) { // หน้าเดิม เปลี่ยนแค่แท็บ (#)
+    if (!force && !pending && key(u) === key(cur.location)) { // หน้าเดิม เปลี่ยนแค่แท็บ (#)
       if (u.hash !== cur.location.hash) cur.location.hash = u.hash;
       return;
     }
-    if (frame && !pending && !(await canLeave(frame.contentWindow))) {
+    if (!skipCheck && frame && !pending && !(await canLeave(frame.contentWindow))) {
       if (!push) history.pushState(null, "", frame.contentWindow.location.href);
       return;
     }
@@ -495,7 +562,7 @@ function frameNav({ side, mbar, redrawMenu, term, tabs = [] }) {
     f.addEventListener("load", () => setTimeout(() => reveal(f), 1500), { once: true });
     document.body.append(f);
     document.body.classList.add("framed");
-    if (push) history.pushState(null, "", u.href);
+    if (push) history.pushState(null, "", u.href); else history.replaceState(null, "", u.href);
     redrawMenu();
   }
   // หน้าใน iframe แจ้งมา (โหลดเสร็จ/เปลี่ยนแท็บ) → ตาม URL ชื่อหน้า เมนู และสีภาค
@@ -522,7 +589,9 @@ function frameNav({ side, mbar, redrawMenu, term, tabs = [] }) {
   };
   side.addEventListener("click", intercept);
   mbar.addEventListener("click", intercept);
-  return { go };
+  // ออกจากหน้าปัจจุบันได้ไหม (หน้าแรกที่ยังไม่อยู่ใน iframe ก็ตรวจด้วย)
+  const leaveOk = () => (pending ? true : canLeave(frame ? frame.contentWindow : window));
+  return { go, leaveOk };
 }
 
 // แท็บในหน้าที่ใช้ #hash (เมนูซ้ายลิงก์ตรงมาได้)

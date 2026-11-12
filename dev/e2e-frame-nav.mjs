@@ -69,14 +69,29 @@ for (const vp of [{ width: 1400, height: 900 }, { width: 390, height: 800 }]) {
   await frameReady(t);
   check(await t.evaluate(() => window.__sameDoc === 1 && !!document.documentElement.dataset.term), `${vp.width}: ย้อนกลับไม่ถูกต้อง`);
 
-  // สลับภาคจากแถบใน iframe → โหลดทั้งหน้าที่ปฏิทินภาคใหม่
+  // สลับภาคจากแถบใน iframe → เมนูอยู่กับที่ โหลดใหม่เฉพาะเนื้อหา (ไม่กระพริบ) สีเปลี่ยนตามภาค
   const before = await t.evaluate(() => document.documentElement.dataset.term);
   const c2 = await frameReady(t);
   await c2.click("#termBand button");
-  await t.waitForURL((u) => u.pathname === "/calendar.html" && u.searchParams.has("term"));
-  await t.waitForSelector("#main:not([hidden])");
-  check(await t.evaluate((b) => window.__sameDoc !== 1 && document.documentElement.dataset.term !== b, before), `${vp.width}: สลับภาคไม่โหลดทั้งหน้า/สีไม่เปลี่ยน`);
-  check(await t.locator("iframe.sr-frame").count() === 0, `${vp.width}: หลังสลับภาคไม่ควรมี iframe`);
+  await t.waitForURL((u) => u.pathname === "/calendar.html" && u.searchParams.get("term") !== before);
+  const c3 = await frameReady(t);
+  await t.waitForTimeout(450);
+  check(await t.evaluate((b) => window.__sameDoc === 1 && document.documentElement.dataset.term !== b, before), `${vp.width}: สลับภาคแล้วโหลดทั้งหน้า/สีไม่เปลี่ยน`);
+  check(await c3.evaluate((b) => document.documentElement.dataset.term !== b, before), `${vp.width}: เนื้อหาไม่เปลี่ยนภาค`);
+  check(await t.locator("iframe.sr-frame").count() === 1, `${vp.width}: หลังสลับภาคต้องมี iframe เดียว`);
+  check(await t.locator(`.term-toggle[aria-checked="${before === "1"}"]`).count() >= 1, `${vp.width}: สวิตช์ภาคไม่เปลี่ยน`);
+  // สลับภาคจากสวิตช์ (เมนูซ้าย/แถบบนมือถือ) ก็ไม่โหลดทั้งหน้า
+  await t.click(mobile ? ".mobilebar .term-toggle" : ".sidebar .term-toggle");
+  await t.waitForURL((u) => u.searchParams.get("term") === before);
+  await frameReady(t);
+  check(await t.evaluate((b) => window.__sameDoc === 1 && document.documentElement.dataset.term === b, before), `${vp.width}: สวิตช์ภาคโหลดทั้งหน้า`);
+  // สลับปีการศึกษา/บทบาท ก็ไม่โหลดทั้งหน้า
+  await openMenu();
+  const yv = await t.locator("#yearSel option").first().getAttribute("value");
+  await t.selectOption("#yearSel", yv);
+  await t.waitForURL((u) => u.searchParams.get("year") === yv);
+  await frameReady(t);
+  check(await t.evaluate(() => window.__sameDoc === 1), `${vp.width}: สลับปีโหลดทั้งหน้า`);
   await t.screenshot({ path: `${OUT}/calendar-term-${vp.width}.png` });
   await t.context().close();
 }
@@ -97,6 +112,13 @@ await admin.waitForURL((u) => u.hash === "#courses");
 check(await admin.locator('.side-nav a[href="/admin.html#courses"][aria-current="page"]').count() === 1, "admin: เมนูแท็บไม่ตาม");
 check(await admin.evaluate(() => window.__sameDoc === 1 && document.querySelectorAll("iframe.sr-frame").length === 1), "admin: เปลี่ยนแท็บแล้วโหลดใหม่");
 await admin.screenshot({ path: `${OUT}/frame-admin.png` });
+// สลับบทบาท → เมนูของบทบาทใหม่ เนื้อหาไปหน้าแรกของบทบาท โดยไม่โหลดทั้งหน้า
+await admin.selectOption("#roleSel", "teacher");
+await admin.waitForURL((u) => u.pathname === "/");
+await frameReady(admin);
+check(await admin.evaluate(() => window.__sameDoc === 1), "admin: สลับบทบาทแล้วโหลดทั้งหน้า");
+check(await admin.locator('.side-nav a[href="/"]').count() === 1, "admin: เมนูไม่เปลี่ยนตามบทบาท");
+check((await admin.locator(".mobilebar .role-chip").textContent()) === "ครู", "admin: ป้ายบทบาทไม่เปลี่ยน");
 
 await browser.close();
 if (errors.length) { console.error(errors.join("\n")); process.exit(1); }
