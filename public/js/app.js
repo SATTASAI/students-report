@@ -1,4 +1,5 @@
 // ส่วนกลางของหน้าเว็บ: เรียก API, แถบบน, แจ้งเตือน, กล่องโต้ตอบ
+import { mountAppBar, gestures, registerSW, tabIndex } from "/js/mobile.js";
 
 export const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -211,6 +212,13 @@ function roleMenu(role, me) {
   ];
 }
 
+// ชื่อสั้นสำหรับแถบเมนูล่างบนมือถือ
+const SHORT = { "รายวิชาที่สอน": "รายวิชา", "กิจกรรมพัฒนาผู้เรียน": "กิจกรรม", "บันทึกประจำวัน": "บันทึก", "ปฏิทินวันหยุด": "ปฏิทิน", "คลังเอกสาร": "เอกสาร",
+  "ติดตามการส่งผล": "ติดตามผล", "เริ่มต้นปีการศึกษา": "เริ่มปี", "นำเข้าจาก Excel": "นำเข้า", "ภาพรวมการส่งผล": "ภาพรวม", "อนุมัติผลการเรียน": "อนุมัติ",
+  "สรุปผลสัมฤทธิ์": "สรุปผล", "ข้อมูล SAR": "SAR", "สิทธิ์ทีมวัดผล": "สิทธิ์", "ดึงข้อมูลจากระบบทะเบียน": "ดึงข้อมูล", "ประวัติการใช้งาน": "ประวัติ", "สำรองและกู้คืนข้อมูล": "สำรอง" };
+// แท็บของแถบล่าง = 4 เมนูแรกที่อยู่ในระบบ (ที่เหลืออยู่ใน "เพิ่มเติม")
+const mobileTabs = (menu) => menu.filter((m) => !m.ext).slice(0, 4).map((m) => ({ ...m, short: SHORT[m.label] || m.label.replace(/^ประจำชั้น /, "ชั้น ") }));
+
 const here = () => location.pathname + (location.hash || "");
 const sameItem = (href) => {
   const [path, hash = ""] = href.split("#");
@@ -307,6 +315,7 @@ export async function shell(active) {
   try { localStorage.setItem("sr-role", role); } catch { /* */ }
   me.role = role;
   if (EMBED) { embedShell(me, termPage); return me; }
+  registerSW();
 
   const drawMenu = () => roleMenu(role, me).map((m) => `<a href="${m.href}" class="nav-item" ${m.ext ? 'target="_blank" rel="noopener"' : sameItem(m.href) ? 'aria-current="page"' : ""}>${MI[m.icon]}<span>${esc(m.label)}</span></a>`).join("");
   const side = document.createElement("aside");
@@ -344,7 +353,8 @@ export async function shell(active) {
   scrim.onclick = () => setOpen(false);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
   side.addEventListener("click", (e) => { if (e.target.closest("a.nav-item")) setOpen(false); });
-  const redrawMenu = () => { side.querySelector("#sideNav").innerHTML = drawMenu(); };
+  let appBar = null;
+  const redrawMenu = () => { side.querySelector("#sideNav").innerHTML = drawMenu(); appBar?.update(); };
   window.addEventListener("hashchange", redrawMenu);
   side.querySelector("#roleSel").onchange = (e) => {
     try { localStorage.setItem("sr-role", e.target.value); } catch { /* */ }
@@ -364,7 +374,12 @@ export async function shell(active) {
   const flip = (el) => { el.setAttribute("aria-checked", String(me.term === 1)); el.classList.add("moving"); setTimeout(() => switchTerm(me.term === 1 ? 2 : 1), 180); };
   mbar.querySelector(".role-chip").insertAdjacentHTML("beforebegin", termToggle("mini"));
   for (const el of document.querySelectorAll(".term-toggle")) el.onclick = () => flip(el);
-  frameNav({ side, mbar, redrawMenu, term: me.term });
+  const tabs = mobileTabs(roleMenu(role, me));
+  const nav = frameNav({ side, mbar, redrawMenu, term: me.term, tabs });
+  // มือถือ: แถบเมนูล่าง + เมนูเพิ่มเติมแบบ sheet + ปัดสลับแท็บ/ดึงลงรีเฟรช
+  appBar = mountAppBar({ tabs, icons: MI, esc, side, setOpen, go: nav?.go });
+  window.__srShell = Object.assign(window.__srShell || {}, { swipe: appBar.swipe });
+  gestures({ onSwipe: appBar.swipe, onRefresh: () => location.reload() });
   // แถบสีบอกภาคเรียนที่กำลังทำงาน (สีเดียวกับการ์ดภาคเรียนในหน้าแรก)
   if (termPage) termBand(me);
   return me;
@@ -391,6 +406,7 @@ function embedShell(me, termPage) {
   if (termPage) termBand(me);
   const sync = () => HOST.sync(window, { termPage });
   sync();
+  gestures({ onSwipe: (dir) => HOST.swipe?.(dir), onRefresh: () => location.reload() });
   window.addEventListener("hashchange", sync);
   // ลิงก์ไปหน้าอื่นในระบบ → ให้หน้าต่างหลักเปลี่ยนเฉพาะเนื้อหา (URL บนแถบที่อยู่เปลี่ยนตาม)
   document.addEventListener("click", (e) => {
@@ -408,7 +424,7 @@ function embedShell(me, termPage) {
 // ---------- หน้าต่างหลัก: กดเมนูแล้วโหลดเฉพาะเนื้อหาใน iframe (เมนูซ้ายอยู่กับที่ ไม่กระพริบ) ----------
 // หน้าแรกที่เปิดยังแสดงตามปกติ เมื่อไปหน้าอื่นจะซ่อนไว้แล้วแสดง iframe แทน
 // iframe ใหม่ซ่อนไว้จนเนื้อหาพร้อม แล้วจึงสลับกับอันเดิม · สลับบทบาท/ปี/ภาค ยังโหลดทั้งหน้า
-function frameNav({ side, mbar, redrawMenu, term }) {
+function frameNav({ side, mbar, redrawMenu, term, tabs = [] }) {
   // ปิดได้ด้วย localStorage "sr-full-nav" = "1" (กลับไปโหลดทั้งหน้าแบบเดิม — ใช้ในชุดทดสอบหน้าเว็บเดิม)
   try { if (localStorage.getItem("sr-full-nav") === "1") return; } catch { /* */ }
   let frame = null, pending = null;
@@ -418,6 +434,11 @@ function frameNav({ side, mbar, redrawMenu, term }) {
     document.body.classList.toggle("term-mode", !!on);
   };
   const fitTop = () => document.documentElement.style.setProperty("--mbar-h", `${mbar.offsetHeight}px`);
+  // ทิศทางของการเลื่อนหน้า: ไปแท็บทางขวา = เลื่อนเข้าจากขวา · ย้อนกลับ = จากซ้าย
+  const dirFor = (u) => { const a = tabIndex(tabs, new URL(location.href)), b = tabIndex(tabs, u); return a >= 0 && b >= 0 && b < a ? -1 : 1; };
+  const bar = document.createElement("div");
+  bar.className = "sr-progress";
+  document.body.append(bar);
   window.addEventListener("resize", fitTop);
   // หน้าที่มีข้อมูลรอบันทึก (beforeunload) → ถามก่อนเปลี่ยนหน้า
   const canLeave = async (win) => {
@@ -428,9 +449,16 @@ function frameNav({ side, mbar, redrawMenu, term }) {
   const reveal = (f) => {
     if (pending !== f) return;
     pending = null;
-    f.classList.remove("loading");
-    if (frame) frame.remove();
+    bar.classList.remove("run");
+    const old = frame;
     frame = f;
+    f.classList.remove("loading");
+    if (f.dataset.dir && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      f.classList.add(f.dataset.dir === "-1" ? "enter-back" : "enter");
+      const done = () => { f.classList.remove("enter", "enter-back"); old?.remove(); };
+      f.addEventListener("animationend", done, { once: true });
+      setTimeout(done, 400);
+    } else if (old) old.remove();
   };
   // รอให้หน้าใหม่แสดงเนื้อหา (#main ไม่ซ่อน) ก่อนสลับ ไม่เกิน 1.5 วินาที
   const revealWhenReady = (f) => {
@@ -443,7 +471,7 @@ function frameNav({ side, mbar, redrawMenu, term }) {
     };
     tick();
   };
-  async function go(href, { push = true } = {}) {
+  async function go(href, { push = true, dir } = {}) {
     const u = new URL(href, location.href);
     if (u.origin !== location.origin) { location.href = u.href; return; }
     const cur = frame ? frame.contentWindow : window;
@@ -461,7 +489,9 @@ function frameNav({ side, mbar, redrawMenu, term }) {
     f.className = "sr-frame loading";
     f.title = "เนื้อหา";
     f.src = u.href;
+    f.dataset.dir = String(dir ?? (push ? dirFor(u) : -1));
     pending = f;
+    bar.classList.remove("run"); void bar.offsetWidth; bar.classList.add("run");
     f.addEventListener("load", () => setTimeout(() => reveal(f), 1500), { once: true });
     document.body.append(f);
     document.body.classList.add("framed");
@@ -492,6 +522,7 @@ function frameNav({ side, mbar, redrawMenu, term }) {
   };
   side.addEventListener("click", intercept);
   mbar.addEventListener("click", intercept);
+  return { go };
 }
 
 // แท็บในหน้าที่ใช้ #hash (เมนูซ้ายลิงก์ตรงมาได้)

@@ -1,8 +1,13 @@
 {
+  "id": "/",
   "name": "รายงานผลการเรียน โรงเรียนบ้านป่าเด็ง",
   "short_name": "ผลการเรียน",
+  "description": "บันทึกคะแนน เวลาเรียน และงานประจำชั้น โรงเรียนบ้านป่าเด็ง",
+  "lang": "th",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#1e2a78",
   "theme_color": "#1e2a78",
   "icons": [
