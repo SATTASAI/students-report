@@ -823,3 +823,10 @@ body.framed > :not(.sidebar):not(.mobilebar):not(.scrim):not(.sr-frame):not(dial
   .bb-pill, body.has-bbar .sidebar, .bb-item svg { transition: none; }
 }
 @media print { .bbar, .sr-progress, .ptr, .ios-tip { display: none !important; } body.has-bbar { padding-bottom: 0; } }
+
+/* สลับภาค/บทบาท/ปีการศึกษาโดยไม่โหลดทั้งหน้า: สีเปลี่ยนนุ่มๆ เนื้อหาใหม่ค่อยๆ ปรากฏ */
+@keyframes srFade { from { opacity: 0; } }
+.sr-frame.enter-fade { animation: srFade .3s ease; }
+.sidebar, .mobilebar, .term-band { transition: background-color .4s ease, color .4s ease, transform .2s ease; }
+.bb-tabs { display: contents; }
+@media (prefers-reduced-motion: reduce) { .sr-frame.enter-fade { animation: none; } .sidebar, .mobilebar, .term-band { transition: none; } }

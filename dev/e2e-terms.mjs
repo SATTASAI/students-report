@@ -11,6 +11,8 @@ const browser = await chromium.launch();
 
 async function login(email) {
   const ctx = await browser.newContext({ viewport: { width: 1300, height: 900 }, locale: "th-TH" });
+  // ชุดนี้ทดสอบเนื้อหาแต่ละหน้า → ใช้การโหลดทั้งหน้าแบบเดิม (การสลับภาคแบบไม่โหลดทั้งหน้าทดสอบใน e2e-frame-nav)
+  await ctx.addInitScript(() => { try { localStorage.setItem("sr-full-nav", "1"); } catch { /* */ } });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => { if (!/^(term 1|no rooms|empty)$/.test(e.message)) errors.push(`pageerror ${email} ${page.url()}: ${e.message}`); });
   page.on("console", (m) => { if (m.type() === "error" && !/fonts\.googleapis|cdnjs|ERR_|Failed to load resource/.test(m.text())) errors.push(`console ${email}: ${m.text()}`); });
