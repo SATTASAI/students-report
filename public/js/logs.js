@@ -92,6 +92,16 @@ function set(sid, type, k, v) {
   pending.set(`${room}|${sid}|${type}|${k}`, v);
 }
 
+let formsScroll = 0;
+const SV = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const FORM_ICON = {
+  milk: SV('<path d="M8 2h8M9 2v3l-3 4v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V9l-3-4V2"/><path d="M6 12h12"/>'),
+  brush: SV('<path d="M4 20l9-9"/><path d="M13 11l3-3 4 4-3 3z"/><path d="M15 6l1-1M18 9l1-1M17 5l1-1"/>'),
+  lunch: SV('<path d="M4 3v7a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V3M6 12v9"/><path d="M18 21V3c-2 0-4 3-4 7s2 4 4 4"/>'),
+  duty: SV('<path d="M12 3c-3 4-6 6-6 10a6 6 0 0 0 12 0c0-4-3-6-6-10z"/><path d="M12 21v-6"/>'),
+  health: SV('<path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 0 0-7.1 7.1L12 21.5l8.8-8.8a5 5 0 0 0 0-7.1z"/><path d="M7 12h3l1-2 2 4 1-2h3"/>'),
+  homeroom: SV('<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><path d="M16 4a3 3 0 0 1 0 6M21 20c0-2-1-4-3-4.5"/>'),
+};
 function draw() {
   const idx = d.months.indexOf(d.month);
   view.innerHTML = `
@@ -102,7 +112,7 @@ function draw() {
         <button class="btn small" id="pdfBtn">พิมพ์ / PDF</button>
       </span>
     </div>
-    <div class="log-forms" role="tablist" aria-label="แบบบันทึก">${LOG_FORMS.map(([k, l]) => `<button role="tab" data-form="${k}" aria-selected="${k === logType}">${l}</button>`).join("")}</div>
+    <div class="log-forms" role="tablist" aria-label="แบบบันทึก">${LOG_FORMS.map(([k, l]) => `<button role="tab" data-form="${k}" aria-selected="${k === logType}">${FORM_ICON[k] || ""}<span>${l}</span></button>`).join("")}</div>
     <div class="sheet-tools">
       <span class="actions">
         <button class="btn small" id="mPrev" ${idx <= 0 ? "disabled" : ""} aria-label="เดือนก่อน">‹</button>
@@ -119,6 +129,15 @@ function draw() {
   document.getElementById("mSel").onchange = (e) => go(e.target.value);
   document.getElementById("mPrev").onclick = () => go(d.months[idx - 1]);
   document.getElementById("mNext").onclick = () => go(d.months[idx + 1]);
+  // แถบแบบบันทึก (มือถือเลื่อนแนวนอนแถวเดียว): คงตำแหน่งเดิมแล้วเลื่อนอันที่เลือกมากลางแบบนุ่ม
+  const strip = view.querySelector(".log-forms");
+  strip.scrollLeft = formsScroll;
+  const cur = strip.querySelector('[aria-selected="true"]');
+  if (cur && strip.scrollWidth > strip.clientWidth) {
+    const left = cur.offsetLeft - (strip.clientWidth - cur.offsetWidth) / 2;
+    requestAnimationFrame(() => strip.scrollTo({ left, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }));
+  }
+  strip.addEventListener("scroll", () => { formsScroll = strip.scrollLeft; }, { passive: true });
   for (const b of view.querySelectorAll("[data-form]")) b.onclick = async () => { await settle(); logType = b.dataset.form; sessionStorage.setItem("sr-hr-log", logType); load().catch(showError); };
   for (const b of view.querySelectorAll("[data-room]")) b.onclick = async () => {
     if (!(await settle())) { showError("ยังบันทึกห้องเดิมไม่สำเร็จ — กดลองใหม่ก่อนเปลี่ยนห้อง"); return; }

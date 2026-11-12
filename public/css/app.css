@@ -484,7 +484,9 @@ td.att.c-ข input, td.att.c-ล input, td.att.c-ป input, td.att.c-ส input {
 
 /* ---------- แบบบันทึกประจำวัน (ครูประจำชั้น) ---------- */
 .log-forms { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-.log-forms button { font: inherit; font-size: 14px; border: 1px solid var(--line); background: #fff; color: var(--text); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+.log-forms button { font: inherit; font-size: 14px; border: 1px solid var(--line); background: #fff; color: var(--text); border-radius: 999px; padding: 6px 14px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; transition: background-color .2s, color .2s, border-color .2s, transform .12s; }
+.log-forms button svg { width: 17px; height: 17px; flex: none; }
 .log-forms button:hover { background: var(--wash); }
 .log-forms button[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
 .log-title { color: var(--ink); margin-left: 6px; }
@@ -830,3 +832,13 @@ body.framed > :not(.sidebar):not(.mobilebar):not(.scrim):not(.sr-frame):not(dial
 .sidebar, .mobilebar, .term-band { transition: background-color .4s ease, color .4s ease, transform .2s ease; }
 .bb-tabs { display: contents; }
 @media (prefers-reduced-motion: reduce) { .sr-frame.enter-fade { animation: none; } .sidebar, .mobilebar, .term-band { transition: none; } }
+
+/* แถบแบบบันทึกประจำวันบนมือถือ: แถวเดียว เลื่อนแนวนอน หยุดตรงปุ่ม ขอบจางบอกว่ามีต่อ */
+@media (max-width: 760px) {
+  .log-forms { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    margin: 0 -16px 6px; padding: 2px 16px 12px; scroll-padding: 0 16px; overscroll-behavior-x: contain;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 28px), transparent); }
+  .log-forms::-webkit-scrollbar { display: none; }
+  .log-forms button { flex: none; scroll-snap-align: center; min-height: 40px; padding: 8px 14px; white-space: nowrap; }
+  .log-forms button[aria-selected="true"] { box-shadow: 0 4px 12px rgba(30, 42, 120, .22); }
+}
