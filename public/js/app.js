@@ -477,7 +477,7 @@ export async function shell(active) {
   tabs = mobileTabs(roleMenu(role, me));
   const nav = frameNav({ side, mbar, redrawMenu, getTerm: () => me.term, getTabs: () => tabs });
   // มือถือ: แถบเมนูล่าง + เมนูเพิ่มเติมแบบ sheet + ปัดสลับแท็บ/ดึงลงรีเฟรช
-  appBar = mountAppBar({ tabs, icons: MI, esc, side, setOpen, go: nav?.go });
+  appBar = mountAppBar({ tabs, icons: MI, esc, side, setOpen, go: nav?.go, user: me.user.full_name });
   window.__srShell = Object.assign(window.__srShell || {}, { swipe: appBar.swipe }, nav ? { soft } : {});
   gestures({ onSwipe: appBar.swipe, onRefresh: () => location.reload() });
   // แถบสีบอกภาคเรียนที่กำลังทำงาน (สีเดียวกับการ์ดภาคเรียนในหน้าแรก)

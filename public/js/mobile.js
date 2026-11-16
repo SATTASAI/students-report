@@ -26,13 +26,16 @@ export function tabIndex(tabs, url) {
   return best;
 }
 
+// ตัวอักษรแรกของชื่อ (ตัดคำนำหน้า) สำหรับรูปโปรไฟล์บนแถบล่าง
+const initial = (name) => (name || "?").replace(/^(นางสาว|นาง|นาย|ครู|ด\.ช\.|ด\.ญ\.)/, "").trim().slice(0, 1) || "?";
+
 // ---------- หน้าต่างหลัก: แถบล่าง + เมนูเพิ่มเติมแบบ sheet ----------
-export function mountAppBar({ tabs, icons, esc, side, setOpen, go }) {
+export function mountAppBar({ tabs, icons, esc, side, setOpen, go, user = "" }) {
   const bar = document.createElement("nav");
   bar.className = "bbar";
   bar.setAttribute("aria-label", "เมนูหลัก");
   bar.innerHTML = `<span class="bb-pill" aria-hidden="true"></span><span class="bb-tabs"></span>
-    <button type="button" class="bb-item bb-more" aria-controls="sidebar" aria-expanded="false">${icons.menu}<span>เพิ่มเติม</span></button>`;
+    <button type="button" class="bb-item bb-more" aria-controls="sidebar" aria-expanded="false" aria-label="เมนูเพิ่มเติม${user ? ` · ${esc(user)}` : ""}"><span class="bb-avatar">${esc(initial(user))}</span></button>`;
   document.body.append(bar);
   document.body.classList.add("has-bbar");
   const pill = bar.querySelector(".bb-pill");
@@ -41,7 +44,7 @@ export function mountAppBar({ tabs, icons, esc, side, setOpen, go }) {
   // วาดแท็บใหม่ (เมื่อสลับบทบาท/ปีการศึกษา) — ไม่สร้างแถบใหม่ทั้งแถบ
   const setTabs = (next) => {
     tabs = next;
-    bar.querySelector(".bb-tabs").innerHTML = tabs.map((t, i) => `<a class="bb-item" href="${t.href}" data-i="${i}">${icons[t.icon]}<span>${esc(t.short || t.label)}</span></a>`).join("");
+    bar.querySelector(".bb-tabs").innerHTML = tabs.map((t, i) => `<a class="bb-item" href="${t.href}" data-i="${i}" aria-label="${esc(t.label)}" title="${esc(t.short || t.label)}">${icons[t.icon]}</a>`).join("");
     items = [...bar.querySelectorAll("a.bb-item")];
     update();
   };
@@ -64,7 +67,7 @@ export function mountAppBar({ tabs, icons, esc, side, setOpen, go }) {
     a.classList.remove("tap"); void a.offsetWidth; a.classList.add("tap");
     if (go) { e.preventDefault(); go(a.href); requestAnimationFrame(update); }
   });
-  more.onclick = () => { buzz(); setOpen(!document.body.classList.contains("nav-open")); };
+  more.onclick = () => { buzz(); more.classList.remove("tap"); void more.offsetWidth; more.classList.add("tap"); setOpen(!document.body.classList.contains("nav-open")); };
   new MutationObserver(() => more.setAttribute("aria-expanded", String(document.body.classList.contains("nav-open"))))
     .observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
