@@ -865,3 +865,22 @@ body.framed > :not(.sidebar):not(.mobilebar):not(.scrim):not(.sr-frame):not(dial
   .log-forms button { flex: none; scroll-snap-align: center; min-height: 40px; padding: 8px 14px; white-space: nowrap; }
   .log-forms button[aria-selected="true"] { box-shadow: 0 4px 12px rgba(30, 42, 120, .22); }
 }
+
+/* แถบล่างแบบ Instagram: พื้นขาวเรียบ ไอคอนอย่างเดียว แท็บที่เลือกเส้นหนาสีเข้ม ขวาสุดเป็นรูปโปรไฟล์ กดแล้วไอคอนเด้ง */
+@keyframes igPop { 0% { transform: scale(1); } 35% { transform: scale(.82); } 70% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@media (max-width: 1023px) {
+  :root { --bb-h: calc(52px + env(safe-area-inset-bottom)); }
+  .bbar { gap: 0; padding: 0 4px env(safe-area-inset-bottom); background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none;
+    border-top: .5px solid rgba(0, 0, 0, .12); box-shadow: none; }
+  .bb-pill { display: none; }
+  .bb-item { height: 52px; border-radius: 0; color: #262626; gap: 0; }
+  .bb-item svg { width: 26px; height: 26px; stroke-width: 1.7; transition: stroke-width .15s ease; transform: none; }
+  .bb-item[aria-current="page"] svg { stroke-width: 2.6; transform: none; }
+  .bb-item[aria-current="page"], .bb-more[aria-expanded="true"] { color: #000; font-weight: normal; }
+  .bb-item.tap svg, .bb-item.tap .bb-avatar { animation: igPop .38s cubic-bezier(.3,1.5,.5,1); }
+  .bb-avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 600; line-height: 1;
+    color: #fff; background: linear-gradient(135deg, var(--ink-2), var(--ink)); box-shadow: 0 0 0 1px rgba(0, 0, 0, .08); transition: box-shadow .2s ease; }
+  :root[data-term] .bb-avatar { background: linear-gradient(135deg, var(--side-ink, var(--ink-2)), var(--ink)); }
+  .bb-more[aria-expanded="true"] .bb-avatar { box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #000; }
+}
+@media (prefers-reduced-motion: reduce) { .bb-item.tap svg, .bb-item.tap .bb-avatar { animation: none; } }
