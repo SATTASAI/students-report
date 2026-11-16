@@ -70,6 +70,29 @@ p { margin: 0 0 .8em; }
 .nav-item svg { width: 18px; height: 18px; flex: none; }
 .nav-item:hover { background: rgba(255,255,255,.1); opacity: 1; }
 .nav-item[aria-current="page"] { background: #fff; color: var(--ink); opacity: 1; font-weight: 600; }
+/* กลุ่มเมนู (เมนูย่อยพับ/กาง) */
+.nav-group { display: grid; border-radius: var(--r-md); transition: background-color .2s ease; }
+.nav-group.open { background: rgba(255,255,255,.05); }
+.nav-head { font-weight: 500; }
+.nav-head .nav-count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; display: grid; place-items: center;
+  font-size: 11px; line-height: 1; background: rgba(255,255,255,.14); opacity: .85; transition: opacity .2s ease; }
+.nav-group.open .nav-count { opacity: 0; }
+.nav-caret { width: 16px !important; height: 16px !important; margin-left: 4px; opacity: .7; transition: transform .25s cubic-bezier(.3,.9,.3,1); }
+.nav-group.open .nav-caret { transform: rotate(90deg); }
+.nav-group.has-current > .nav-head { opacity: 1; }
+.nav-group.has-current > .nav-head::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: currentColor; }
+.nav-group > .nav-head { position: relative; }
+.nav-sub { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s cubic-bezier(.3,.9,.3,1); }
+.nav-group.open > .nav-sub { grid-template-rows: 1fr; }
+.nav-sub-in { min-height: 0; overflow: hidden; display: grid; gap: 2px; margin-left: 19px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,.18);
+  opacity: 0; transform: translateY(-4px); transition: opacity .2s ease, transform .25s ease, padding .28s ease; }
+.nav-group.open .nav-sub-in { opacity: 1; transform: none; padding-top: 2px; padding-bottom: 6px; }
+.nav-sub .nav-item { min-height: 34px; padding: 6px 10px; font-size: 13.5px; }
+.nav-sub .nav-item svg { width: 16px; height: 16px; opacity: .8; }
+:root[data-term] .nav-group.open { background: rgba(255,255,255,.28); }
+:root[data-term] .nav-head .nav-count { background: rgba(255,255,255,.6); }
+:root[data-term] .nav-sub-in { border-left-color: rgba(0,0,0,.15); }
+@media (prefers-reduced-motion: reduce) { .nav-sub, .nav-sub-in, .nav-caret, .nav-count { transition: none; } }
 .side-foot { border-top: 1px solid rgba(255,255,255,.15); padding-top: 10px; display: grid; gap: 4px; }
 .who-box { display: flex; gap: 10px; align-items: center; padding: 4px 6px; font-size: 13px; }
 .who-box b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }

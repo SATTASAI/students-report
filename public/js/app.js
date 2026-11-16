@@ -172,22 +172,22 @@ function roleMenu(role, me) {
   ];
   if (role === "measure") return [
     { href: "/reports.html#progress", icon: "chart", label: "ติดตามการส่งผล" },
-    { href: "/admin.html#start", icon: "flag", label: "เริ่มต้นปีการศึกษา" },
-    { href: "/admin.html#subjects", icon: "list", label: "รายวิชา" },
-    { href: "/admin.html#import", icon: "upload", label: "นำเข้าจาก Excel" },
-    { href: "/admin.html#review", icon: "check", label: "ตรวจผลการเรียน" },
-    { href: "/admin.html#requests", icon: "key", label: "คำขอแก้ไข" },
-    { href: "/admin.html#courses", icon: "people", label: "ครูผู้สอน" },
-    { href: "/admin.html#homerooms", icon: "room", label: "ครูประจำชั้น" },
-    { href: "/admin.html#students", icon: "people", label: "นักเรียน" },
-    { href: "/admin.html#calendar", icon: "clock", label: "ปฏิทินวันหยุด" },
-    { href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน" },
-    { href: "/logs.html", icon: "list", label: "บันทึกประจำวัน" },
-    { href: "/admin.html#bank", icon: "bank", label: "คลังตัวชี้วัด" },
-    { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม" },
-    { href: "/admin.html#parent", icon: "people", label: "ระบบผู้ปกครอง" },
-    { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์" },
-    { href: "/sar.html", icon: "award", label: "ข้อมูล SAR" },
+    { href: "/admin.html#start", icon: "flag", label: "เริ่มต้นปีการศึกษา", group: "setup" },
+    { href: "/admin.html#subjects", icon: "list", label: "รายวิชา", group: "setup" },
+    { href: "/admin.html#import", icon: "upload", label: "นำเข้าจาก Excel", group: "setup" },
+    { href: "/admin.html#calendar", icon: "clock", label: "ปฏิทินวันหยุด", group: "setup" },
+    { href: "/admin.html#bank", icon: "bank", label: "คลังตัวชี้วัด", group: "setup" },
+    { href: "/admin.html#settings", icon: "gear", label: "เกณฑ์และผู้ลงนาม", group: "setup" },
+    { href: "/admin.html#courses", icon: "people", label: "ครูผู้สอน", group: "people" },
+    { href: "/admin.html#homerooms", icon: "room", label: "ครูประจำชั้น", group: "people" },
+    { href: "/admin.html#students", icon: "people", label: "นักเรียน", group: "people" },
+    { href: "/admin.html#parent", icon: "people", label: "ระบบผู้ปกครอง", group: "people" },
+    { href: "/admin.html#review", icon: "check", label: "ตรวจผลการเรียน", group: "review" },
+    { href: "/admin.html#requests", icon: "key", label: "คำขอแก้ไข", group: "review" },
+    { href: "/activities.html", icon: "check", label: "กิจกรรมพัฒนาผู้เรียน", group: "class" },
+    { href: "/logs.html", icon: "list", label: "บันทึกประจำวัน", group: "class" },
+    { href: "/reports.html#summary", icon: "chart", label: "สรุปผลสัมฤทธิ์", group: "report" },
+    { href: "/sar.html", icon: "award", label: "ข้อมูล SAR", group: "report" },
     { href: "/api/sso/publicservice", icon: "smile", label: "รายงานพฤติกรรม", ext: true },
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
@@ -214,6 +214,18 @@ function roleMenu(role, me) {
     { href: "/docs.html", icon: "doc", label: "คลังเอกสาร" },
   ];
 }
+
+// หัวข้อกลุ่มเมนู (เมนูย่อยแบบพับ/กาง) — รายการที่มี group เดียวกันและอยู่ติดกันจะรวมเป็นกลุ่มเดียว
+const MENU_GROUPS = {
+  setup: { icon: "flag", label: "ตั้งค่าปีการศึกษา" },
+  people: { icon: "people", label: "ครูและนักเรียน" },
+  review: { icon: "check", label: "ตรวจผล" },
+  class: { icon: "room", label: "งานประจำชั้น" },
+  report: { icon: "chart", label: "รายงาน" },
+};
+// กลุ่มที่ผู้ใช้กางไว้ (จำไว้ในเครื่อง) — กลุ่มที่มีหน้าปัจจุบันกางเสมอ
+const openGroups = () => { try { return new Set(JSON.parse(localStorage.getItem("sr-navgrp") || "[]")); } catch { return new Set(); } };
+const saveGroups = (set) => { try { localStorage.setItem("sr-navgrp", JSON.stringify([...set])); } catch { /* */ } };
 
 // ชื่อสั้นสำหรับแถบเมนูล่างบนมือถือ
 const SHORT = { "รายวิชาที่สอน": "รายวิชา", "กิจกรรมพัฒนาผู้เรียน": "กิจกรรม", "บันทึกประจำวัน": "บันทึก", "ปฏิทินวันหยุด": "ปฏิทิน", "คลังเอกสาร": "เอกสาร",
@@ -321,7 +333,23 @@ export async function shell(active) {
   registerSW();
 
   let tabs = [];
-  const drawMenu = () => roleMenu(role, me).map((m) => `<a href="${m.href}" class="nav-item" ${m.ext ? 'target="_blank" rel="noopener"' : sameItem(m.href) ? 'aria-current="page"' : ""}>${MI[m.icon]}<span>${esc(m.label)}</span></a>`).join("");
+  const navLink = (m) => `<a href="${m.href}" class="nav-item" ${m.ext ? 'target="_blank" rel="noopener"' : sameItem(m.href) ? 'aria-current="page"' : ""}>${MI[m.icon]}<span>${esc(m.label)}</span></a>`;
+  const drawMenu = () => {
+    const items = roleMenu(role, me), opened = openGroups(), out = [];
+    for (let i = 0; i < items.length; i++) {
+      const g = items[i].group;
+      if (!g || !MENU_GROUPS[g]) { out.push(navLink(items[i])); continue; }
+      const kids = [];
+      while (i < items.length && items[i].group === g) kids.push(items[i++]);
+      i--;
+      const cur = kids.some((m) => !m.ext && sameItem(m.href));
+      const open = cur || opened.has(g);
+      out.push(`<div class="nav-group${open ? " open" : ""}${cur ? " has-current" : ""}" data-group="${g}">
+        <button type="button" class="nav-item nav-head" aria-expanded="${open}" aria-controls="ng-${g}">${MI[MENU_GROUPS[g].icon]}<span>${esc(MENU_GROUPS[g].label)}</span><span class="nav-count">${kids.length}</span><svg class="nav-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="nav-sub" id="ng-${g}"><div class="nav-sub-in">${kids.map(navLink).join("")}</div></div></div>`);
+    }
+    return out.join("");
+  };
   const side = document.createElement("aside");
   side.className = "sidebar";
   side.id = "sidebar";
@@ -356,7 +384,18 @@ export async function shell(active) {
   mbar.querySelector("#menuBtn").onclick = () => setOpen(!document.body.classList.contains("nav-open"));
   scrim.onclick = () => setOpen(false);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
-  side.addEventListener("click", (e) => { if (e.target.closest("a.nav-item")) setOpen(false); });
+  side.addEventListener("click", (e) => {
+    const head = e.target.closest(".nav-head");
+    if (head) { // พับ/กางกลุ่มเมนู (จำสถานะไว้)
+      const box = head.parentElement, g = box.dataset.group, open = !box.classList.contains("open"), set = openGroups();
+      box.classList.toggle("open", open);
+      head.setAttribute("aria-expanded", String(open));
+      if (open) set.add(g); else set.delete(g);
+      saveGroups(set);
+      return;
+    }
+    if (e.target.closest("a.nav-item")) setOpen(false);
+  });
   let appBar = null;
   const redrawMenu = () => { side.querySelector("#sideNav").innerHTML = drawMenu(); appBar?.update(); };
   window.addEventListener("hashchange", redrawMenu);
