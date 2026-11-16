@@ -30,7 +30,7 @@ await frame();
 await t.waitForTimeout(500);
 check(await t.locator('.bbar a.bb-item[data-i="1"][aria-current="page"]').count() === 1, "แท็บ 2 ไม่ถูกเลือก");
 const fr = await t.evaluate(() => { const r = document.querySelector("iframe.sr-frame").getBoundingClientRect(), b = document.querySelector(".bbar").getBoundingClientRect(); return { bottom: r.bottom, bar: b.top }; });
-check(Math.abs(fr.bottom - fr.bar) < 2, `iframe ทับแถบล่าง ${JSON.stringify(fr)}`);
+check(fr.bottom > fr.bar, `แถบล่างต้องลอยทับเนื้อหา ${JSON.stringify(fr)}`);
 await t.screenshot({ path: `${OUT}/m-tab2.png` });
 
 // ปัดขวา (ไปแท็บก่อนหน้า) ใน iframe
