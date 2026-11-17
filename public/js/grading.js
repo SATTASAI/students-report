@@ -323,9 +323,21 @@ export const ACTIVITY_PARTS = [["t", "เวลาเรียน"], ["o", "จ�
 // ผลทั้งปี (สรุปที่ภาคเรียนที่ 2) = ผ่านเมื่อผ่านทั้ง 2 ภาค · ข้อมูลเดิมก่อนแยกภาค (act_scout_t) ย้ายเป็นภาค 1 ใน schema gr-23
 export const ACTIVITY_TERMS = [1, 2];
 export const activityKey = (key, part, term) => `${key}_${part}${term}`;
+// ประเมินรายภาค (ผู้ใช้กำหนด 17 พ.ย. 2569): คีย์ = <ตัวชี้วัด>_t<ภาค> เช่น trait_1_t1, comp_3_t2
+// ผลทั้งปี (ไม่ระบุภาค) = คำนวณจากค่าเฉลี่ยของภาค 1 และภาค 2 ต่อข้อ (ต้องมีครบทั้งสองภาค) ไม่มีการกรอกทั้งปีแยก
+export const termKey = (k, term) => `${k}_t${term}`;
+export function termValues(group, values, term) {
+  return Object.fromEntries(group.items.map(([k]) => {
+    if (term) return [k, values?.[termKey(k, term)] ?? null];
+    const a = values?.[termKey(k, 1)], b = values?.[termKey(k, 2)];
+    if (a == null || a === "" || b == null || b === "") return [k, null];
+    return [k, String(Math.round((Number(a) + Number(b)) / 2))];
+  }));
+}
+
 export const ASSESSMENT_KEYS = new Set(ASSESSMENT_GROUPS.flatMap((g) => g.type === "activity"
   ? g.items.flatMap(([k]) => ACTIVITY_PARTS.flatMap(([p]) => ACTIVITY_TERMS.map((t) => activityKey(k, p, t))))
-  : g.items.map((i) => i[0])));
+  : g.items.flatMap(([k]) => [1, 2].map((t) => termKey(k, t)))));
 
 export function validAssessmentValue(key, value) {
   if (!ASSESSMENT_KEYS.has(key)) return false;
@@ -349,7 +361,8 @@ export function activityResult(key, values, term) {
 // กิจกรรม: term = ผลของภาคนั้น · ไม่ระบุ = ผลทั้งปี (ต้องผ่านทั้ง 2 ภาค)
 export function summarizeGroup(group, values, term) {
   if (group.type === "activity") return group.items.some(([k]) => activityResult(k, values, term) === "มผ") ? "มผ" : "ผ";
-  const vals = group.items.map(([k]) => values?.[k]);
+  const tv = termValues(group, values, term);
+  const vals = group.items.map(([k]) => tv[k]);
   if (vals.some((v) => v == null || v === "")) return null;
   const n = vals.map(Number);
   if (group.rule === "rtw") {

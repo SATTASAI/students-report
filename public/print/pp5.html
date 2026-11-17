@@ -17,7 +17,7 @@
 // ?term=1 = เล่มภาคเรียนที่ 1: ปก (สรุปคะแนนภาค 1) → โครงสร้างภาค 1 → เวลาเรียนภาค 1 → ตัวชี้วัดภาค 1 → สรุปผลภาค 1
 // ?term=2 (หรือไม่ระบุ) = เล่มภาคเรียนที่ 2 สรุปทั้งปี: ทุกส่วนข้างต้นของทั้งสองภาค + อ่านคิดฯ คุณลักษณะ และสรุปผลการเรียนทั้งปี
 import { fixed, esc, params, get, toolbar, status, fmt, td, gradeOut, thaiDateUtc, directorTitleHtml } from "/print/print.js";
-import { indicatorResult, effectiveScore, indicatorWord, ASSESSMENT_GROUPS, summarizeGroup, summaryText, NUMERIC_GRADES } from "/js/grading.js";
+import { indicatorResult, effectiveScore, indicatorWord, ASSESSMENT_GROUPS, summarizeGroup, summaryText, NUMERIC_GRADES, termKey } from "/js/grading.js";
 
 const q = params();
 const TERM = q.get("term") === "1" ? 1 : 2;
@@ -295,18 +295,19 @@ function book(d, daily) {
   </section>`;
 
   // ---------- 4–5. อ่าน คิดวิเคราะห์ เขียน / คุณลักษณะอันพึงประสงค์ ----------
-  const assessPage = (key) => {
+  // ประเมินรายภาค: หน้าละ 1 ภาคเรียน อ่านค่าคีย์ <ข้อ>_t<ภาค>
+  const assessPage = (key, term) => {
     const g = ASSESSMENT_GROUPS.find((x) => x.key === key);
     return `<section class="sheet">${mark}
-      ${head(g.title)}
+      ${head(`${g.title} ภาคเรียนที่ ${td(term)}`)}
       <table class="t small fit${dense(false)}">
         <thead><tr><th rowspan="2" style="width:10mm">เลขที่</th><th rowspan="2" style="width:16mm">เลข<br>ประจำตัว</th><th rowspan="2">ชื่อ–สกุล</th><th colspan="${g.items.length}">${key === "trait" ? "คุณลักษณะอันพึงประสงค์ข้อที่" : "ตัวชี้วัดข้อที่"}</th><th rowspan="2" style="width:22mm">สรุปผล</th></tr>
           <tr>${g.items.map((_, i) => `<th style="width:9mm">${td(i + 1)}</th>`).join("")}</tr></thead>
         <tbody>${d.students.map((x) => {
           const v = d.assessments?.[x.id] || {};
-          const sum = summarizeGroup(g, v);
+          const sum = summarizeGroup(g, v, term);
           return `<tr><td class="c">${td(x.number ?? "")}</td><td class="c">${esc(td(x.student_code))}</td><td class="nm">${esc(x.name)}</td>
-            ${g.items.map(([k]) => `<td class="c">${v[k] == null ? "" : td(v[k])}</td>`).join("")}<td class="c">${summaryText(g, sum)}</td></tr>`;
+            ${g.items.map(([k]) => { const tk = termKey(k, term); return `<td class="c">${v[tk] == null ? "" : td(v[tk])}</td>`; }).join("")}<td class="c">${summaryText(g, sum)}</td></tr>`;
         }).join("")}</tbody>
       </table>
       <div class="note">${g.items.map(([, label], i) => `${td(i + 1)}. ${esc(label)}`).join(" · ")}<br>ระดับ: ${td(3)} = ดีเยี่ยม, ${td(2)} = ดี, ${td(1)} = ผ่าน, ${td(0)} = ไม่ผ่าน · ประเมินโดยครูประจำชั้น</div>
@@ -367,7 +368,7 @@ function book(d, daily) {
   </section>`;
 
   const all = TERM === 1 ? cover + structure + dailyHtml + attendance + indicatorPages + termSummary
-    : cover + structure + dailyHtml + attendance + assessPage("rtw") + assessPage("trait") + indicatorPages + termSummary + yearSummary;
+    : cover + structure + dailyHtml + attendance + [1, 2].map((t) => assessPage("rtw", t) + assessPage("trait", t)).join("") + indicatorPages + termSummary + yearSummary;
   // ฉบับร่าง: ท้ายทุกส่วนมีข้อความกำกับด้วย — หน้าสุดท้ายของตารางยาวที่มีเนื้อหาน้อยจะยังเห็นคำว่าฉบับร่างเต็มคำ
   return draft ? all.replaceAll("</section>", `<div class="draft-foot">ฉบับร่าง ยังไม่อนุมัติ — ใช้ตรวจทานเท่านั้น</div></section>`) : all;
 }
