@@ -86,9 +86,10 @@ function dailyPages(D, term, mark, c) {
     const sumOff = perDay.reduce((a, b) => a + b, 0), sumLate = perLate.reduce((a, b) => a + b, 0);
     const foot = `<tr class="sum"><td colspan="2" class="r"><b>รวมขาด/ลา (คน)</b></td>${perDay.map((n) => `<td class="c">${n ? td(n) : ""}</td>`).join("")}<td class="c"><b>${sumOff ? td(sumOff) : ""}</b></td><td></td></tr>
       <tr class="sum"><td colspan="2" class="r"><b>มาสาย (คน)</b></td>${perLate.map((n) => `<td class="c">${n ? td(n) : ""}</td>`).join("")}<td></td><td class="c"><b>${sumLate ? td(sumLate) : ""}</b></td></tr>`;
-    return `<section class="sheet land">${mark}
+    return `<section class="sheet land daily">${mark}
       <div class="center"><b>บันทึกการมาเรียนรายวัน ภาคเรียนที่ ${td(term)} เดือน${TH_MONTHS[mo]} พ.ศ. ${td(be)} ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))} ปีการศึกษา ${td(c.year_be)}</b></div>
-      <table class="t tiny fit${big ? " dense-l" : ""}">
+      <table class="t tiny fit daily-t${big ? " dense-l" : ""}" style="table-layout:fixed;width:100%">
+        <colgroup><col style="width:9mm"><col style="width:52mm">${dates.map(() => "<col>").join("")}<col style="width:15mm"><col style="width:15mm"></colgroup>
         <thead>
           <tr><th rowspan="2" style="width:9mm">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th><th colspan="${dates.length}">วันที่</th><th rowspan="2" style="width:14mm">ขาด/ลา<br>รวม</th><th rowspan="2" style="width:14mm">มาสาย<br>รวม</th></tr>
           <tr>${dates.map((dt) => `<th>${td(Number(dt.slice(8, 10)))}</th>`).join("")}</tr>
@@ -391,6 +392,26 @@ for (const sheet of document.querySelectorAll(".sheet")) {
     table.style.fontSize = `${pt}pt`;
     table.style.lineHeight = "1";
     if (note) { note.style.fontSize = `${Math.min(11, pt)}pt`; note.style.marginTop = "1mm"; }
+  }
+}
+
+// บันทึกการมาเรียนรายวัน: ขยายตารางให้เต็มความกว้างและความสูงของหน้า (ตัวอักษรใหญ่ขึ้นทีละ 0.25pt จนชนขอบ สูงสุด 14pt)
+for (const sheet of document.querySelectorAll(".sheet.daily")) {
+  const table = sheet.querySelector("table.daily-t");
+  if (!table) continue;
+  const cs = getComputedStyle(sheet);
+  const room = 186 - 4;
+  const used = () => (sheet.scrollHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) / MM;
+  const note = sheet.querySelector(".note");
+  const setSize = (pt) => {
+    table.style.fontSize = `${pt}pt`;
+    if (note) note.style.fontSize = `${Math.min(12, pt)}pt`;
+  };
+  let pt = parseFloat(getComputedStyle(table).fontSize) * 0.75;
+  while (pt < 14) {
+    setSize(pt + 0.25);
+    if (used() > room) { setSize(pt); break; }
+    pt += 0.25;
   }
 }
 </script>
