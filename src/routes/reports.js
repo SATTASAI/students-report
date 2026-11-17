@@ -1,7 +1,7 @@
 import { json, fail, requireUser, requireViewer, requireReportViewer, intParam, text } from "../lib/http.js";
 import {
   resolveYear, listYears, getSettings, listRooms, roomRoster, isHomeroomTeacher, yearResultsForStudents,
-  assessmentsFor, absenceCounts, attendanceSummary, yearTerms, currentTerm, termOfDate, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, inPilot, compareGrade, compareRoom, compareSubject, homeroomNames,
+  assessmentsFor, absenceCounts, attendanceSummary, yearTerms, schoolCalendar, currentTerm, termOfDate, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, inPilot, compareGrade, compareRoom, compareSubject, homeroomNames,
 } from "../lib/data.js";
 import { courseOverview } from "./admin.js";
 import { listAbsences, commentsFor, bodyFor } from "./homeroom.js";
@@ -80,6 +80,30 @@ export async function handleReports(request, env, user, parts, method, url) {
     const { year, grade, room } = await roomParams(env, user, url);
     const student = url.searchParams.get("student") ? intParam(url.searchParams.get("student")) : null;
     return json(await roomReport(env, year, grade, room, student));
+  }
+
+  // บันทึกการมาเรียนรายวันทั้งห้อง (พิมพ์ใน ปพ.5 ครั้งเดียวต่อห้อง): วันเรียนทุกวันของแต่ละภาค + รหัสการมาเรียนของนักเรียนรายวัน
+  // marks[student_id][YYYY-MM-DD] = ข|ล|ป|ส (ว่าง = มาเรียนปกติ)
+  if (kind === "daily-attendance") {
+    const { year, grade, room } = await roomParams(env, user, url);
+    const roster = await roomRoster(env, year.id, grade, room);
+    const active = roster.filter((s) => s.enrollment_status === "enrolled");
+    const [cal, terms] = await Promise.all([schoolCalendar(env, year.id), yearTerms(env, year.id)]);
+    const termOf = (iso) => terms.find((t) => iso >= t.start_date && iso <= t.end_date)?.term_number ?? null;
+    const marks = {};
+    const ids = active.map((s) => s.id);
+    for (let i = 0; i < ids.length; i += 90) {
+      const chunk = ids.slice(i, i + 90);
+      const { results } = await env.DB.prepare(`SELECT student_id, att_date, code FROM gr_attendance WHERE academic_year_id = ? AND student_id IN (${chunk.map(() => "?").join(",")})`)
+        .bind(year.id, ...chunk).all();
+      for (const r of results) (marks[r.student_id] ||= {})[r.att_date] = r.code;
+    }
+    return json({
+      year, grade, room, terms,
+      days: cal.days.map((date) => ({ date, term: termOf(date) })),
+      students: active.map((s) => ({ id: s.id, number: s.number, student_code: s.student_code, name: studentName(s) })),
+      marks,
+    });
   }
 
   // คลังเอกสาร: ห้องและรายวิชาที่ผู้ใช้ออกเอกสารได้

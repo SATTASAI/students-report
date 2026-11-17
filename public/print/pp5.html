@@ -39,6 +39,12 @@ for (const [i, id] of ids.entries()) {
   try { books.push(await get(`/api/courses/${encodeURIComponent(id)}`)); } catch (e) { status(e.message); throw e; }
 }
 const first = books[0].course;
+// บันทึกการมาเรียนรายวันทั้งห้อง (เฉพาะพิมพ์ทั้งห้อง ?grade&room — พิมพ์รายวิชาเดียวไม่มี)
+let daily = null;
+if (!q.get("course") && !q.get("courses") && q.get("grade") && q.get("room")) {
+  status("กำลังเตรียมบันทึกการมาเรียนรายวัน…");
+  try { daily = await get(`/api/reports/daily-attendance?grade=${encodeURIComponent(q.get("grade"))}&room=${encodeURIComponent(q.get("room"))}${q.get("year") ? `&year=${encodeURIComponent(q.get("year"))}` : ""}`); } catch (e) { status(e.message); throw e; }
+}
 const termTitle = TERM === 1 ? "ภาคเรียนที่ 1" : "ภาคเรียนที่ 2 (สรุปทั้งปี)";
 const title = books.length === 1 ? `ปพ.5 ${first.code} ${first.name} ${first.grade_level}/${first.classroom} ${termTitle}` : `ปพ.5 ทุกวิชา ${first.grade_level}/${first.classroom} (${books.length} วิชา) ${termTitle}`;
 toolbar(title);
@@ -54,7 +60,47 @@ function splitCode(code) {
   return m ? { std: m[1].trim(), no: m[2] } : { std: String(code || ""), no: "" };
 }
 
-function book(d) {
+// บันทึกการมาเรียนรายวันของห้อง: 1 หน้าต่อเดือนของภาคเรียน · แถว = นักเรียน · คอลัมน์ = วันเรียนทุกวันในเดือน
+// ข ขาด · ล ลากิจ · ป ลาป่วย · ส มาสาย (ตามบันทึกของครูประจำชั้น) · ช่องว่าง = มาเรียนปกติ
+const TH_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+function dailyPages(D, term, mark, c) {
+  const months = new Map();
+  for (const x of D.days) {
+    if (x.term !== term) continue;
+    const m = x.date.slice(0, 7);
+    if (!months.has(m)) months.set(m, []);
+    months.get(m).push(x.date);
+  }
+  const big = D.students.length > 25;
+  const isOff = (k) => k === "ข" || k === "ล" || k === "ป";
+  return [...months].map(([ym, dates]) => {
+    const mo = Number(ym.slice(5, 7)) - 1, be = Number(ym.slice(0, 4)) + 543;
+    const rows = D.students.map((st) => {
+      const m = D.marks[st.id] || {};
+      const cells = dates.map((dt) => `<td class="c">${m[dt] ? esc(m[dt]) : ""}</td>`).join("");
+      const off = dates.filter((dt) => isOff(m[dt])).length, late = dates.filter((dt) => m[dt] === "ส").length;
+      return `<tr><td class="c">${td(st.number ?? "")}</td><td class="nm">${esc(st.name)}</td>${cells}<td class="c">${off ? td(off) : ""}</td><td class="c">${late ? td(late) : ""}</td></tr>`;
+    }).join("");
+    const perDay = dates.map((dt) => D.students.filter((st) => isOff(D.marks[st.id]?.[dt])).length);
+    const perLate = dates.map((dt) => D.students.filter((st) => D.marks[st.id]?.[dt] === "ส").length);
+    const sumOff = perDay.reduce((a, b) => a + b, 0), sumLate = perLate.reduce((a, b) => a + b, 0);
+    const foot = `<tr class="sum"><td colspan="2" class="r"><b>รวมขาด/ลา (คน)</b></td>${perDay.map((n) => `<td class="c">${n ? td(n) : ""}</td>`).join("")}<td class="c"><b>${sumOff ? td(sumOff) : ""}</b></td><td></td></tr>
+      <tr class="sum"><td colspan="2" class="r"><b>มาสาย (คน)</b></td>${perLate.map((n) => `<td class="c">${n ? td(n) : ""}</td>`).join("")}<td></td><td class="c"><b>${sumLate ? td(sumLate) : ""}</b></td></tr>`;
+    return `<section class="sheet land">${mark}
+      <div class="center"><b>บันทึกการมาเรียนรายวัน ภาคเรียนที่ ${td(term)} เดือน${TH_MONTHS[mo]} พ.ศ. ${td(be)} ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))} ปีการศึกษา ${td(c.year_be)}</b></div>
+      <table class="t tiny fit${big ? " dense-l" : ""}">
+        <thead>
+          <tr><th rowspan="2" style="width:9mm">เลขที่</th><th rowspan="2">ชื่อ–สกุล</th><th colspan="${dates.length}">วันที่</th><th rowspan="2" style="width:14mm">ขาด/ลา<br>รวม</th><th rowspan="2" style="width:14mm">มาสาย<br>รวม</th></tr>
+          <tr>${dates.map((dt) => `<th>${td(Number(dt.slice(8, 10)))}</th>`).join("")}</tr>
+        </thead>
+        <tbody>${rows}${foot}</tbody>
+      </table>
+      <div class="note">ข ขาด · ล ลากิจ · ป ลาป่วย · ส มาสาย · ช่องว่าง = มาเรียนปกติ · แสดงเฉพาะวันเรียน (ไม่รวมวันหยุด)</div>
+    </section>`;
+  }).join("");
+}
+
+function book(d, daily) {
   const c = d.course, s = d.settings;
   const W = indicatorWord(c.grade_level);
   const active = d.students.filter((x) => x.enrollment_status === "enrolled");
@@ -63,7 +109,9 @@ function book(d) {
   // ลายน้ำฉบับร่าง: ผลทั้งปี (ภาค 2) ที่ยังไม่อนุมัติ — เล่มภาค 1 ไม่มีขั้นอนุมัติแยก (อนุมัติผลทั้งปีที่ภาค 2)
   const draft = TERM === 2 && c.status !== "approved";
   const mark = draft ? `<div class="draft-mark"><span>ฉบับร่าง ยังไม่อนุมัติ</span></div>` : "";
-  const head = (t) => `<div class="center"><b>${t}${TERM === 1 && !/ภาคเรียนที่/.test(t) ? ` ภาคเรียนที่ ${td(1)}` : ""} ปีการศึกษา ${td(c.year_be)} วิชา ${esc(c.name)} รหัสวิชา ${esc(td(c.code))} ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))}</b></div>`;
+  // บันทึกการมาเรียนรายวันทั้งห้อง — พิมพ์เฉพาะเล่มแรกของห้อง (ครั้งเดียวต่อห้อง) วางก่อนบันทึกเวลาเรียน
+  const dailyHtml = daily ? (TERM === 1 ? [1] : [1, 2]).map((t) => dailyPages(daily, t, mark, c)).join("") : "";
+  const head =(t) => `<div class="center"><b>${t}${TERM === 1 && !/ภาคเรียนที่/.test(t) ? ` ภาคเรียนที่ ${td(1)}` : ""} ปีการศึกษา ${td(c.year_be)} วิชา ${esc(c.name)} รหัสวิชา ${esc(td(c.code))} ชั้น ${esc(td(c.grade_level))}/${esc(td(c.classroom))}</b></div>`;
   const band = /^ป\.[123]$/.test(c.grade_level) ? "ประถมศึกษาตอนต้น" : "ประถมศึกษาตอนปลาย";
   const terms = (TERM === 1 ? [1] : [1, 2]).filter((t) => d.items.some((i) => i.term_number === t));
 
@@ -317,13 +365,13 @@ function book(d) {
     <div class="note">เวลาเรียนรายวิชา ${td(c.hours_per_year)} ชั่วโมงต่อปี · ต้องมีเวลาเรียนไม่น้อยกว่าร้อยละ ${td(s.attendance_pass_pct)} จึงมีสิทธิ์รับการประเมิน${TERM === 1 ? ` (ตัดสินสิทธิ์สอบเมื่อจบปีในเล่มภาคเรียนที่ ${td(2)})` : ""} · ช่องว่าง = มาเรียนปกติ</div>
   </section>`;
 
-  const all = TERM === 1 ? cover + structure + attendance + indicatorPages + termSummary
-    : cover + structure + attendance + assessPage("rtw") + assessPage("trait") + indicatorPages + termSummary + yearSummary;
+  const all = TERM === 1 ? cover + structure + dailyHtml + attendance + indicatorPages + termSummary
+    : cover + structure + dailyHtml + attendance + assessPage("rtw") + assessPage("trait") + indicatorPages + termSummary + yearSummary;
   // ฉบับร่าง: ท้ายทุกส่วนมีข้อความกำกับด้วย — หน้าสุดท้ายของตารางยาวที่มีเนื้อหาน้อยจะยังเห็นคำว่าฉบับร่างเต็มคำ
   return draft ? all.replaceAll("</section>", `<div class="draft-foot">ฉบับร่าง ยังไม่อนุมัติ — ใช้ตรวจทานเท่านั้น</div></section>`) : all;
 }
 
-document.getElementById("doc").innerHTML = books.map(book).join("");
+document.getElementById("doc").innerHTML = books.map((d, i) => book(d, i === 0 ? daily : null)).join("");
 
 // ให้แต่ละหน้าจบในกระดาษแผ่นเดียว: ถ้าเนื้อหาสูงเกินพื้นที่พิมพ์ (A4 หักขอบตาม @page) ลดขนาดตัวอักษรของตาราง
 // ทีละ 0.25pt จนพอดี (ต่ำสุด 9pt) — ห้องเล็กไม่ถูกแตะ · ถ้ายังไม่พอ ตารางจะต่อหน้าถัดไปพร้อมหัวตารางซ้ำ
