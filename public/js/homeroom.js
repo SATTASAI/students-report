@@ -1,5 +1,5 @@
 import { shell, api, esc, toast, showError, gradeBadge, dialog, confirmBox, ICONS, params, withYear, withTerm, fmt, editGate, monthsOfTerm, TERM_LABEL } from "/js/app.js";
-import { ASSESSMENT_GROUPS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText } from "/js/grading.js";
+import { ASSESSMENT_GROUPS, LEVELS, LEVEL_LABEL, summarizeGroup, summaryText, termKey } from "/js/grading.js";
 import { analyzeBody, ageText, levelClass, loadGrowthRefs } from "/js/growth.js";
 import { KINDER_DOMAINS, KINDER_COMMENT_FIELDS, KINDER_LEVELS, levelLabel, domainSummary, overallSummary, shortCode } from "/js/kinder.js";
 import { logColumns } from "/js/logbook-data.js";
@@ -52,7 +52,7 @@ const KINDER = /^อ\./.test(grade); // อนุบาล: ประเมิ�
 // บันทึกการมาเรียนอยู่แท็บแรก (ใช้ทุกวัน)
 // การประเมินที่สรุปผลทั้งปี (คุณลักษณะฯ อ่านคิดฯ สมรรถนะ) อยู่ที่ภาคเรียนที่ 2 เท่านั้น
 const TABS = KINDER ? [["attend", `บันทึกการมาเรียน ภาค ${T}`], ["dev", `ประเมินพัฒนาการ ภาค ${T}`], ["devsum", T === 2 ? "สรุปผลพัฒนาการ (ภาค 2/ทั้งปี)" : "สรุปผลพัฒนาการ ภาค 1"], ["kcomments", `ความคิดเห็นครู ภาค ${T}`], ["body", `น้ำหนัก ส่วนสูง ภาค ${T}`]]
-  : [["attend", `บันทึกการมาเรียน ภาค ${T}`], ...(T === 2 ? ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, `${g.short} (ทั้งปี)`]) : []), ["comments", `ความคิดเห็น ปพ.6 ภาค ${T}`], ["body", `น้ำหนัก ส่วนสูง ภาค ${T}`],
+  : [["attend", `บันทึกการมาเรียน ภาค ${T}`], ...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, `${g.short} (ภาค ${T})`]), ["comments", `ความคิดเห็น ปพ.6 ภาค ${T}`], ["body", `น้ำหนัก ส่วนสูง ภาค ${T}`],
   ...(hasMovers ? [["carry", "คะแนนยกมา ภาค 1 (ย้ายเข้า)"]] : []), ["grades", T === 1 ? "คะแนนรวม ภาค 1" : "ผลการเรียนทั้งปี"]];
 if (location.hash === "#carry" && hasMovers) tab = "carry";
 const tabs = document.getElementById("tabs");
@@ -137,7 +137,7 @@ const RULE_TEXT = {
 const valueOf = (sid, key) => data.assessments[sid]?.[key] ?? "";
 const levelOptions = (v, blank = "–") => [["", blank], ...LEVELS.map((l) => [l.value, `${l.value} ${l.label}`])]
   .map(([val, label]) => `<option value="${val}" ${String(v) === val ? "selected" : ""}>${label}</option>`).join("");
-const summaryCell = (group, sid) => { const v = summarizeGroup(group, data.assessments[sid]); return v == null ? "–" : `${group.type === "activity" ? "" : `${v} `}${summaryText(group, v)}`; };
+const summaryCell = (group, sid) => { const v = summarizeGroup(group, data.assessments[sid], T); return v == null ? "–" : `${group.type === "activity" ? "" : `${v} `}${summaryText(group, v)}`; };
 
 const labelOf = (group, key) => { const i = group.items.findIndex(([k]) => k === key); return i < 0 ? key : (group.key === "rtw" ? `ข้อ ${i + 1} ` : "") + group.items[i][1]; };
 function renderAssessment(group) {
@@ -152,11 +152,11 @@ function renderAssessment(group) {
         ${group.items.map(([k, label], i) => `<th class="col-head" style="min-width:96px">${shortHead
           ? `<button type="button" class="tip-btn" data-tip="ข้อ ${i + 1}: ${esc(label)}" aria-label="ข้อ ${i + 1} วัดเรื่องอะไร">ข้อ ${i + 1} <i class="i" aria-hidden="true">i</i></button>`
           : `<span class="t" data-tip="${esc(label)}">${esc(label)}</span>`}
-          <select class="level-select fill" data-fill="${k}" aria-label="กรอกทั้งห้อง ${esc(label)}">${levelOptions("", "ทั้งห้อง…")}</select></th>`).join("")}
+          <select class="level-select fill" data-fill="${termKey(k, T)}" aria-label="กรอกทั้งห้อง ${esc(label)}">${levelOptions("", "ทั้งห้อง…")}</select></th>`).join("")}
         <th class="col-head">ทุกข้อ</th><th class="col-head">สรุป</th></tr></thead>
       <tbody>${data.students.map((s) => `<tr data-sid="${s.id}" class="${s.enrollment_status !== "enrolled" ? "inactive" : ""}">
         <td class="stick no">${s.number ?? ""}</td><td class="stick name">${esc(s.name)}</td>
-        ${group.items.map(([k]) => { const v = valueOf(s.id, k); return `<td><select class="level-select v${esc(v)}" data-key="${k}" aria-label="${esc(s.name)} ${esc(labelOf(group, k))}">${levelOptions(v)}</select></td>`; }).join("")}
+        ${group.items.map(([k]) => { const tk = termKey(k, T), v = valueOf(s.id, tk); return `<td><select class="level-select v${esc(v)}" data-key="${tk}" aria-label="${esc(s.name)} ${esc(labelOf(group, k))}">${levelOptions(v)}</select></td>`; }).join("")}
         <td><select class="level-select fill" data-row aria-label="ทุกข้อของ ${esc(s.name)}">${levelOptions("", "ทุกข้อ…")}</select></td>
         <td class="calc" data-sum>${summaryCell(group, s.id)}</td></tr>`).join("")}</tbody>
     </table></div>
