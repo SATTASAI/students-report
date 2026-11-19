@@ -53,7 +53,7 @@ const KINDER = /^อ\./.test(grade); // อนุบาล: ประเมิ�
 // การประเมินที่สรุปผลทั้งปี (คุณลักษณะฯ อ่านคิดฯ สมรรถนะ) อยู่ที่ภาคเรียนที่ 2 เท่านั้น
 const TABS = KINDER ? [["attend", `บันทึกการมาเรียน ภาค ${T}`], ["dev", `ประเมินพัฒนาการ ภาค ${T}`], ["devsum", T === 2 ? "สรุปผลพัฒนาการ (ภาค 2/ทั้งปี)" : "สรุปผลพัฒนาการ ภาค 1"], ["kcomments", `ความคิดเห็นครู ภาค ${T}`], ["body", `น้ำหนัก ส่วนสูง ภาค ${T}`]]
   : [["attend", `บันทึกการมาเรียน ภาค ${T}`], ...ASSESSMENT_GROUPS.filter((g) => g.type !== "activity").map((g) => [g.key, `${g.short} (ภาค ${T})`]), ["comments", `ความคิดเห็น ปพ.6 ภาค ${T}`], ["body", `น้ำหนัก ส่วนสูง ภาค ${T}`],
-  ...(hasMovers ? [["carry", "คะแนนยกมา ภาค 1 (ย้ายเข้า)"]] : []), ["grades", T === 1 ? "คะแนนรวม ภาค 1" : "ผลการเรียนทั้งปี"]];
+  ...(hasMovers ? [["carry", "คะแนนยกมา ภาค 1 (ย้ายเข้า)"]] : []), ["grades", T === 1 ? "คะแนนรวม ภาค 1" : "ผลการเรียนทั้งปี"], ["behavior", "คะแนนพฤติกรรม"]];
 if (location.hash === "#carry" && hasMovers) tab = "carry";
 const tabs = document.getElementById("tabs");
 tabs.innerHTML = TABS.map(([k, label]) => `<button role="tab" data-tab="${k}">${label}</button>`).join("");
@@ -77,8 +77,37 @@ function render() {
   else if (tab === "body") renderBody();
   else if (tab === "carry") renderCarry().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
   else if (tab === "grades") renderGrades();
+  else if (tab === "behavior") renderBehavior().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
   else if (tab === "dev" || tab === "devsum" || tab === "kcomments") renderKinder().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
   else renderAttendance().catch((err) => { view.innerHTML = `<div class="panel empty"><strong>โหลดไม่สำเร็จ</strong>${esc(err.message)}</div>`; });
+}
+
+// ---------- คะแนนพฤติกรรม (จากระบบ publicservice — ดูอย่างเดียว) ----------
+// คงเหลือแต่ละภาค (เริ่ม 100 สะสมไม่เกิน 100) · ตัด/เพิ่มของภาคที่เลือก · แตะชื่อเพื่อดูรายการ
+async function renderBehavior() {
+  view.innerHTML = `<div class="panel empty">กำลังโหลด…</div>`;
+  const b = await api(`/api/reports/behavior?${q}`);
+  const sum = (st, sign) => st.records.filter((r) => r.term === T && Math.sign(r.points) === sign).reduce((a, r) => a + Math.abs(r.points), 0);
+  const cls = (v) => v < b.pass_min ? "bad" : "";
+  view.innerHTML = `<div class="sheet-wrap"><table class="sheet">
+    <thead><tr><th class="stick no col-head">เลขที่</th><th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
+      <th class="col-head">ตัด (ภาค ${T})</th><th class="col-head">เพิ่ม (ภาค ${T})</th>${[1, 2].filter((t) => t <= T).map((t) => `<th class="col-head">คงเหลือ ภาค ${t}</th>`).join("")}<th class="col-head">กิจกรรมเพื่อสังคมฯ</th></tr></thead>
+    <tbody>${b.students.map((st) => {
+      const now = st.scores[T] ?? 100;
+      return `<tr class="${st.enrollment_status !== "enrolled" ? "inactive" : ""}"><td class="stick no">${st.number ?? ""}</td>
+        <td class="stick name"><button class="link" data-bh="${st.id}" style="background:none;border:0;padding:0;color:inherit;text-align:left;cursor:pointer;font:inherit">${esc(st.name)}</button></td>
+        <td class="calc">${sum(st, -1) || ""}</td><td class="calc">${sum(st, 1) || ""}</td>
+        ${[1, 2].filter((t) => t <= T).map((t) => `<td class="calc ${cls(st.scores[t] ?? 100)}"><b>${st.scores[t] ?? 100}</b></td>`).join("")}
+        <td class="calc">${now < b.pass_min ? `<span class="bad">ไม่ผ่าน</span>` : "ผ่าน"}</td></tr>`;
+    }).join("")}</tbody></table></div>
+    <p class="muted small" style="margin-top:10px">ข้อมูลจากระบบคะแนนพฤติกรรม (เมนู "รายงานพฤติกรรม") แบบทันที — ดูอย่างเดียว · เริ่มภาคละ 100 สะสมไม่เกิน 100 · ต่ำกว่า ${b.pass_min} = กิจกรรมเพื่อสังคมและสาธารณประโยชน์ภาคนั้นไม่ผ่าน · แตะชื่อเพื่อดูรายการตัด/เพิ่ม · พิมพ์ได้ใน ปพ.6 หน้า 2</p>`;
+  view.onclick = (e) => {
+    const btn = e.target.closest("[data-bh]"); if (!btn) return;
+    const st = b.students.find((x) => x.id === Number(btn.dataset.bh));
+    const rows = st.records.length ? st.records.map((r) => `<tr><td>ภาค ${r.term}</td><td>${esc(r.incident_date || "")}</td><td>${esc(r.reason)}</td>
+      <td style="text-align:right" class="${r.points < 0 ? "bad" : ""}"><b>${r.points > 0 ? "+" : ""}${r.points}</b></td></tr>`).join("") : `<tr><td colspan="4" class="muted">ไม่มีรายการ</td></tr>`;
+    dialog({ title: `คะแนนพฤติกรรม — ${st.name}`, body: `<div class="sheet-wrap"><table class="sheet" style="min-width:0"><tbody>${rows}</tbody></table></div>`, okText: "", cancelText: "ปิด" });
+  };
 }
 
 // ---------- คะแนนยกมาจาก ปพ.6 ของโรงเรียนเดิม (นักเรียนย้ายเข้าระหว่างปี) ----------

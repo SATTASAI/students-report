@@ -24,6 +24,15 @@ const guardianName = [g.guardian_prefix, g.guardian_first_name, g.guardian_last_
 const pre = (label, v) => !v ? "" : String(v).trim().startsWith(label) ? String(v).trim() : `${label}${String(v).trim()}`;
 const address = [g.house_number && `บ้านเลขที่ ${g.house_number}`, g.village_no && pre("หมู่ ", String(g.village_no).replace(/^หมู่(ที่)?\s*/, "")), g.road_soi, pre("ตำบล", g.subdistrict), pre("อำเภอ", g.district), pre("จังหวัด", g.province)].filter(Boolean).join(" ");
 const unknown = d.absences.filter((a) => a.reason === "unknown").length;
+// สรุปคะแนนความประพฤติ (ระบบคะแนนพฤติกรรม): ตัด/เพิ่มของภาคที่เลือก (หรือทั้งปี) และคะแนนคงเหลือ
+function behaviorHtml() {
+  const b = d.behavior; if (!b) return "";
+  const terms = d.term ? [d.term] : [1, 2];
+  return `<p style="text-indent:2.5cm;text-align:justify;margin-top:3mm">นอกจากนี้ ขอแจ้งคะแนนความประพฤติของนักเรียน${d.term ? `ภาคเรียนที่ ${td(d.term)}` : `ปีการศึกษา ${td(d.year.year_be)}`}
+    ถูกตัดคะแนน ${td(b.deduct_count)} ครั้ง รวม ${td(b.deducted)} คะแนน และได้เพิ่มคะแนนจากการทำความดี ${td(b.add_count)} ครั้ง รวม ${td(b.added)} คะแนน
+    คะแนนคงเหลือ ${terms.map((t) => `${terms.length > 1 ? `ภาค ${td(t)} ` : ""}${td(b.scores[t] ?? 100)}`).join(" · ")} จาก ${td(100)} คะแนน
+    (ต่ำกว่า ${td(b.pass_min)} คะแนน กิจกรรมเพื่อสังคมและสาธารณประโยชน์ไม่ผ่าน)</p>`;
+}
 document.getElementById("doc").innerHTML = `<section class="sheet">
   <img class="garuda" src="/assets/garuda.png" alt="" style="width:20mm;height:22mm;border-radius:0;margin:0 auto 2mm">
   <div style="display:flex;justify-content:space-between;align-items:flex-start"><div>ที่ ......................................</div><div class="right">${esc(s.school_name || "โรงเรียนบ้านป่าเด็ง")}${s.school_area ? `<br>${esc(s.school_area)}` : ""}</div></div>
@@ -39,6 +48,7 @@ document.getElementById("doc").innerHTML = `<section class="sheet">
   </table>
   <p style="text-indent:2.5cm;text-align:justify;margin-top:4mm">การขาดเรียนบ่อยส่งผลต่อเวลาเรียน ซึ่งนักเรียนต้องมีเวลาเรียนไม่น้อยกว่าร้อยละ ${td(s.attendance_pass_pct)} ของเวลาเรียนทั้งหมดจึงจะมีสิทธิ์รับการประเมินผล
     โรงเรียนจึงขอแจ้งให้ท่านทราบ และขอความร่วมมือดูแลให้นักเรียนมาเรียนสม่ำเสมอ หากมีเหตุจำเป็นโปรดแจ้งครูประจำชั้น</p>
+  ${behaviorHtml()}
   <p style="text-indent:2.5cm">จึงเรียนมาเพื่อโปรดทราบและให้ความร่วมมือ</p>
   <div class="signs" style="grid-template-columns:1fr 1fr">
     <div></div>
