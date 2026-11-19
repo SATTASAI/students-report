@@ -441,6 +441,29 @@ export async function behaviorScores(env, yearId, studentIds) {
   return out;
 }
 
+// รายการที่ถูกตัดคะแนนพฤติกรรม (points < 0, ไม่รวมที่ยกเลิก) ทั้งปี — ใช้พิมพ์หน้า 2 ของ ปพ.6
+// คืน { student_id: [{ term, points, reason, incident_date }] } · ยังไม่มีตาราง ps_behavior_records = {}
+export async function behaviorDeductions(env, yearId, studentIds) {
+  const out = {};
+  for (let i = 0; i < studentIds.length; i += 90) {
+    const chunk = studentIds.slice(i, i + 90);
+    if (!chunk.length) continue;
+    let results;
+    try {
+      ({ results } = await env.DB.prepare(
+        `SELECT student_id, term_number, points, reason, incident_date FROM ps_behavior_records
+          WHERE academic_year_id = ? AND cancelled_at IS NULL AND points < 0 AND student_id IN (${chunk.map(() => "?").join(",")})
+          ORDER BY term_number, incident_date, id`
+      ).bind(yearId, ...chunk).all());
+    } catch (e) {
+      if (/no such table/i.test(String(e?.message))) return {};
+      throw e;
+    }
+    for (const r of results) (out[r.student_id] ||= []).push({ term: r.term_number, points: Number(r.points), reason: r.reason, incident_date: r.incident_date });
+  }
+  return out;
+}
+
 // วันขาด/ลา (ไม่นับมาสาย) จากบันทึกการมาเรียนของครูประจำชั้น — ใช้กับหนังสือแจ้งผู้ปกครองและ ปพ.6
 export const ABSENT_CODES = ["ข", "ล", "ป"];
 export async function absenceCounts(env, yearId, studentIds) {
