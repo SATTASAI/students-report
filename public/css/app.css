@@ -837,7 +837,8 @@ body.framed > :not(.sidebar):not(.mobilebar):not(.scrim):not(.sr-frame):not(dial
   .sheet-grip span { width: 42px; height: 5px; border-radius: 99px; background: currentColor; opacity: .35; }
 }
 @media (max-width: 640px) {
-  dialog { width: 100% !important; max-width: 100%; margin: auto 0 0; border-radius: 22px 22px 0 0; max-height: 92dvh; padding-bottom: env(safe-area-inset-bottom); }
+  /* ยกกล่องขึ้นพ้นแถบล่างแบบลอย (.bbar) ให้ปุ่มท้ายกล่องไม่ถูกทับ */
+  dialog { width: 100% !important; max-width: 100%; margin: auto 0 var(--bb-h, 0px); border-radius: 22px 22px 0 0; max-height: calc(92dvh - var(--bb-h, 0px)); padding-bottom: env(safe-area-inset-bottom); }
   dialog[open] { animation: sheetUp .32s cubic-bezier(.2,.9,.25,1); }
   dialog[open]::backdrop { animation: fadeIn .3s ease; }
   .dlg-body { max-height: calc(92dvh - 150px); }
