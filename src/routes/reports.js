@@ -1,7 +1,7 @@
 import { json, fail, requireUser, requireViewer, requireReportViewer, intParam, text } from "../lib/http.js";
 import {
   resolveYear, listYears, getSettings, listRooms, roomRoster, isHomeroomTeacher, yearResultsForStudents,
-  assessmentsFor, absenceCounts, attendanceSummary, yearTerms, schoolCalendar, currentTerm, termOfDate, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, inPilot, compareGrade, compareRoom, compareSubject, homeroomNames,
+  assessmentsFor, absenceCounts, attendanceSummary, behaviorDeductions, yearTerms, schoolCalendar, currentTerm, termOfDate, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, inPilot, compareGrade, compareRoom, compareSubject, homeroomNames,
 } from "../lib/data.js";
 import { courseOverview } from "./admin.js";
 import { listAbsences, commentsFor, bodyFor } from "./homeroom.js";
@@ -48,7 +48,7 @@ export async function roomReport(env, year, grade, room, onlyStudent) {
   let roster = await roomRoster(env, year.id, grade, room);
   if (onlyStudent) roster = roster.filter((s) => s.id === onlyStudent);
   const ids = roster.map((s) => s.id);
-  const [grades, assessments, absences, settings, homeroom, comments, attendance, body, terms] = await Promise.all([
+  const [grades, assessments, absences, settings, homeroom, comments, attendance, body, terms, deductions] = await Promise.all([
     yearResultsForStudents(env, year.id, grade, ids),
     assessmentsFor(env, year.id, ids),
     absenceCounts(env, year.id, ids),
@@ -58,6 +58,7 @@ export async function roomReport(env, year, grade, room, onlyStudent) {
     attendanceSummary(env, year.id, ids),
     bodyFor(env, year.id, ids),
     yearTerms(env, year.id),
+    behaviorDeductions(env, year.id, ids),
   ]);
   return {
     year, grade, room, settings, homeroom_teachers: homeroom, terms,
@@ -66,7 +67,7 @@ export async function roomReport(env, year, grade, room, onlyStudent) {
       birth_date: s.birth_date, gender: s.gender, enrollment_status: s.enrollment_status, transfer_in_term: s.transfer_in_term || null,
       subjects: grades[s.id] || [], gpa: weightedGPA(grades[s.id] || []),
       assessments: assessments[s.id] || {}, absent_days: absences[s.id] || 0, comments: comments[s.id] || {},
-      attendance: attendance[s.id] || {}, body: body[s.id] || {},
+      attendance: attendance[s.id] || {}, body: body[s.id] || {}, deductions: deductions[s.id] || [],
     })),
   };
 }
