@@ -1,7 +1,7 @@
 import { json, fail, requireUser, requireViewer, requireReportViewer, intParam, text } from "../lib/http.js";
 import {
   resolveYear, listYears, getSettings, listRooms, roomRoster, isHomeroomTeacher, yearResultsForStudents,
-  assessmentsFor, absenceCounts, attendanceSummary, behaviorDeductions, yearTerms, schoolCalendar, currentTerm, termOfDate, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, inPilot, compareGrade, compareRoom, compareSubject, homeroomNames,
+  assessmentsFor, absenceCounts, attendanceSummary, behaviorRecords, behaviorScores, BEHAVIOR_PASS_MIN, yearTerms, schoolCalendar, currentTerm, termOfDate, studentName, isPrimaryGrade, isSchoolGrade, isKinderGrade, inPilot, compareGrade, compareRoom, compareSubject, homeroomNames,
 } from "../lib/data.js";
 import { courseOverview } from "./admin.js";
 import { listAbsences, commentsFor, bodyFor } from "./homeroom.js";
@@ -48,7 +48,7 @@ export async function roomReport(env, year, grade, room, onlyStudent) {
   let roster = await roomRoster(env, year.id, grade, room);
   if (onlyStudent) roster = roster.filter((s) => s.id === onlyStudent);
   const ids = roster.map((s) => s.id);
-  const [grades, assessments, absences, settings, homeroom, comments, attendance, body, terms, deductions] = await Promise.all([
+  const [grades, assessments, absences, settings, homeroom, comments, attendance, body, terms, behavior, bscores] = await Promise.all([
     yearResultsForStudents(env, year.id, grade, ids),
     assessmentsFor(env, year.id, ids),
     absenceCounts(env, year.id, ids),
@@ -58,7 +58,8 @@ export async function roomReport(env, year, grade, room, onlyStudent) {
     attendanceSummary(env, year.id, ids),
     bodyFor(env, year.id, ids),
     yearTerms(env, year.id),
-    behaviorDeductions(env, year.id, ids),
+    behaviorRecords(env, year.id, ids),
+    behaviorScores(env, year.id, ids),
   ]);
   return {
     year, grade, room, settings, homeroom_teachers: homeroom, terms,
@@ -67,7 +68,7 @@ export async function roomReport(env, year, grade, room, onlyStudent) {
       birth_date: s.birth_date, gender: s.gender, enrollment_status: s.enrollment_status, transfer_in_term: s.transfer_in_term || null,
       subjects: grades[s.id] || [], gpa: weightedGPA(grades[s.id] || []),
       assessments: assessments[s.id] || {}, absent_days: absences[s.id] || 0, comments: comments[s.id] || {},
-      attendance: attendance[s.id] || {}, body: body[s.id] || {}, deductions: deductions[s.id] || [],
+      attendance: attendance[s.id] || {}, body: body[s.id] || {}, behavior: behavior[s.id] || [], behavior_scores: bscores[s.id] || {},
     })),
   };
 }
@@ -81,6 +82,16 @@ export async function handleReports(request, env, user, parts, method, url) {
     const { year, grade, room } = await roomParams(env, user, url);
     const student = url.searchParams.get("student") ? intParam(url.searchParams.get("student")) : null;
     return json(await roomReport(env, year, grade, room, student));
+  }
+
+  // คะแนนพฤติกรรม (ระบบ publicservice) ของห้อง: คะแนนคงเหลือแต่ละภาค + รายการตัด/เพิ่ม — หน้าครูประจำชั้น
+  if (kind === "behavior") {
+    const { year, grade, room } = await roomParams(env, user, url);
+    const roster = await roomRoster(env, year.id, grade, room);
+    const ids = roster.map((s) => s.id);
+    const [recs, scores] = await Promise.all([behaviorRecords(env, year.id, ids), behaviorScores(env, year.id, ids)]);
+    return json({ year, grade, room, pass_min: BEHAVIOR_PASS_MIN, students: roster.map((s) => ({ id: s.id, number: s.number, name: studentName(s),
+      enrollment_status: s.enrollment_status, scores: scores[s.id] || {}, records: recs[s.id] || [] })) });
   }
 
   // บันทึกการมาเรียนรายวันทั้งห้อง (พิมพ์ใน ปพ.5 ครั้งเดียวต่อห้อง): วันเรียนทุกวันของแต่ละภาค + รหัสการมาเรียนของนักเรียนรายวัน
@@ -159,7 +170,13 @@ export async function handleReports(request, env, user, parts, method, url) {
     // ?term=1|2: เฉพาะวันขาด/ลาในภาคเรียนนั้น (หนังสือแจ้งผู้ปกครองรายภาค)
     const term = Number(url.searchParams.get("term"));
     if (term === 1 || term === 2) { const terms = await yearTerms(env, year.id); absences = absences.filter((a) => termOfDate(terms, a.absence_date) === term); }
-    return json({ year, grade, room, term: term === 1 || term === 2 ? term : null, settings: await getSettings(env, year.id), student: { ...s, name: studentName(s) }, guardian: detail || {}, absences });
+    // สรุปคะแนนพฤติกรรม (ตัด/เพิ่ม/คงเหลือ) ของภาคที่เลือก หรือทั้งปี
+    const t12 = term === 1 || term === 2 ? term : null;
+    const brecs = ((await behaviorRecords(env, year.id, [sid]))[sid] || []).filter((r) => !t12 || r.term === t12);
+    const bsc = (await behaviorScores(env, year.id, [sid]))[sid] || {};
+    const behavior = { deducted: brecs.filter((r) => r.points < 0).reduce((a, r) => a - r.points, 0), added: brecs.filter((r) => r.points > 0).reduce((a, r) => a + r.points, 0),
+      deduct_count: brecs.filter((r) => r.points < 0).length, add_count: brecs.filter((r) => r.points > 0).length, scores: bsc, pass_min: BEHAVIOR_PASS_MIN };
+    return json({ year, grade, room, term: t12, settings: await getSettings(env, year.id), student: { ...s, name: studentName(s) }, guardian: detail || {}, absences, behavior });
   }
 
   if (kind === "pp1") {
