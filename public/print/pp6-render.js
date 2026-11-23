@@ -1,5 +1,5 @@
 // ตัวสร้างหน้า ปพ.6 รายคน — ใช้ร่วมกันระหว่างหน้าพิมพ์ของครู (/print/pp6.html) และหน้าผู้ปกครอง (/parent)
-import { esc, fmt, td, gradeOut, GRADE_TEXT, directorTitleHtml } from "/print/print.js";
+import { esc, fmt, td, gradeOut, GRADE_TEXT, directorTitleHtml, thaiDate } from "/print/print.js";
 import { ASSESSMENT_GROUPS, summarizeGroup, summaryText, activityResult } from "/js/grading.js";
 
 // d = ผลจาก /api/reports/room · TERM = 1 (ภาคเรียนที่ 1) หรือ 2 (สรุปทั้งปี)
@@ -43,6 +43,37 @@ function activityHtml(v = {}) {
     <tbody>${ACT.items.map(([k, label]) => `<tr><td>&nbsp;&nbsp;${esc(label)}</td>${cols.map((t) => `<td class="c">${levelText(ACT, activityResult(k, v, t))}</td>`).join("")}</tr>`).join("")}
       <tr><td class="r"><b>สรุป</b></td>${cols.map((t) => `<td class="c"><b>${levelText(ACT, summarizeGroup(ACT, v, t))}</b></td>`).join("")}</tr></tbody>
   </table>`;
+}
+
+// หน้า 2 ของ ปพ.6: บันทึกคะแนนความประพฤติ — รายการตัดคะแนนและเพิ่มคะแนน (ความดีที่ฝ่ายปกครองอนุมัติ) ทั้งปี
+// และคะแนนคงเหลือแต่ละภาค (เริ่ม 100 สะสมไม่เกิน 100) — มีทุกคน แม้ไม่มีรายการ
+function deductionPage(st, d) {
+  const rows = st.behavior || [];
+  const cut = rows.filter((r) => r.points < 0).reduce((a, r) => a - r.points, 0);
+  const add = rows.filter((r) => r.points > 0).reduce((a, r) => a + r.points, 0);
+  const sc = st.behavior_scores || {};
+  const terms = TERM === 1 ? [1] : [1, 2];
+  const body = rows.length
+    ? rows.map((r, i) => `<tr><td class="c">${td(i + 1)}</td><td class="c">${thaiDate(r.incident_date, true)}</td><td class="c">${td(r.term)}</td><td>${esc(r.reason)}</td>
+        <td class="c">${r.points < 0 ? td(-r.points) : ""}</td><td class="c">${r.points > 0 ? td(r.points) : ""}</td></tr>`).join("")
+    : `<tr><td colspan="6" class="c">ไม่มีรายการตัดคะแนนหรือเพิ่มคะแนน</td></tr>`;
+  return `<section class="sheet">
+    <div class="form-no">ปพ.6 (หน้า 2)</div>
+    <h2 style="text-align:center">บันทึกคะแนนความประพฤติ (การตัดคะแนนและการเพิ่มคะแนน)</h2>
+    <div class="info">
+      <div>ชื่อ–สกุล <b>${esc(st.name)}</b></div><div>เลขประจำตัว ${esc(td(st.student_code))} &nbsp; เลขที่ ${td(st.number ?? "")}</div>
+      <div>ชั้น ${esc(td(d.grade))}/${esc(td(d.room))}</div><div>ปีการศึกษา ${td(d.year.year_be)}</div>
+    </div>
+    <table class="t tiny" style="font-size:14pt">
+      <thead><tr><th style="width:12mm">ลำดับ</th><th style="width:30mm">วันที่</th><th style="width:16mm">ภาค</th><th>ข้อประพฤติที่กระทำผิด / ความดี</th><th style="width:20mm">ตัด</th><th style="width:20mm">เพิ่ม</th></tr></thead>
+      <tbody>${body}<tr><td colspan="4" class="r"><b>รวม</b></td><td class="c"><b>${td(cut)}</b></td><td class="c"><b>${td(add)}</b></td></tr></tbody>
+    </table>
+    <table class="t tiny" style="font-size:14pt;width:70%;margin:4mm auto 0">
+      <thead><tr><th style="text-align:left">คะแนนความประพฤติคงเหลือ (เต็ม ${td(100)})</th>${terms.map((t) => `<th style="width:28mm">ภาค ${td(t)}</th>`).join("")}</tr></thead>
+      <tbody><tr><td>คะแนน</td>${terms.map((t) => `<td class="c"><b>${td(sc[t] ?? 100)}</b></td>`).join("")}</tr></tbody>
+    </table>
+    <div style="font-size:13pt;margin-top:2mm">คะแนนเริ่มต้นภาคละ ${td(100)} คะแนน สะสมได้ไม่เกิน ${td(100)} · ต่ำกว่า ${td(50)} คะแนน กิจกรรมเพื่อสังคมและสาธารณประโยชน์ภาคนั้นไม่ผ่าน</div>
+  </section>`;
 }
 
 function page(st) {
@@ -93,5 +124,5 @@ function page(st) {
     </div>
   </section>`;
 }
-return d.students.map(page).join("");
+return d.students.map((st) => page(st) + deductionPage(st, d)).join("");
 }
