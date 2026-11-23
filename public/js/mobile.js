@@ -237,3 +237,20 @@ export function registerSW() {
   addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}), { once: true });
   if (document.readyState === "complete") navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
+
+// ใส่ data-label ให้ทุกช่องในตาราง table.list / table.b-table จากหัวตาราง เพื่อแสดงเป็นการ์ดบนมือถือ
+export function cardTables() {
+  const label = (t) => {
+    const rows = t.tHead?.rows; if (!rows?.length) return;
+    const names = [];
+    for (const th of rows[rows.length - 1].cells) { const n = th.textContent.replace(/\s+/g, " ").trim(); for (let i = 0; i < (th.colSpan || 1); i++) names.push(n); }
+    for (const sec of [...t.tBodies, t.tFoot].filter(Boolean)) for (const tr of sec.rows) {
+      let i = 0;
+      for (const td of tr.cells) { if (td.dataset.label === undefined) td.dataset.label = td.colSpan > 1 ? "" : names[i] || ""; i += td.colSpan || 1; }
+    }
+  };
+  let q = 0;
+  const run = () => { q = 0; document.querySelectorAll("table.list, table.b-table").forEach(label); };
+  run();
+  new MutationObserver(() => { if (!q) q = requestAnimationFrame(run); }).observe(document.body, { childList: true, subtree: true });
+}

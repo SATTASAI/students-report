@@ -900,3 +900,40 @@ body.framed > :not(.sidebar):not(.mobilebar):not(.scrim):not(.sr-frame):not(dial
   body.embedded .cal-bar { bottom: 92px; }
   body.embedded .toast-zone { bottom: 92px; }
 }
+
+/* ---------- ตารางบนมือถือ: table.list / b-table แสดงเป็นการ์ด ---------- */
+@media (max-width: 760px) {
+  .table-wrap:has(> table.list), .b-scroll:has(> table.b-table) { overflow: visible; max-height: none !important; border: 0; border-radius: 0; background: transparent; }
+  table.list, table.list tbody, table.list tfoot, table.list tr, table.list td,
+  table.b-table, table.b-table tbody, table.b-table tfoot, table.b-table tr, table.b-table td { display: block; width: 100%; }
+  table.b-table { min-width: 0; }
+  table.list thead, table.b-table thead { display: none; }
+  table.list tr, table.b-table tr {
+    background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 4px 14px; margin-bottom: 10px;
+    box-shadow: 0 1px 3px rgba(15,20,50,.05);
+  }
+  table.list td {
+    position: relative; padding: 9px 0 9px 40%; min-height: 38px; border-bottom: 1px solid var(--line-soft);
+    text-align: right; white-space: normal; overflow-wrap: anywhere;
+  }
+  table.list td::before { content: attr(data-label); position: absolute; left: 0; top: 9px; width: 37%; text-align: left; color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.4; }
+  table.list td[data-label=""] { padding-left: 0; }
+  table.list td[data-label=""]::before { display: none; }
+  table.list td:first-child { font-weight: 600; }
+  table.list tr td:last-child { border-bottom: 0; }
+  table.list td:empty { display: none; }
+  table.list td[colspan] { padding-left: 0; text-align: center; }
+  table.list td[colspan]::before { display: none; }
+  table.list td input:not([type=checkbox]):not([type=radio]), table.list td select { width: 100%; max-width: 100%; }
+  /* SAR: ช่องแรกเป็นหัวการ์ด */
+  .sar-table td:first-child { min-width: 0; padding-left: 0; text-align: left; }
+  .sar-table td:first-child::before { display: none; }
+  /* b-table (โครงสร้างรายวิชา): ป้ายอยู่บน ช่องกรอกเต็มกว้าง */
+  table.b-table td { padding: 8px 0; border-bottom: 1px solid var(--line-soft); width: 100% !important; text-align: left; }
+  table.b-table td::before { content: attr(data-label); display: block; color: var(--muted); font-size: 12px; font-weight: 500; margin-bottom: 4px; }
+  table.b-table td[data-label=""]::before { display: none; }
+  table.b-table tr td:last-child { border-bottom: 0; }
+  table.b-table tfoot tr { background: var(--tint, #f8f9fd); }
+  table.b-table tfoot td { display: flex; justify-content: space-between; }
+  table.b-table tfoot td:empty { display: none; }
+}

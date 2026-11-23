@@ -1,5 +1,5 @@
 // ส่วนกลางของหน้าเว็บ: เรียก API, แถบบน, แจ้งเตือน, กล่องโต้ตอบ
-import { mountAppBar, gestures, registerSW, tabIndex } from "/js/mobile.js";
+import { mountAppBar, gestures, registerSW, tabIndex, cardTables } from "/js/mobile.js";
 
 export const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -480,6 +480,7 @@ export async function shell(active) {
   appBar = mountAppBar({ tabs, icons: MI, esc, side, setOpen, go: nav?.go, user: me.user.full_name });
   window.__srShell = Object.assign(window.__srShell || {}, { swipe: appBar.swipe }, nav ? { soft } : {});
   gestures({ onSwipe: appBar.swipe, onRefresh: () => location.reload() });
+  cardTables();
   // แถบสีบอกภาคเรียนที่กำลังทำงาน (สีเดียวกับการ์ดภาคเรียนในหน้าแรก)
   if (termPage) termBand(me);
   return me;
@@ -507,6 +508,7 @@ function embedShell(me, termPage) {
   const sync = () => HOST.sync(window, { termPage });
   sync();
   gestures({ onSwipe: (dir) => HOST.swipe?.(dir), onRefresh: () => location.reload() });
+  cardTables();
   window.addEventListener("hashchange", sync);
   // ลิงก์ไปหน้าอื่นในระบบ → ให้หน้าต่างหลักเปลี่ยนเฉพาะเนื้อหา (URL บนแถบที่อยู่เปลี่ยนตาม)
   document.addEventListener("click", (e) => {
