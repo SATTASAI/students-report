@@ -1,7 +1,7 @@
 // Service worker ของระบบผลการเรียน: ทำให้ติดตั้งเป็นแอปได้ และเปิดหน้าได้เร็วขึ้น
 // - ไฟล์หน้าเว็บ/สคริปต์/สไตล์: โหลดจากเครือข่ายก่อน (ได้ของใหม่เสมอ) ถ้าออฟไลน์ใช้ฉบับที่เก็บไว้
 // - /api/* ไม่ผ่าน service worker เลย (ข้อมูลคะแนนและการเข้าสู่ระบบต้องสดจากเซิร์ฟเวอร์เท่านั้น)
-const CACHE = "sr-shell-v1";
+const CACHE = "sr-shell-v2";
 const PRECACHE = ["/css/app.css", "/js/app.js", "/js/mobile.js", "/logo.png", "/icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
