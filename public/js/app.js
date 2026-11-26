@@ -208,6 +208,7 @@ function roleMenu(role, me) {
     // ผู้ดูแลระบบสลับไปบทบาท "เจ้าหน้าที่วัดผล" เพื่อตั้งค่าปี/เกณฑ์ (ไม่ซ้ำเมนูไว้ที่นี่)
     { href: "/admin.html#people", icon: "key", label: "สิทธิ์ทีมวัดผล" },
     { href: "/admin.html#sync", icon: "upload", label: "ดึงข้อมูลจากระบบทะเบียน" },
+    { href: "/admin.html#matches", icon: "people", label: "ข้อมูลนักเรียนไม่ตรง" },
     { href: "/admin.html#audit", icon: "clock", label: "ประวัติการใช้งาน" },
     { href: "/admin.html#backup", icon: "save", label: "สำรองและกู้คืนข้อมูล" },
     { href: "/api/sso/publicservice", icon: "smile", label: "รายงานพฤติกรรม", ext: true },

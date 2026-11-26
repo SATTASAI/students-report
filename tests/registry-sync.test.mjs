@@ -67,19 +67,56 @@ test("นักเรียน: นำเข้ารายชื่อจาก
   ];
   const dry = (await call("admin", "POST", "/api/roster/import", { rows, dry_run: true }, { expect: 200 })).data;
   assert.equal(dry.ok, false);
-  assert.deepEqual(dry.errors.map((e) => e.row), [3, 4]);
+  assert.deepEqual(dry.errors.map((e) => e.row), [4]); // คนใหม่ไม่มีห้อง
+  // แถว 2 (เลขประจำตัวตรงแต่ชื่อต่าง) และแถว 3 (เลขบัตรเป็นของคนอื่น) ไม่จับคู่จากช่องเดียว → รอผู้ดูแลตรวจ
+  assert.deepEqual(dry.review.map((r) => r.row), [2, 3]);
+  assert.deepEqual(dry.review[0].candidates[0].conflicts, ["name"]);
   await call("t1", "POST", "/api/roster/import", { rows: rows.slice(0, 2) }, { expect: 403 });
   const ok = (await call("admin", "POST", "/api/roster/import", { rows: rows.slice(0, 2) }, { expect: 200 })).data;
-  assert.deepEqual(ok.summary, { add: 1, update: 1 });
+  assert.deepEqual(ok.summary, { add: 1, update: 0, review: 1 });
   const kids = (await call("admin", "GET", `/api/roster?grade=${encodeURIComponent("อ.3")}&room=1`, null, { expect: 200 })).data.students;
   const k = kids.find((x) => x.student_code === "30001");
   assert.equal(k.gender, "ญ");
   assert.equal(k.birth_date, "2022-05-01");
+  assert.notEqual(raw.prepare("SELECT first_name FROM students WHERE id = 1").get().first_name, "แก้ชื่อ"); // ยังไม่แก้จนกว่าผู้ดูแลยืนยัน
+  const pending = (await call("admin", "GET", "/api/roster/reviews", null, { expect: 200 })).data.reviews;
+  assert.equal(pending.length, 1);
+  await call("admin", "POST", `/api/roster/reviews/${pending[0].id}`, { action: "match", student_id: 1 }, { expect: 200 });
   assert.equal(raw.prepare("SELECT first_name FROM students WHERE id = 1").get().first_name, "แก้ชื่อ");
+  assert.equal((await call("admin", "GET", "/api/roster/reviews", null, { expect: 200 })).data.reviews.length, 0);
   // แก้เลขบัตร/วันเกิดทีละคน — ห้ามเลขบัตรซ้ำ
   await call("admin", "PUT", `/api/roster/${k.id}`, { national_id: existing.national_id }, { expect: 409 });
   await call("admin", "PUT", `/api/roster/${k.id}`, { national_id: "123" }, { expect: 400 });
   await call("admin", "PUT", `/api/roster/${k.id}`, { national_id: "1-9999-99999-99-2", birth_date: "2022-06-02" }, { expect: 200 });
   const st = raw.prepare("SELECT national_id, birth_date FROM students WHERE id = ?").get(k.id);
   assert.deepEqual([st.national_id, st.birth_date], ["1999999999992", "2022-06-02"]);
+});
+
+test("นำเข้า DMC: ตรวจหลายช่อง — ตรง ≥3 ช่องไม่ขัดกันจึงจับคู่อัตโนมัติ นอกนั้นแจ้งผู้ดูแลตรวจ", async () => {
+  const { call, raw } = await setup();
+  const s = raw.prepare("SELECT s.*, d.gender FROM students s JOIN student_details d ON d.student_id = s.id WHERE s.id = 20").get();
+  const base = { student_code: s.student_code, name_prefix: s.name_prefix, first_name: s.first_name, last_name: s.last_name, national_id: s.national_id, birth_date: s.birth_date, gender: s.gender };
+  const rows = [
+    { ...base, room: `${s.grade_level}/${s.classroom}` },                                    // ตรงทุกช่อง → คนเดิม
+    { ...base, student_code: "99999", national_id: "", birth_date: "", gender: "", room: "" },  // ชื่อตรงอย่างเดียว → ตรวจ
+  ];
+  const dry = (await call("admin", "POST", "/api/roster/import", { rows, dry_run: true }, { expect: 200 })).data;
+  assert.deepEqual(dry.summary, { add: 0, update: 1, review: 1 });
+  const c = dry.review[0].candidates.find((x) => x.id === 20);
+  assert.deepEqual(c.matched, ["name", "gender"]); assert.deepEqual(c.conflicts, ["code"]); // เพศจากคำนำหน้า
+  // วันเกิดไม่ตรง = ขัดกัน แม้ช่องอื่นตรง
+  const bad = (await call("admin", "POST", "/api/roster/import", { rows: [{ ...base, birth_date: "2018-01-01" }], dry_run: true }, { expect: 200 })).data;
+  assert.equal(bad.summary.review, 1);
+  assert.ok(bad.review[0].candidates[0].conflicts.includes("birth"));
+  // บันทึก → รายการรอตรวจ · ยืนยันเป็นคนใหม่ไม่ได้ถ้าเลขซ้ำ · ไม่นำเข้าได้
+  await call("admin", "POST", "/api/roster/import", { rows: [{ ...base, birth_date: "2018-01-01" }] }, { expect: 200 });
+  const [r] = (await call("admin", "GET", "/api/roster/reviews", null, { expect: 200 })).data.reviews;
+  await call("admin", "POST", `/api/roster/reviews/${r.id}`, { action: "create" }, { expect: 409 });
+  await call("t1", "POST", `/api/roster/reviews/${r.id}`, { action: "dismiss" }, { expect: 403 });
+  await call("admin", "POST", `/api/roster/reviews/${r.id}`, { action: "dismiss" }, { expect: 200 });
+  assert.equal(raw.prepare("SELECT birth_date FROM students WHERE id = 20").get().birth_date, s.birth_date);
+  // นำเข้าซ้ำ แถวเดิม → แทนที่รายการรอตรวจเดิม ไม่ซ้อน
+  await call("admin", "POST", "/api/roster/import", { rows: [rows[1]] }, { expect: 200 });
+  await call("admin", "POST", "/api/roster/import", { rows: [rows[1]] }, { expect: 200 });
+  assert.equal((await call("admin", "GET", "/api/roster/reviews", null, { expect: 200 })).data.reviews.length, 1);
 });
