@@ -23,10 +23,10 @@ const GRADES = ["ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
 // ส่วนของหน้า เลือกจากเมนูซ้ายผ่าน #hash
 const SECTIONS = {
   start: "เริ่มต้นปีการศึกษา", subjects: "รายวิชา", import: "นำเข้าจาก Excel", courses: "ครูผู้สอน", homerooms: "ครูประจำชั้น",
-  students: "นักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียน", sync: "ดึงข้อมูลจากระบบทะเบียน", review: "ตรวจผลการเรียน", requests: "คำขอแก้ไข", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", parent: "ระบบผู้ปกครอง", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน", backup: "สำรองและกู้คืนข้อมูล",
+  students: "นักเรียน", calendar: "ปฏิทินวันหยุด", moves: "นักเรียน", sync: "ดึงข้อมูลจากระบบทะเบียน", matches: "ข้อมูลนักเรียนไม่ตรง", review: "ตรวจผลการเรียน", requests: "คำขอแก้ไข", bank: "คลังตัวชี้วัด", settings: "เกณฑ์และผู้ลงนาม", parent: "ระบบผู้ปกครอง", people: "สิทธิ์ทีมวัดผล", approve: "อนุมัติผลการเรียน", audit: "ประวัติการใช้งาน", backup: "สำรองและกู้คืนข้อมูล",
 };
 const allowed = Object.keys(SECTIONS).filter((k) => !(["import", "bank", "moves", "students", "calendar", "requests"].includes(k) && !CAN_IMPORT) && !(["approve", "people", "audit"].includes(k) && !me.user.is_super)
-  && !(["sync", "backup"].includes(k) && me.user.role !== "superadmin")
+  && !(["sync", "backup", "matches"].includes(k) && me.user.role !== "superadmin")
   // ผู้บริหาร: ดูและตรวจสอบเท่านั้น — อนุมัติ/ส่งคืน และดูประวัติ
   && (me.user.is_admin || ["approve", "audit"].includes(k)));
 let tab = hashTab(allowed, (me.role === "exec" || !allowed.includes("start")) && allowed.includes("approve") ? "approve" : "start");
@@ -48,7 +48,7 @@ function renderTabs() {
 async function render() {
   view.innerHTML = `<p class="muted">กำลังโหลด…</p>`;
   try {
-    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), requests: renderRequests, sync: renderSync, bank: renderBank, settings: renderSettings, parent: renderParent, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit, backup: () => renderBackup(view) })[tab]();
+    await ({ start: renderStart, subjects: renderSubjects, import: renderImport, matches: renderMatches, courses: renderCourses, homerooms: renderHomerooms, moves: renderMoves, students: renderStudents, calendar: renderCalendar, review: () => renderApprove("review"), requests: renderRequests, sync: renderSync, bank: renderBank, settings: renderSettings, parent: renderParent, people: renderPeople, approve: () => renderApprove("approve"), audit: renderAudit, backup: () => renderBackup(view) })[tab]();
   } catch (err) { view.innerHTML = `<div class="panel empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong>${esc(err.message)}</div>`; }
 }
 
@@ -119,6 +119,36 @@ async function renderStart() {
   };
 }
 
+// ---------- ข้อมูลนักเรียนไม่ตรง (จากการนำเข้ารายชื่อ/DMC) — ผู้ดูแลระบบตรวจ ----------
+const MATCH_LABEL = { code: "เลขประจำตัว", nid: "เลขประจำตัวประชาชน", name: "ชื่อ–นามสกุล", birth: "วันเกิด", gender: "เพศ", grade: "ชั้น" };
+async function renderMatches() {
+  const { reviews } = await api("/api/roster/reviews");
+  const cell = (label, a, b, key, c) => {
+    const bad = c?.conflicts.includes(key), ok = c?.matched.includes(key);
+    return `<span class="muted">${label}</span><span>${esc(a || "–")}</span><span style="${bad ? "color:var(--bad);font-weight:600" : ""}">${esc(b || "–")} ${bad ? "✗" : ok ? "✓" : ""}</span>`;
+  };
+  view.innerHTML = `<style>.mgrid{display:grid;grid-template-columns:minmax(90px,.8fr) 1fr 1fr;gap:0;margin-top:8px;border:1px solid var(--line, #dde5ee);border-radius:10px;overflow:hidden;font-size:14px}
+    .mgrid>*{padding:7px 10px;border-bottom:1px solid var(--line, #dde5ee);overflow-wrap:anywhere}.mgrid>b{background:var(--soft, #f4f7fb);font-size:13px}
+    @media(max-width:640px){.mgrid{font-size:13px;grid-template-columns:76px 1fr 1fr}.mgrid>*{padding:6px 7px}}</style><div class="panel" id="matchPanel"><p class="muted small" style="margin-top:0">แถวที่นำเข้ารายชื่อแล้วข้อมูลไม่ตรงกับทะเบียน (ตรงไม่ถึง 3 ช่อง หรือมีช่องที่ขัดกัน) ระบบยังไม่ได้นำเข้า — เลือกว่าเป็นคนเดิม คนใหม่ หรือไม่นำเข้า</p>
+    ${reviews.length ? reviews.map((r) => `<div class="panel" style="margin:10px 0;padding:12px" data-review="${r.id}">
+      <b>${esc(`${r.file.name_prefix}${r.file.first_name} ${r.file.last_name}`)}</b> <span class="muted small">เลขประจำตัว ${esc(r.file.student_code)} · ${esc(r.file.room || "ไม่ระบุห้อง")} · นำเข้าโดย ${esc(r.created_by)} ${esc(thaiTime(r.created_at))}</span>
+      ${r.candidates.map((c) => `<div class="mgrid"><b></b><b>ในไฟล์</b><b>ในทะเบียน</b>
+        ${cell("เลขประจำตัว", r.file.student_code, c.student_code, "code", c)}${cell("เลขประจำตัวประชาชน", r.file.national_id, c.national_id, "nid", c)}
+        ${cell("ชื่อ–นามสกุล", `${r.file.first_name} ${r.file.last_name}`, c.name, "name", c)}${cell("วันเกิด", r.file.birth_date, c.birth_date, "birth", c)}
+        ${cell("เพศ", r.file.gender, c.gender, "gender", c)}${cell("ชั้น/ห้อง", r.file.room, c.room, "grade", c)}</div>
+        <div class="actions" style="margin-top:6px"><button class="btn small primary" data-act="match" data-student="${c.id}">เป็นคนเดียวกัน — อัปเดตตามไฟล์</button></div>`).join("")}
+      <div class="actions" style="margin-top:8px"><button class="btn small" data-act="create">เป็นนักเรียนใหม่</button><button class="btn small" data-act="dismiss">ไม่นำเข้าแถวนี้</button></div></div>`).join("")
+      : `<div class="empty"><strong>ไม่มีรายการรอตรวจ</strong>ข้อมูลที่นำเข้าตรงกับทะเบียนทั้งหมด</div>`}</div>`;
+  document.getElementById("matchPanel").onclick = async (e) => {
+    const b = e.target.closest("button[data-act]"); if (!b) return;
+    const box = b.closest("[data-review]");
+    const msg = { match: "ยืนยันว่าเป็นนักเรียนคนเดียวกัน และอัปเดตข้อมูลตามไฟล์", create: "ยืนยันเพิ่มเป็นนักเรียนใหม่", dismiss: "ไม่นำเข้าแถวนี้" }[b.dataset.act];
+    if (!(await confirmBox(msg + " ใช่ไหม", ""))) return;
+    try { await api(`/api/roster/reviews/${box.dataset.review}`, { method: "POST", body: { action: b.dataset.act, student_id: Number(b.dataset.student) || undefined } }); toast("บันทึกแล้ว"); render(); }
+    catch (err) { showError(err); }
+  };
+}
+
 // ---------- นำเข้าจาก Excel ----------
 let importKind = sessionStorage.getItem("sr-import-kind") || "subjects";
 document.addEventListener("click", (e) => { const a = e.target.closest?.("[data-kind-link]"); if (a) sessionStorage.setItem("sr-import-kind", a.dataset.kindLink); });
@@ -161,11 +191,13 @@ async function renderImport() {
     try { r = await send(true); } catch (err) { showError(err); return; }
     const cols = spec.columns.filter((c) => !c.optional || rows.some((x) => x[c.key]));
     const errAt = Object.fromEntries((r.errors || []).map((e) => [e.row, e.error]));
+    // นำเข้านักเรียน: ข้อมูลไม่ตรงหลายช่อง → ไม่นำเข้าแถวนั้น ส่งให้ผู้ดูแลระบบตรวจ
+    const reviewAt = Object.fromEntries((r.review || []).map((x) => [x.row, `ข้อมูลไม่ตรงกับทะเบียน (${x.candidates.map((c) => c.conflicts.map((f) => MATCH_LABEL[f] || f).join(", ") || "ตรงไม่ถึง 3 ช่อง").join(" / ")}) — ส่งให้ผู้ดูแลระบบตรวจ`]));
     out.innerHTML = `${r.errors.length ? `<p class="note bad">พบข้อผิดพลาด ${r.errors.length} แถว — แก้ในไฟล์แล้ววางใหม่ (ยังไม่บันทึกอะไร)</p>`
-        : `<p class="note">ข้อมูลถูกต้อง ${rows.length} แถว${r.summary?.add != null ? ` · เพิ่มใหม่ ${r.summary.add} · แก้ของเดิม ${r.summary.update}` : ""}</p>`}
+        : `<p class="note">ข้อมูลถูกต้อง ${rows.length} แถว${r.summary?.add != null ? ` · เพิ่มใหม่ ${r.summary.add} · แก้ของเดิม ${r.summary.update}` : ""}${r.summary?.review ? ` · <b>ข้อมูลไม่ตรง ${r.summary.review} คน</b> (ไม่นำเข้า ส่งให้ผู้ดูแลระบบตรวจ)` : ""}</p>`}
       <div class="table-wrap" style="max-height:420px;margin-top:10px"><table class="list"><thead><tr><th>แถว</th>${cols.map((c) => `<th>${c.label}</th>`).join("")}<th>ผลตรวจ</th></tr></thead>
-      <tbody>${rows.map((x, i) => `<tr${errAt[i + 1] ? ' style="background:var(--bad-bg)"' : ""}><td class="num">${i + 1}</td>${cols.map((c) => `<td>${esc(x[c.key])}</td>`).join("")}
-        <td class="small">${errAt[i + 1] ? `<span style="color:var(--bad)">${esc(errAt[i + 1])}</span>` : '<span class="tag ok">ถูกต้อง</span>'}</td></tr>`).join("")}</tbody></table></div>
+      <tbody>${rows.map((x, i) => `<tr${errAt[i + 1] ? ' style="background:var(--bad-bg)"' : reviewAt[i + 1] ? ' style="background:var(--warn-bg, #fff6e0)"' : ""}><td class="num">${i + 1}</td>${cols.map((c) => `<td>${esc(x[c.key])}</td>`).join("")}
+        <td class="small">${errAt[i + 1] ? `<span style="color:var(--bad)">${esc(errAt[i + 1])}</span>` : reviewAt[i + 1] ? `<span class="tag warn">${esc(reviewAt[i + 1])}</span>` : '<span class="tag ok">ถูกต้อง</span>'}</td></tr>`).join("")}</tbody></table></div>
       ${r.errors.length ? "" : `<div class="actions" style="margin-top:12px"><button class="btn primary" id="saveImport">บันทึก ${rows.length} แถว</button></div>`}`;
     const save = document.getElementById("saveImport");
     if (save) save.onclick = async () => {
