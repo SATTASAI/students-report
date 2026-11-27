@@ -1,4 +1,4 @@
-// ตารางโครงสร้างรายวิชา: เลือกจากคลังทีเดียวหลายหน่วย (ตามมาตรฐาน) · วางจาก Excel · เพิ่มหลายแถว · บันทึก
+// โครงสร้างรายวิชาแบบรายภาค (ไม่แยกหน่วย): เลือกจากคลังทั้งมาตรฐาน · วางจาก Excel · ชั่วโมง/ภาระงานรายภาค · บันทึก
 // node dev/e2e-structure-table.mjs <โฟลเดอร์>  (ต้องเปิด dev server ที่พอร์ต 8787 ก่อน — ข้อมูลสะอาด)
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -42,58 +42,40 @@ await t.goto(`${BASE}/course.html?id=${cid}&term=2`);
 await t.waitForSelector("#main:not([hidden])");
 await t.click('#tabs button[data-tab="setup"]');
 await t.click('[data-build="2"]');
-await t.waitForSelector(".b-table");
-check(await t.locator(".b-table tbody tr.b-row").count() === 1, "เริ่มต้นควรมี 1 แถว");
+await t.waitForSelector(".b-flat");
+check(await t.locator(".b-flat [data-max]").count() === 0, "เริ่มต้นควรยังไม่มีตัวชี้วัด");
+check(await t.locator("text=ชื่อหน่วยการเรียนรู้").count() === 0, "ไม่ควรมีช่องหน่วยการเรียนรู้");
 
-// 1) เลือกจากคลัง: มาตรฐาน ท 1.1 → หน่วยที่ 1, ท 2.1 → หน่วยใหม่
+// 1) เลือกจากคลัง: ทั้งมาตรฐาน ท 1.1 + ค้นหาแล้วติ๊ก ท 2.1 ข้อแรก
 await t.click("#bBank");
 await t.waitForSelector("dialog[open] .pick-std");
 check((await t.locator("dialog[open] .pick-strand").first().innerText()) === "สาระที่ 1 การอ่าน", "ควรมีหัวสาระที่ 1 การอ่าน");
-check((await t.locator("dialog[open] .std-text").first().innerText()).startsWith("ใช้กระบวนการอ่านสร้างความรู้"), "ควรแสดงข้อความมาตรฐาน ท 1.1");
 const stdBox = (code) => t.locator("dialog[open] .pick-std", { has: t.locator(`.pick-head > b:text-is("มาตรฐาน ${code}")`) });
-const n11 = await stdBox("ท 1.1").locator("select[name]").count();
-const n21 = await stdBox("ท 2.1").locator("select[name]").count();
-check(n11 > 0 && n21 > 0, `ควรมีกลุ่มมาตรฐาน ท 1.1 (${n11}) และ ท 2.1 (${n21})`);
-await stdBox("ท 1.1").locator("select[data-gset]").selectOption("u0");
-await stdBox("ท 2.1").locator("select[data-gset]").selectOption("new");
-// ค้นหาแล้วเลือกรายข้อ: ท 3.1 ข้อแรก → หน่วยที่ 1
-const firstT3 = bank.find((b) => b.code.startsWith("ท 3.1"));
-await t.fill("dialog[open] .pick-find", firstT3.code);
-check(await t.locator("dialog[open] [data-row]:visible").count() === 1, "ค้นหารหัสควรเหลือ 1 ข้อ");
-await t.locator("dialog[open] [data-row]:visible select").selectOption("u0");
-await t.screenshot({ path: `${OUT}/st-bank.png` });
+const n11 = await stdBox("ท 1.1").locator("input[type=checkbox]").count();
+check(n11 > 0, `ควรมีกลุ่มมาตรฐาน ท 1.1 (${n11})`);
+await stdBox("ท 1.1").locator("[data-gall]").click();
+await stdBox("ท 2.1").locator("input[type=checkbox]").first().check();
 await okDialog(t);
-await t.waitForFunction(() => document.querySelectorAll(".b-table tbody tr.b-row").length === 2, null, { timeout: 5000 }).catch(() => errors.push("หลังเลือกควรมี 2 หน่วย"));
-check(await t.locator(".b-row").nth(0).locator(".b-ind").count() === n11 + 1, "หน่วยที่ 1 ควรมี ท 1.1 ทั้งมาตรฐาน + ท 3.1 1 ข้อ");
-check((await t.locator(".b-row").nth(0).locator(".c-std").innerText()).includes("ท 3.1"), "คอลัมน์มาตรฐานควรแสดง ท 3.1");
-check(await t.locator(".b-row").nth(1).locator(".b-ind").count() === n21, "หน่วยใหม่ควรมี ท 2.1 ทั้งมาตรฐาน");
-await t.fill('[data-uf="0:title"]', "การอ่าน");
-await t.fill('[data-uf="1:title"]', "การเขียน");
+{ await t.waitForFunction((n) => document.querySelectorAll(".b-flat [data-max]").length === n, n11 + 1, { timeout: 5000 }).catch(() => {}); const n = await t.locator(".b-flat [data-max]").count(); check(n === n11 + 1, `หลังเลือกควรมี ท 1.1 ทั้งมาตรฐาน + ท 2.1 1 ข้อ: ${n} vs ${n11}+1`); }
 
-// 2) วางจาก Excel ต่อท้าย: 2 หน่วย, รหัสผิด 1 → ไม่เพิ่มเลย
-const t4 = bank.filter((b) => b.code.startsWith("ท 4.1")).slice(0, 2), t5 = bank.find((b) => b.code.startsWith("ท 5.1"));
+// 2) วางจาก Excel ต่อท้าย: รหัสผิด 1 → ไม่เพิ่มเลย · แก้แล้วเพิ่มได้ + คะแนนเต็มตามที่วาง
+const t4 = bank.filter((b) => /^ท 4\.1/.test(b.code)).slice(0, 2);
 await t.click("#bPaste");
-await t.fill("dialog[open] textarea[name=tsv]", `ชื่อหน่วย\tชั่วโมง\tภาระงาน\tตัวชี้วัด\tคะแนน\nหลักภาษา\t8\t"ใบงาน\nแบบฝึก"\t${t4.map((b) => b.code).join(", ")}\t5, 4\nวรรณคดี\t6\tรายงาน\t${t5.code}, ท 9.9 ป.4/1\t3`);
-await t.click("dialog[open] button[value=ok]");
-await t.waitForFunction(() => document.querySelector("dialog[open]")?.innerText.includes("ยังเพิ่มไม่ได้"));
-check((await t.locator("dialog[open]").innerText()).includes("ไม่พบ ท 9.9 ป.4/1"), "ควรแจ้งรหัสที่ไม่มีในคลัง");
+await t.fill("dialog[open] textarea[name=tsv]", `รหัสตัวชี้วัด\tคะแนน\n${t4[0].code}\t5\nท 9.9 ป.4/1\t3`);
+await okDialog(t);
+await t.waitForSelector("dialog[open]");
+check((await t.locator("dialog[open]").innerText()).includes("ท 9.9 ป.4/1"), "ควรแจ้งรหัสที่ไม่พบ");
 await t.click("dialog[open] button[value=cancel]");
-await t.waitForSelector("dialog[open]", { state: "detached" });
-check(await t.locator(".b-table tbody tr.b-row").count() === 2, "วางไม่ผ่านต้องไม่เพิ่มอะไร");
+check(await t.locator(".b-flat [data-max]").count() === n11 + 1, "วางผิดต้องไม่เพิ่มอะไร");
 await t.click("#bPaste");
-await t.fill("dialog[open] textarea[name=tsv]", `หลักภาษา\t8\t"ใบงาน\nแบบฝึก"\t${t4.map((b) => b.code).join(", ")}\t5, 4\nวรรณคดี\t6\tรายงาน\t${t5.code}\t3`);
+await t.fill("dialog[open] textarea[name=tsv]", `${t4[0].code}\t5\n${t4[1].code}\t4`);
 await okDialog(t);
-await t.waitForFunction(() => document.querySelectorAll(".b-table tbody tr.b-row").length === 4, null, { timeout: 5000 }).catch(() => errors.push("วางแล้วควรมี 4 หน่วย"));
-check(await t.locator('[data-uf="2:task"]').inputValue() === "ใบงาน\nแบบฝึก", "เซลล์หลายบรรทัดจาก Excel");
-check(await t.locator('[data-max="u2:1"]').inputValue() === "4", "คะแนนเต็มรายข้อจากที่วาง");
-check(await t.locator('[data-usum="2"]').innerText() === "9", "คะแนนรวมหน่วยที่ 3 ควรเป็น 9");
+await t.waitForFunction((n) => document.querySelectorAll(".b-flat [data-max]").length === n, n11 + 3, { timeout: 5000 }).catch(() => errors.push("วางแล้วควรเพิ่ม 2 ข้อ"));
+check(await t.locator(".b-flat [data-max]").last().inputValue() === "4", "คะแนนเต็มจาก Excel");
 
-// 3) เพิ่ม 3 แถวว่าง → บันทึกแล้วแถวว่างหายเอง
-await t.fill("#bAddN", "3");
-await t.click("#bAddUnit");
-check(await t.locator(".b-table tbody tr.b-row").count() === 7, "เพิ่ม 3 แถวควรเป็น 7");
-await t.fill('[data-uf="4:title"]', "การฟัง การดู การพูด");
-await t.fill('[data-uf="4:hours"]', "4");
+// 3) ชั่วโมง/ภาระงานรายภาค
+await t.fill("#bHours", "80");
+await t.fill("#bTask", "ใบงาน แบบฝึกหัด");
 await t.click("#bSplit");
 await t.click('[data-fpick="0"]');
 await t.click("dialog[open] [data-all]");
@@ -103,20 +85,37 @@ await t.click("#bSave");
 await t.waitForFunction(() => document.body.innerText.includes("บันทึกโครงสร้างรายวิชาแล้ว"));
 if (await t.locator("dialog[open]").count()) await t.click("dialog[open] button[value=cancel]");
 const d = await api(t, `/api/courses/${cid}`);
-const units = d.units.filter((u) => u.term_number === 2).sort((a, b) => a.unit_no - b.unit_no);
-check(units.map((u) => u.title).join("|") === "การอ่าน|การเขียน|หลักภาษา|วรรณคดี|การฟัง การดู การพูด", `หน่วยที่บันทึก: ${units.map((u) => u.title).join("|")}`);
+const units = d.units.filter((u) => u.term_number === 2);
+check(units.length === 1 && Number(units[0].hours) === 80 && units[0].task === "ใบงาน แบบฝึกหัด", `ชั่วโมง/ภาระงานรายภาค ${JSON.stringify(units)}`);
 const collect = d.items.filter((i) => i.term_number === 2 && i.kind !== "final");
-check(collect.length === n11 + 1 + n21 + 3, `จำนวนช่องคะแนน ${collect.length}`);
-check(Number(units[2].hours) === 8 && /^ใบงาน\s+แบบฝึก$/.test(units[2].task), `ชั่วโมง/ภาระงานหน่วยที่ 3 ${JSON.stringify(units[2])}`);
+check(collect.length === n11 + 3, `จำนวนช่องคะแนน ${collect.length}`);
+check(await t.locator("text=ชั่วโมงเรียน 80 ชม.").count() === 1, "หน้าโครงสร้างควรแสดงชั่วโมงเรียนรายภาค");
+check(await t.locator("text=หน่วยที่").count() === 0, "หน้าโครงสร้างไม่ควรแสดงหน่วย");
 
-// มือถือ: ตารางเลื่อนในกรอบ หน้าไม่ล้นจอ
+// รายวิชาเก่าที่มีหน่วย: เปิดแก้แล้วบันทึก หน่วยเดิมยังอยู่ ตัวชี้วัดยังผูกหน่วยเดิม
+await api(t, `/api/courses/${cid}/structure`, "PUT", { term: 2, units: [{ title: "หน่วยเก่า", hours: 10, task: "รายงาน", items: collect.slice(0, 2).map((i) => ({ id: i.id, code: i.code, title: i.title, max_score: i.max_score })) }],
+  loose: collect.slice(2).map((i) => ({ id: i.id, code: i.code, title: i.title, max_score: i.max_score })), finals: d.items.filter((i) => i.term_number === 2 && i.kind === "final").map((i) => ({ id: i.id, code: i.code, title: i.title, max_score: i.max_score, indicators: i.indicators })) });
+await t.goto(`${BASE}/course.html?id=${cid}&term=2`); await t.waitForSelector("#main:not([hidden])");
+await t.click('#tabs button[data-tab="setup"]');
+await t.click('[data-build="2"]');
+await t.waitForSelector(".b-flat");
+check(await t.locator("#bHours").inputValue() === "10", "รายวิชาเก่า: ชั่วโมงรายภาคตั้งต้นจากผลรวมหน่วยเดิม");
+check(await t.locator(".b-flat [data-max]").count() === n11 + 3, "รายวิชาเก่า: เห็นตัวชี้วัดครบ");
+await t.click("#bSave");
+await t.waitForFunction(() => document.body.innerText.includes("บันทึกโครงสร้างรายวิชาแล้ว"));
+if (await t.locator("dialog[open]").count()) await t.click("dialog[open] button[value=cancel]");
+const d2 = await api(t, `/api/courses/${cid}`);
+const old = d2.units.find((u) => u.title === "หน่วยเก่า");
+check(old && d2.items.filter((i) => i.unit_id === old.id).length === 2, "หน่วยเดิมและการผูกตัวชี้วัดต้องยังอยู่");
+
+// มือถือ: หน้าไม่ล้นจอ
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: await t.context().storageState() });
 const m = await ctx.newPage();
 await m.goto(`${BASE}/course.html?id=${cid}&term=2`);
 await m.waitForSelector("#main:not([hidden])");
 await m.click('#tabs button[data-tab="setup"]');
 await m.click('[data-build="2"]');
-await m.waitForSelector(".b-table");
+await m.waitForSelector(".b-flat");
 const over = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 check(over <= 2, `มือถือหน้าล้นแนวนอน ${over}px`);
 await m.screenshot({ path: `${OUT}/st-mobile.png` });
