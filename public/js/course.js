@@ -12,6 +12,8 @@ let builder = null;    // หน้าสร้างโครงสร้าง
 let tab = sessionStorage.getItem(`sr-tab-${courseId}`) || "sheet";
 if (tab === "t1" || tab === "t2") tab = "sheet"; // แท็บรายภาคเดิม → ใช้ภาคเรียนที่เลือกแทน
 // ร่างโครงสร้างรายวิชาในเบราว์เซอร์ (ประกาศก่อนแสดงผลครั้งแรก)
+const TERM_UNIT = "ชั่วโมงและภาระงานทั้งภาค";
+const r2 = (n) => Number(Number(n).toPrecision(12)); // ลบแค่ความคลาดเคลื่อนของเลขทศนิยมในคอมพิวเตอร์ ไม่ปัด
 const draftKey = (term) => `sr-draft-${courseId}-${term}`;
 const openKey = `sr-building-${courseId}`;
 const draftNote = () => (builder?.dirty ? "ยังไม่บันทึก · ร่างเก็บไว้ในเบราว์เซอร์นี้แล้ว (รีเฟรชไม่หาย)" : "");
@@ -158,7 +160,6 @@ const settingsForCalc = () => ({
 });
 const studentScores = (sid) => data.scores[sid] || (data.scores[sid] = {});
 const studentRemedials = (sid) => data.remedials?.[sid] || {};
-const unitOf = (it) => (data.units || []).find((u) => u.id === it.unit_id);
 function recompute(sid) {
   data.computed[sid] = computeStudentResult(data.items, studentScores(sid), resultWithAttendance(data.results[sid], data.attendance?.[sid]?.rate, data.course.hours_per_year), settingsForCalc(), studentRemedials(sid), data.carry?.[sid]);
   return data.computed[sid];
@@ -191,7 +192,7 @@ function renderSheet(term) {
           <th class="stick no col-head">เลขที่</th>
           <th class="stick name col-head" style="text-align:left">ชื่อ–สกุล</th>
           ${items.map((it) => `<th class="col-head ${it.kind === "final" ? "final" : ""}" title="${esc(it.title)}">
-            <button data-edit-item="${it.id}" ${can ? "" : "disabled"}>${unitOf(it) ? `<span class="unitno">หน่วยที่ ${unitOf(it).unit_no}</span>` : ""}<span class="code">${esc(it.kind === "final" ? "ปลายภาค" : it.code || "เก็บ")}</span><span class="t">${esc(it.title)}</span><span class="max">เต็ม ${fmt(it.max_score)}</span></button></th>`).join("")}
+            <button data-edit-item="${it.id}" ${can ? "" : "disabled"}><span class="code">${esc(it.kind === "final" ? "ปลายภาค" : it.code || "เก็บ")}</span><span class="t">${esc(it.title)}</span><span class="max">เต็ม ${fmt(it.max_score)}</span></button></th>`).join("")}
           <th class="col-head">รวมภาค ${term}<span class="max">เต็ม ${fmt(termMax)}</span></th>
           ${term === 1 ? '<th class="col-head">สถานะ<span class="max">ภาค 1</span></th>'
             : '<th class="col-head">ภาค 1<span class="max">เต็ม 50</span></th><th class="col-head">รวมทั้งปี<span class="max">เต็ม 100</span></th><th class="col-head">ผล</th>'}
@@ -678,18 +679,12 @@ function renderSetup() {
       </div>`; };
   const list = (term) => {
     const items = data.items.filter((i) => i.term_number === term);
-    const units = (data.units || []).filter((u) => u.term_number === term);
-    if (!items.length && !units.length) return `<p class="muted small">ยังไม่มีโครงสร้างรายวิชา${can ? ` — กด "สร้างโครงสร้างรายวิชา" เพื่อพิมพ์หน่วยการเรียนรู้ ภาระงาน และเลือก${W}` : ""}</p>`;
-    const inUnit = (u) => items.filter((i) => i.unit_id === u.id);
-    const sumMax = (list) => Number(list.reduce((a, i) => a + i.max_score, 0).toPrecision(12));
-    const loose = items.filter((i) => i.kind !== "final" && !units.some((u) => u.id === i.unit_id));
-    const finals = items.filter((i) => i.kind === "final");
-    return units.map((u) => `<div class="unit">
-        <div class="unit-head"><span><b>หน่วยที่ ${u.unit_no} ${esc(u.title)}</b>
-          <span class="muted small">${u.hours != null ? ` · ${fmt(u.hours, 1)} ชม.` : ""} · ${fmt(sumMax(inUnit(u)))} คะแนน</span></span></div>
-        ${u.task ? `<p class="small" style="margin:0 0 8px"><span class="muted">ภาระงาน/ชิ้นงาน:</span> ${esc(u.task)}</p>` : ""}
-        <div class="item-list">${inUnit(u).map(itemRow).join("") || `<p class="muted small">ยังไม่มี${W}ในหน่วยนี้</p>`}</div></div>`).join("")
-      + (loose.length ? `<div class="unit loose"><div class="unit-head"><span class="muted small">${W}ที่ยังไม่ได้จัดเข้าหน่วย</span></div><div class="item-list">${loose.map(itemRow).join("")}</div></div>` : "")
+    if (!items.length) return `<p class="muted small">ยังไม่มีโครงสร้างรายวิชา${can ? ` — กด "สร้างโครงสร้างรายวิชา" เพื่อเลือก${W}และใส่คะแนนเต็มรายภาค` : ""}</p>`;
+    const { mark, old } = splitUnits(data.units || [], term), info = termInfo(mark, old);
+    const inds = items.filter((i) => i.kind !== "final"), finals = items.filter((i) => i.kind === "final");
+    const meta = [String(info.hours) !== "" ? `ชั่วโมงเรียน ${fmt(info.hours, 1)} ชม.` : "", info.task ? `<span class="muted">ภาระงาน/ชิ้นงาน:</span> ${esc(info.task)}` : ""].filter(Boolean).join(" · ");
+    return (meta ? `<p class="small" style="margin:0 0 8px">${meta}</p>` : "")
+      + `<div class="item-list">${inds.map(itemRow).join("") || `<p class="muted small">ยังไม่มี${W}</p>`}</div>`
       + (finals.length ? `<div class="item-list" style="margin-top:10px">${finals.map(itemRow).join("")}</div>` : "");
   };
   const termEmpty = (t) => !data.items.some((i) => i.term_number === t);
@@ -711,11 +706,11 @@ function renderSetup() {
       ${can && readDraft(t) ? `<div class="note warn" style="margin:0 0 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">มีร่างโครงสร้างภาคเรียนที่ ${t} ที่ยังไม่บันทึก (${esc(whenText(readDraft(t).at))})
         <button class="btn small primary" data-resume="${t}">เปิดร่างทำต่อ</button><button class="btn small" data-dropdraft="${t}">ทิ้งร่าง</button></div>` : ""}
       <div class="panel-head"><h2>ภาคเรียนที่ ${t} ${termLine(t)}</h2>${can ? `<div class="actions">
-        <button class="btn ${termEmpty(t) ? "primary" : ""}" data-build="${t}">${termEmpty(t) && !(data.units || []).some((u) => u.term_number === t) ? "สร้างโครงสร้างรายวิชา" : "แก้ไขโครงสร้างรายวิชา"}</button></div>` : ""}</div>
+        <button class="btn ${termEmpty(t) ? "primary" : ""}" data-build="${t}">${termEmpty(t) ? "สร้างโครงสร้างรายวิชา" : "แก้ไขโครงสร้างรายวิชา"}</button></div>` : ""}</div>
       ${list(t)}</div>`).join("")}
     ${tplPanel}
     ${can ? `<div class="panel"><div class="panel-head"><h2>ใช้โครงสร้างจากห้องอื่น / ปีการศึกษาก่อน</h2></div>
-      <p class="muted small">ดึงหน่วยการเรียนรู้ ภาระงาน ${W} และคะแนนเต็มของวิชาเดียวกัน (รหัสวิชาและชั้นเดียวกัน) มาเป็นร่าง ปรับได้ก่อนกดบันทึก — ไม่คัดลอกคะแนนนักเรียน</p>
+      <p class="muted small">ดึง${W} คะแนนเต็ม ชั่วโมงและภาระงานของวิชาเดียวกัน (รหัสวิชาและชั้นเดียวกัน) มาเป็นร่าง ปรับได้ก่อนกดบันทึก — ไม่คัดลอกคะแนนนักเรียน</p>
       <div id="siblings" class="muted small">กำลังค้นหา…</div></div>
     <div class="panel" id="pushPanel" hidden><div class="panel-head"><h2>นำโครงสร้าง ภาค ${T} นี้ไปใช้กับห้องอื่นที่สอน</h2>
       <button class="btn" id="pushBtn" ${data.items.some((i) => i.term_number === T) ? "" : "disabled"}>${ICONS.copy} เลือกห้อง</button></div>
@@ -737,8 +732,7 @@ function itemForm(it = {}) {
     <label class="field">ประเภท<select name="kind"><option value="indicator" ${it.kind !== "final" ? "selected" : ""}>คะแนนเก็บ (${W})</option><option value="final" ${it.kind === "final" ? "selected" : ""}>สอบปลายภาค</option></select></label>
     <label class="field">คะแนนเต็ม<input name="max_score" inputmode="decimal" required value="${it.max_score ?? ""}"></label>
   </div>
-  ${(() => { const us = (data.units || []); return us.length ? `<label class="field" style="margin-top:12px">หน่วยการเรียนรู้<select name="unit_id"><option value="">— ไม่จัดเข้าหน่วย —</option>
-    ${us.map((u) => `<option value="${u.id}" ${it.unit_id === u.id ? "selected" : ""}>ภาค ${u.term_number} · หน่วยที่ ${u.unit_no} ${esc(u.title)}</option>`).join("")}</select></label>` : ""; })()}
+  <input type="hidden" name="unit_id" value="${it.unit_id ?? ""}">
   <label class="field" style="margin-top:12px">รหัส${W} (ถ้ามี)<input name="code" maxlength="60" placeholder="เช่น ท 1.1 ป.1/1" value="${esc(it.code || "")}"></label>
   <label class="field" style="margin-top:12px">ชื่อ${W} / การสอบ<textarea name="title" required maxlength="500" style="min-height:80px">${esc(it.title || "")}</textarea></label>`;
 }
@@ -746,15 +740,15 @@ function itemForm(it = {}) {
 async function applyTemplate(term) {
   let tpl;
   try { tpl = (await api(`/api/courses/${courseId}/template`)).template; } catch (err) { showError(err); return; }
-  const units = tpl?.units.filter((u) => u.term_number === term) || [], items = tpl?.items.filter((i) => i.term_number === term) || [];
+  const items = tpl?.items.filter((i) => i.term_number === term) || [];
   if (!items.length) { toast(`แม่แบบไม่มีโครงสร้างภาคเรียนที่ ${term}`, "bad"); return; }
-  const ok = await confirmBox(`ใช้แม่แบบ ภาคเรียนที่ ${term}`, `เพิ่ม ${units.length} หน่วย ${items.length} ช่องคะแนน (รวม ${fmt(items.reduce((a, i) => a + i.max_score, 0))} คะแนน) — ปรับคะแนนเต็มภายหลังได้`, "ใช้แม่แบบ");
+  const ok = await confirmBox(`ใช้แม่แบบ ภาคเรียนที่ ${term}`, `เพิ่ม ${items.length} ช่องคะแนน (รวม ${fmt(items.reduce((a, i) => a + i.max_score, 0))} คะแนน) — ปรับคะแนนเต็มภายหลังได้`, "ใช้แม่แบบ");
   if (!ok) return;
   try { data = await api(`/api/courses/${courseId}/apply-template`, { method: "POST", body: { terms: [term] } }); toast("ใช้แม่แบบแล้ว"); render(); } catch (err) { showError(err); }
 }
 
 async function saveTemplate() {
-  const ok = await confirmBox("บันทึกเป็นแม่แบบ", `ใช้โครงสร้างของห้องนี้ (${data.units.length} หน่วย ${data.items.length} ช่องคะแนน) เป็นแม่แบบของ ${esc(data.course.code)} ${esc(data.course.grade_level)}${data.course.has_template ? " แทนแม่แบบเดิม" : ""}`, "บันทึก");
+  const ok = await confirmBox("บันทึกเป็นแม่แบบ", `ใช้โครงสร้างของห้องนี้ (${data.items.length} ช่องคะแนน) เป็นแม่แบบของ ${esc(data.course.code)} ${esc(data.course.grade_level)}${data.course.has_template ? " แทนแม่แบบเดิม" : ""}`, "บันทึก");
   if (!ok) return;
   try { data = await api(`/api/courses/${courseId}/template`, { method: "PUT", body: {} }); toast("บันทึกแม่แบบแล้ว"); render(); } catch (err) { showError(err); }
 }
@@ -887,20 +881,19 @@ render();
 
 
 // ---------- หน้าสร้างโครงสร้างรายวิชา (ทั้งภาคในหน้าเดียว) ----------
-// ครูพิมพ์หน่วยการเรียนรู้ ชั่วโมง ภาระงานเอง · ตัวชี้วัดเลือกจากคลัง แยกระหว่างทาง/ปลายทาง · บันทึกครั้งเดียว
+// ตัวชี้วัด + คะแนนเต็มรายภาค (ไม่แยกหน่วย) · ชั่วโมง/ภาระงานรายภาค · ตัวชี้วัดเลือกจากคลัง · บันทึกครั้งเดียว
 async function loadBank() { bankCache = (await api(`/api/courses/${courseId}/bank`)).indicators || []; return bankCache; }
 const itemKey = (x) => `${x.code || ""}|${x.title}`;
 function bankKindOf(it) { const b = (bankCache || []).find((x) => itemKey(x) === itemKey(it)); return b?.kind || ""; }
 const KIND_GROUPS = [["ระหว่างทาง", "ตัวชี้วัดระหว่างทาง"], ["ปลายทาง", "ตัวชี้วัดปลายทาง"], ["ผลการเรียนรู้", "ผลการเรียนรู้"], ["ผลลัพธ์การเรียนรู้", "ผลลัพธ์การเรียนรู้"], ["", "อื่น ๆ"]];
-const r2 = (n) => Number(Number(n).toPrecision(12)); // ลบแค่ความคลาดเคลื่อนของเลขทศนิยมในคอมพิวเตอร์ ไม่ปัด
 
 // ---- ร่างในเบราว์เซอร์: หน้าสร้างโครงสร้างไม่บันทึกอัตโนมัติ แต่เก็บร่างไว้กันเผลอรีเฟรช/ปิดหน้า ----
-function readDraft(term) { try { const d = JSON.parse(localStorage.getItem(draftKey(term)) || "null"); return d && Array.isArray(d.units) ? d : null; } catch { return null; } }
+function readDraft(term) { try { const d = JSON.parse(localStorage.getItem(draftKey(term)) || "null"); return d && d.v === 2 && d.mark ? d : null; } catch { return null; } }
 function clearDraft(term) { try { localStorage.removeItem(draftKey(term)); } catch { /* */ } }
 function saveDraft() {
   if (!builder?.dirty) return;
-  const { term, units, loose, finals, from } = builder;
-  try { localStorage.setItem(draftKey(term), JSON.stringify({ at: Date.now(), units, loose, finals, from: from || null })); } catch { /* พื้นที่เต็ม/ปิดไว้ — ทำงานต่อได้ */ }
+  const { term, units, mark, loose, finals, from } = builder;
+  try { localStorage.setItem(draftKey(term), JSON.stringify({ v: 2, at: Date.now(), units, mark, loose, finals, from: from || null })); } catch { /* พื้นที่เต็ม/ปิดไว้ — ทำงานต่อได้ */ }
 }
 function markDirty() { if (!builder) return; builder.dirty = true; saveDraft(); const st = document.getElementById("bDraft"); if (st) st.textContent = draftNote(); }
 // id ในร่างอาจเก่า (มีคนแก้โครงสร้างหลังเก็บร่าง) → id ที่ไม่มีแล้วถือเป็นรายการใหม่
@@ -909,22 +902,39 @@ function sanitizeDraft(d, term) {
   const iIds = new Set(data.items.filter((i) => i.term_number === term).map((i) => i.id));
   const seen = new Set();
   const fixI = (it) => { const id = iIds.has(it.id) && !seen.has(it.id) ? it.id : null; if (id) seen.add(id); return { ...it, id }; };
-  return { units: d.units.map((u) => ({ ...u, id: uIds.has(u.id) ? u.id : null, items: (u.items || []).map(fixI) })), loose: (d.loose || []).map(fixI),
+  return { units: (d.units || []).filter((u) => uIds.has(u.id)).map((u) => ({ ...u, items: (u.items || []).map(fixI) })),
+    mark: { ...d.mark, id: uIds.has(d.mark.id) ? d.mark.id : null, items: (d.mark.items || []).map(fixI) }, loose: (d.loose || []).map(fixI),
     finals: (d.finals || []).map((f) => ({ ...fixI(f), inds: f.inds || [] })), from: d.from || null };
 }
+
+// ไม่ใช้หน่วยการเรียนรู้แล้ว: ชั่วโมง/ภาระงานกรอกรายภาค เก็บในหน่วยพิเศษ 1 แถวต่อภาค (ชื่อ TERM_UNIT)
+// หน่วยเดิมของรายวิชาเก่ายังเก็บไว้ (ไม่แสดง) — ตัวชี้วัดที่อยู่ในหน่วยเดิมคงอยู่ที่เดิม ตัวชี้วัดใหม่เข้าหน่วยพิเศษ
+function splitUnits(units, term) {
+  const tu = units.filter((u) => u.term_number === term).sort((a, b) => a.unit_no - b.unit_no);
+  const mark = tu.find((u) => u.title === TERM_UNIT) || null;
+  return { mark, old: tu.filter((u) => u !== mark) };
+}
+function termInfo(mark, old) {
+  if (mark) return { hours: mark.hours ?? "", task: mark.task || "" };
+  return { hours: old.some((u) => u.hours != null && u.hours !== "") ? r2(old.reduce((a, u) => a + (Number(u.hours) || 0), 0)) : "",
+    task: [...new Set(old.map((u) => u.task).filter(Boolean))].join(" · ") };
+}
+const allInd = (B) => [...B.units.flatMap((u) => u.items), ...B.mark.items, ...B.loose];
 
 async function openBuilder(term, { resume = false } = {}) {
   try { if (!bankCache) await loadBank(); } catch (err) { showError(err); bankCache = []; }
   const toB = (i) => ({ id: i.id, code: i.code || "", title: i.title, max: i.max_score });
   const items = data.items.filter((i) => i.term_number === term);
-  const units = (data.units || []).filter((u) => u.term_number === term).sort((a, b) => a.unit_no - b.unit_no)
-    .map((u) => ({ id: u.id, title: u.title, hours: u.hours ?? "", task: u.task || "", items: items.filter((i) => i.kind !== "final" && i.unit_id === u.id).map(toB) }));
-  const loose = items.filter((i) => i.kind !== "final" && !units.some((u) => u.id === i.unit_id)).map(toB);
+  const { mark, old } = splitUnits(data.units || [], term);
+  const inU = (u) => items.filter((i) => i.kind !== "final" && i.unit_id === u.id).map(toB);
+  const units = old.map((u) => ({ id: u.id, title: u.title, hours: u.hours ?? "", task: u.task || "", items: inU(u) }));
+  const m = { id: mark?.id ?? null, ...termInfo(mark, old), items: mark ? inU(mark) : [] };
+  const uIds = new Set([...old, ...(mark ? [mark] : [])].map((u) => u.id));
+  const loose = items.filter((i) => i.kind !== "final" && !uIds.has(i.unit_id)).map(toB);
   const finals = items.filter((i) => i.kind === "final").map((i) => ({ ...toB(i), inds: (i.indicators || []).map((x) => ({ code: x.code || "", title: x.title })) }));
   const fT = 50 - data.course.collect_ratio / 2;
-  if (!units.length) units.push(emptyUnit());
   if (!finals.length) finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${term}`, max: fT, inds: [] });
-  builder = { term, units, loose, finals, dirty: false };
+  builder = { term, units, mark: m, loose, finals, dirty: false };
   const draft = readDraft(term);
   if (draft) {
     const use = resume || (await dialog({ title: "พบร่างที่ยังไม่บันทึก", okText: "ใช้ร่างต่อ", cancelText: "เปิดฉบับที่บันทึกไว้",
@@ -958,11 +968,12 @@ async function pullStructure(sourceId, term) {
   const idOf = (it) => { const m = old.find((o) => !used.has(o.id) && o.kind === it.kind && (o.code || "") === (it.code || "") && o.title === it.title); if (m) used.add(m.id); return m?.id ?? null; };
   const oldU = (data.units || []).filter((u) => u.term_number === term), usedU = new Set();
   const toB = (i) => ({ id: idOf(i), code: i.code || "", title: i.title, max: i.max_score });
-  const sUnits = src.units.filter((u) => u.term_number === term).sort((a, b) => a.unit_no - b.unit_no), keys = new Set(sUnits.map((u) => u.key));
-  const units = sUnits.map((u) => { const m = oldU.find((o) => !usedU.has(o.id) && o.title === u.title); if (m) usedU.add(m.id);
+  const sp = splitUnits(src.units, term), keys = new Set([...sp.old, ...(sp.mark ? [sp.mark] : [])].map((u) => u.key));
+  const curMark = splitUnits(data.units || [], term).mark;
+  const units = sp.old.map((u) => { const m = oldU.find((o) => !usedU.has(o.id) && o.title === u.title && o.title !== TERM_UNIT); if (m) usedU.add(m.id);
     return { id: m?.id ?? null, title: u.title, hours: u.hours ?? "", task: u.task || "", items: sItems.filter((i) => i.kind !== "final" && i.unit_key === u.key).map(toB) }; });
-  if (!units.length) units.push(emptyUnit());
-  builder = { term, units, loose: sItems.filter((i) => i.kind !== "final" && !keys.has(i.unit_key)).map(toB),
+  const mark = { id: curMark?.id ?? null, ...termInfo(sp.mark, sp.old), items: sp.mark ? sItems.filter((i) => i.kind !== "final" && i.unit_key === sp.mark.key).map(toB) : [] };
+  builder = { term, units, mark, loose: sItems.filter((i) => i.kind !== "final" && !keys.has(i.unit_key)).map(toB),
     finals: sItems.filter((i) => i.kind === "final").map((i) => ({ ...toB(i), inds: (i.indicators || []).map((x) => ({ code: x.code || "", title: x.title })) })), dirty: false, from };
   markDirty();
   try { sessionStorage.setItem(openKey, String(term)); } catch { /* */ }
@@ -982,7 +993,7 @@ async function applyToRooms(defaultTerms = [1, 2], { afterSave = false } = {}) {
   const st = (c, t) => c.terms[t].scores ? `<span class="tag warn">มีคะแนนแล้ว</span>` : c.terms[t].items ? `<span class="tag">มีโครงสร้างแล้ว</span>` : `<span class="tag ok">ยังว่าง</span>`;
   const res = await dialog({
     title: afterSave ? "ใช้โครงสร้างนี้กับห้องอื่นด้วยไหม" : "นำโครงสร้างไปใช้กับห้องอื่น", okText: "นำไปใช้", cancelText: afterSave ? "ไม่ใช้" : "ยกเลิก", wide: true,
-    body: `<p class="muted small" style="margin-top:0">คัดลอกหน่วยการเรียนรู้ ภาระงาน ${W} คะแนนเต็ม และสอบปลายภาคของ ${esc(data.course.grade_level)}/${esc(data.course.classroom)} ไปแทนที่ของห้องที่เลือก
+    body: `<p class="muted small" style="margin-top:0">คัดลอก${W} คะแนนเต็ม ชั่วโมง ภาระงาน และสอบปลายภาคของ ${esc(data.course.grade_level)}/${esc(data.course.classroom)} ไปแทนที่ของห้องที่เลือก
         · ช่องที่ชื่อตรงกันคงคะแนนนักเรียนไว้ · คะแนนนักเรียนไม่ถูกคัดลอก</p>
       <div class="actions" style="margin-bottom:8px">${terms.map((t) => `<label class="check"><input type="checkbox" name="term${t}" ${defaultTerms.includes(t) ? "checked" : ""}> ภาคเรียนที่ ${t}</label>`).join("")}</div>
       <div style="display:grid;gap:6px">${targets.map((c) => `<label class="check pick-row"><input type="checkbox" name="c${c.id}" ${c.locked ? "disabled" : ""} ${!c.locked && !c.terms[T].scores ? "checked" : ""}>
@@ -1005,52 +1016,40 @@ async function applyToRooms(defaultTerms = [1, 2], { afterSave = false } = {}) {
 }
 
 function builderTotals() {
-  const all = [...builder.units.flatMap((u) => u.items), ...builder.loose];
+  const all = allInd(builder);
   return { collect: r2(all.reduce((a, i) => a + (Number(i.max) || 0), 0)), final: r2(builder.finals.reduce((a, i) => a + (Number(i.max) || 0), 0)), count: all.length };
 }
 
 function drawBuilder() {
   const B = builder, c = data.course, cT = c.collect_ratio / 2, fT = 50 - cT;
-  const indRow = (it, where, idx) => { const k = bankKindOf(it); return `<div class="b-ind" title="${esc(it.title)}">
-      <span class="b-ind-t"><b>${esc(it.code || "")}</b> ${esc(it.title)}${k && !k.startsWith("ผล") ? ` <span class="tag ${k === "ปลายทาง" ? "ok" : ""}">${esc(k)}</span>` : ""}</span>
-      <input inputmode="decimal" data-max="${where}:${idx}" value="${esc(it.max ?? "")}" placeholder="เต็ม" aria-label="คะแนนเต็ม ${esc(it.code || it.title)}">
-      <button type="button" class="icon-btn sm" data-rm="${where}:${idx}" aria-label="เอาออก ${esc(it.code || it.title)}">✕</button></div>`; };
-  const unitSum = (u) => r2(u.items.reduce((a, i) => a + (Number(i.max) || 0), 0));
+  // แถวตัวชี้วัด (ref = ที่อยู่ในร่าง: u<i>:<j> หน่วยเดิมที่ซ่อนไว้, m:<j> ของภาค, loose:<j> ไม่สังกัด)
+  const refs = [...B.units.flatMap((u, ui) => u.items.map((it, j) => [it, `u${ui}:${j}`])), ...B.mark.items.map((it, j) => [it, `m:${j}`]), ...B.loose.map((it, j) => [it, `loose:${j}`])];
+  const indRow = ([it, ref], n) => { const k = bankKindOf(it); return `<tr>
+      <td class="num">${n + 1}</td><td class="nm">${esc(stdOf(it.code) || "–")}</td>
+      <td><b>${esc(it.code || "")}</b> ${esc(it.title)}${k && !k.startsWith("ผล") ? ` <span class="tag ${k === "ปลายทาง" ? "ok" : ""}">${esc(k)}</span>` : ""}</td>
+      <td><input inputmode="decimal" data-max="${ref}" value="${esc(it.max ?? "")}" placeholder="เต็ม" style="width:100%;text-align:right" aria-label="คะแนนเต็ม ${esc(it.code || it.title)}"></td>
+      <td><button type="button" class="icon-btn sm" data-rm="${ref}" aria-label="เอาออก ${esc(it.code || it.title)}">✕</button></td></tr>`; };
   view.innerHTML = `
     <div class="panel builder">
       <div class="panel-head"><h2>สร้างโครงสร้างรายวิชา — ภาคเรียนที่ ${B.term}</h2><button class="btn small" id="bBack">← กลับ</button></div>
       ${B.from ? `<p class="note" style="margin:0 0 8px">ดึงโครงสร้างมาจาก ${esc(B.from)} — ตรวจและปรับให้เหมาะกับห้องนี้ แล้วกด "บันทึกโครงสร้าง"</p>` : ""}
       <p class="muted small" style="margin-top:0">${esc(c.code || "")} ${esc(c.name)} ${esc(c.grade_level)}/${esc(c.classroom)} ·
-        พิมพ์ในตารางได้ทุกช่อง · เลือก${W}จากคลังให้หลายหน่วยในครั้งเดียว หรือวางจาก Excel/Word · ใส่คะแนนเต็มรายข้อ — คะแนนเก็บรวม ${fmt(cT)} · สอบปลายภาค ${fmt(fT)}</p>
+        เลือก${W}ของภาคนี้จากคลัง หรือวางจาก Excel/Word แล้วใส่คะแนนเต็มรายข้อ — คะแนนเก็บรวม ${fmt(cT)} · สอบปลายภาค ${fmt(fT)}</p>
       ${bankCache.length ? "" : `<p class="note warn">ยังไม่มี${W}ของวิชานี้ในคลัง — พิมพ์${W}เองได้ในหน้าต่างเลือก${W} หรือแจ้งฝ่ายวัดผลให้นำเข้าคลัง</p>`}
+      <div class="form-grid" style="margin-top:10px;align-items:start">
+        <label class="field">ชั่วโมงเรียน (ภาคเรียนนี้)<input id="bHours" inputmode="decimal" value="${esc(B.mark.hours ?? "")}" placeholder="เช่น 80"></label>
+        <label class="field">ภาระงาน / ชิ้นงาน<textarea id="bTask" maxlength="500" rows="2" placeholder="เช่น ใบงาน, แบบฝึกหัด, ชิ้นงาน">${esc(B.mark.task || "")}</textarea></label>
+      </div>
     </div>
     <div class="panel b-table-panel">
       <div class="b-tools">
-        <button type="button" class="btn small primary" id="bBank">${ICONS.plus} เลือก${W}จากคลัง (หลายหน่วย)</button>
+        <button type="button" class="btn small primary" id="bBank">${ICONS.plus} เลือก${W}จากคลัง</button>
         <button type="button" class="btn small" id="bPaste">วางจาก Excel/Word</button>
-        <span class="b-addrows"><button type="button" class="btn small" id="bAddUnit">${ICONS.plus} เพิ่มหน่วย</button>
-          <input id="bAddN" type="number" min="1" max="30" value="1" inputmode="numeric" aria-label="จำนวนหน่วยที่จะเพิ่ม"><span class="muted small">แถว</span></span>
       </div>
-      <div class="b-scroll"><table class="b-table">
-        <thead><tr><th class="c-no">หน่วยที่</th><th class="c-title">ชื่อหน่วยการเรียนรู้</th><th class="c-std">มาตรฐาน</th><th class="c-ind">${W} / คะแนนเต็ม</th>
-          <th class="c-hr">ชั่วโมง</th><th class="c-sum">คะแนน</th><th class="c-task">ภาระงาน / ชิ้นงาน</th><th class="c-act"></th></tr></thead>
-        <tbody>${B.units.map((u, ui) => `<tr class="b-row">
-          <td class="c-no"><b>${ui + 1}</b><span class="b-mv">
-            <button type="button" class="icon-btn sm" data-mv="${ui}:-1" ${ui ? "" : "disabled"} aria-label="เลื่อนหน่วยที่ ${ui + 1} ขึ้น">↑</button>
-            <button type="button" class="icon-btn sm" data-mv="${ui}:1" ${ui < B.units.length - 1 ? "" : "disabled"} aria-label="เลื่อนหน่วยที่ ${ui + 1} ลง">↓</button></span></td>
-          <td class="c-title"><textarea data-uf="${ui}:title" maxlength="300" rows="2" placeholder="ชื่อหน่วย" aria-label="ชื่อหน่วยการเรียนรู้ที่ ${ui + 1}">${esc(u.title)}</textarea></td>
-          <td class="c-std">${stdList(u.items).map((x) => `<div title="${esc(stdInfo(x).std_text || "")}">${esc(x)}</div>`).join("") || '<span class="muted">–</span>'}</td>
-          <td class="c-ind">${u.items.map((it, ii) => indRow(it, `u${ui}`, ii)).join("")}
-            <button type="button" class="btn small" data-pick="${ui}">${ICONS.plus} เลือก${W}</button></td>
-          <td class="c-hr"><input data-uf="${ui}:hours" inputmode="decimal" value="${esc(u.hours)}" aria-label="ชั่วโมง หน่วยที่ ${ui + 1}"></td>
-          <td class="c-sum num" data-usum="${ui}">${fmt(unitSum(u))}</td>
-          <td class="c-task"><textarea data-uf="${ui}:task" maxlength="500" rows="2" placeholder="เช่น ใบงาน, แผนภาพโครงเรื่อง" aria-label="ภาระงาน หน่วยที่ ${ui + 1}">${esc(u.task)}</textarea></td>
-          <td class="c-act"><button type="button" class="icon-btn sm danger" data-udel="${ui}" aria-label="ลบหน่วยที่ ${ui + 1}">✕</button></td></tr>`).join("")}
-        ${B.loose.length ? `<tr class="b-row loose"><td class="c-no">–</td><td class="c-title muted small">${W}ที่ยังไม่อยู่ในหน่วยใด</td>
-          <td class="c-std">${stdList(B.loose).map((x) => `<div>${esc(x)}</div>`).join("")}</td>
-          <td class="c-ind">${B.loose.map((it, ii) => indRow(it, "loose", ii)).join("")}</td><td></td><td class="c-sum num">${fmt(r2(B.loose.reduce((a, i) => a + (Number(i.max) || 0), 0)))}</td><td></td><td></td></tr>` : ""}
-        </tbody>
-        <tfoot><tr><td colspan="4" class="num">รวม</td><td class="c-hr num" id="bHrs">${fmt(r2(B.units.reduce((a, u) => a + (Number(u.hours) || 0), 0)))}</td><td class="c-sum num" id="bSum"></td><td colspan="2"></td></tr></tfoot>
+      <div class="table-wrap"><table class="list b-flat">
+        <thead><tr><th class="num" style="width:44px">ที่</th><th style="width:84px">มาตรฐาน</th><th>${W}</th><th class="num" style="width:96px">คะแนนเต็ม</th><th style="width:44px"></th></tr></thead>
+        <tbody>${refs.map(indRow).join("") || `<tr><td colspan="5" class="muted small">ยังไม่ได้เลือก${W} — กด "เลือก${W}จากคลัง" หรือ "วางจาก Excel/Word"</td></tr>`}</tbody>
+        <tfoot><tr><td colspan="3" class="num"><b>รวมคะแนนเก็บ</b></td><td class="num"><b id="bSum"></b></td><td></td></tr></tfoot>
       </table></div>
     </div>
     <div class="panel"><div class="panel-head"><h2>สอบปลายภาค</h2><button type="button" class="btn small" id="bAddFinal">${ICONS.plus} เพิ่มการสอบ</button></div>
@@ -1071,37 +1070,23 @@ function drawBuilder() {
       <span class="tag ${t.final === fT ? "ok" : "warn"}">ปลายภาค ${fmt(t.final)}/${fmt(fT)}</span>${ok ? "" : ' <span class="muted small">บันทึกได้ แต่ต้องรวมให้พอดีก่อนส่งผล</span>'}`;
   };
   totals();
-  const at = (ref) => { const [w, i] = ref.split(":"); const list = w === "loose" ? B.loose : w === "final" ? B.finals : B.units[Number(w.slice(1))].items; return [list, Number(i)]; };
+  const at = (ref) => { const [w, i] = ref.split(":"); const list = w === "loose" ? B.loose : w === "final" ? B.finals : w === "m" ? B.mark.items : B.units[Number(w.slice(1))].items; return [list, Number(i)]; };
   view.oninput = (e) => {
     if (!builder) return;
     const el = e.target;
-    if (el.dataset.uf) { const [ui, f] = el.dataset.uf.split(":"); B.units[ui][f] = el.value; markDirty();
-      if (f === "hours") document.getElementById("bHrs").textContent = fmt(r2(B.units.reduce((a, u) => a + (Number(u.hours) || 0), 0))); }
-    else if (el.dataset.max) { const [list, i] = at(el.dataset.max); list[i].max = el.value.trim(); markDirty(); totals();
-      const w = el.dataset.max.split(":")[0]; if (w[0] === "u") { const c = view.querySelector(`[data-usum="${w.slice(1)}"]`); if (c) c.textContent = fmt(unitSum(B.units[Number(w.slice(1))])); } }
+    if (el.id === "bHours") { B.mark.hours = el.value.trim(); markDirty(); }
+    else if (el.id === "bTask") { B.mark.task = el.value; markDirty(); }
+    else if (el.dataset.max) { const [list, i] = at(el.dataset.max); list[i].max = el.value.trim(); markDirty(); totals(); }
     else if (el.dataset.ft) { B.finals[Number(el.dataset.ft)].title = el.value; markDirty(); }
   };
   for (const b of view.querySelectorAll("[data-rm]")) b.onclick = () => { const [list, i] = at(b.dataset.rm); list.splice(i, 1); markDirty(); drawBuilder(); };
-  for (const b of view.querySelectorAll("[data-udel]")) b.onclick = async () => {
-    const u = B.units[Number(b.dataset.udel)];
-    if ((String(u.title).trim() || u.items.length) && !(await confirmBox("ลบหน่วยการเรียนรู้", u.items.length ? `${W}ในหน่วยนี้ ${u.items.length} ข้อจะย้ายไปอยู่กลุ่ม "ยังไม่อยู่ในหน่วยใด"` : "ลบหน่วยนี้", "ลบหน่วย", true))) return;
-    B.loose.push(...u.items); B.units.splice(Number(b.dataset.udel), 1); markDirty(); drawBuilder();
-  };
-  for (const b of view.querySelectorAll("[data-mv]")) b.onclick = () => { const [ui, d] = b.dataset.mv.split(":").map(Number); const [u] = B.units.splice(ui, 1); B.units.splice(ui + d, 0, u); markDirty(); drawBuilder(); };
-  for (const b of view.querySelectorAll("[data-pick]")) b.onclick = () => pickIndicators(Number(b.dataset.pick));
-  document.getElementById("bAddUnit").onclick = () => {
-    const n = Math.min(30, Math.max(1, Math.trunc(Number(document.getElementById("bAddN").value)) || 1)), first = B.units.length;
-    for (let i = 0; i < n; i++) B.units.push(emptyUnit());
-    markDirty(); drawBuilder();
-    const ta = view.querySelector(`[data-uf="${first}:title"]`); ta?.scrollIntoView({ block: "center" }); ta?.focus();
-  };
-  document.getElementById("bBank").onclick = () => pickToUnits();
-  document.getElementById("bPaste").onclick = () => pasteUnits();
+  document.getElementById("bBank").onclick = () => pickToTerm();
+  document.getElementById("bPaste").onclick = () => pasteIndicators();
   document.getElementById("bAddFinal").onclick = () => { B.finals.push({ id: null, code: "", title: `สอบปลายภาคเรียนที่ ${B.term}`, max: "", inds: [] }); markDirty(); drawBuilder(); };
   for (const b of view.querySelectorAll("[data-fpick]")) b.onclick = () => pickFinalIndicators(Number(b.dataset.fpick));
   for (const b of view.querySelectorAll("[data-frm]")) b.onclick = () => { const [fi, i] = b.dataset.frm.split(":").map(Number); B.finals[fi].inds.splice(i, 1); markDirty(); drawBuilder(); };
   document.getElementById("bSplit").onclick = () => {
-    const all = [...B.units.flatMap((u) => u.items), ...B.loose];
+    const all = allInd(B);
     if (!all.length) { toast(`ยังไม่ได้เลือก${W}`, "bad"); return; }
     const each = Math.floor((cT / all.length) * 100) / 100;
     all.forEach((it, i) => { it.max = String(i === all.length - 1 ? r2(cT - each * (all.length - 1)) : each); });
@@ -1118,10 +1103,8 @@ function drawBuilder() {
   document.getElementById("bSave").onclick = () => saveBuilder();
 }
 
-const emptyUnit = () => ({ id: null, title: "", hours: "", task: "", items: [] });
 // รหัสมาตรฐานจากรหัสตัวชี้วัด เช่น "ท 1.1 ป.4/1" → "ท 1.1" (ผลการเรียนรู้/ผลลัพธ์ ป.1–3 ไม่มีมาตรฐาน → "")
 const stdOf = (code) => { const m = String(code || "").match(/^([ก-ฮ])\s*([\d๐-๙]+\.[\d๐-๙]+)/); return m ? `${m[1]} ${m[2]}` : ""; };
-const stdList = (items) => [...new Set(items.map((i) => stdOf(i.code)).filter(Boolean))];
 // คลัง → [[หัวกลุ่ม, ข้อ…]…]: จัดตามมาตรฐาน (ระหว่างทาง+ปลายทางอยู่กลุ่มเดียวกัน) · ข้อที่ไม่มีมาตรฐานจัดตามประเภท
 function bankGroups(list) {
   const m = new Map();
@@ -1155,58 +1138,37 @@ function findBox(d) {
   };
 }
 
-// เลือกจากคลังทีเดียวหลายหน่วย: ติ๊กข้อที่ใช้ แล้วเลือกหน่วยให้แต่ละข้อ (หรือทั้งมาตรฐาน)
-async function pickToUnits() {
+// เลือกตัวชี้วัดของภาคจากคลัง (ติ๊ก = อยู่ในโครงสร้าง · ติ๊กออก = เอาออก) · พิมพ์เองได้ถ้าไม่มีในคลัง
+async function pickToTerm() {
   const B = builder;
-  if (!B.units.length) B.units.push(emptyUnit());
-  const at = new Map(); // itemKey → "u<i>" | "loose"
-  B.units.forEach((u, i) => u.items.forEach((it) => at.set(itemKey(it), `u${i}`)));
-  B.loose.forEach((it) => at.set(itemKey(it), "loose"));
-  const extra = [...B.units.flatMap((u) => u.items), ...B.loose].filter((it) => !bankCache.some((b) => itemKey(b) === itemKey(it))).map((it) => ({ code: it.code, title: it.title, kind: "" }));
-  const list = [...bankCache, ...extra];
-  if (!list.length) { toast(`ยังไม่มี${W}ของวิชานี้ในคลัง — วางจาก Excel/Word หรือพิมพ์เองในปุ่ม "เลือก${W}" ของหน่วย`, "bad"); return; }
-  const uLabel = (u, i) => `หน่วยที่ ${i + 1}${String(u.title).trim() ? ` ${String(u.title).trim().slice(0, 40)}` : ""}`;
-  const opts = (cur, withLoose) => `<option value="">— ไม่ใช้ —</option>${B.units.map((u, i) => `<option value="u${i}" ${cur === `u${i}` ? "selected" : ""}>${esc(uLabel(u, i))}</option>`).join("")}
-    <option value="new" ${cur === "new" ? "selected" : ""}>+ หน่วยใหม่</option>${withLoose ? `<option value="loose" ${cur === "loose" ? "selected" : ""}>ยังไม่จัดเข้าหน่วย</option>` : ""}`;
-  let idx = 0; const flat = [];
-  const groups = bankGroups(list);
+  const cur = allInd(B), mine = new Set(cur.map(itemKey));
+  const extra = cur.filter((it) => !bankCache.some((b) => itemKey(b) === itemKey(it))).map((it) => ({ code: it.code, title: it.title, kind: "" }));
+  const groups = bankGroups([...bankCache, ...extra]);
+  let idx = 0; const flatList = [];
   const res = await dialog({
-    title: `เลือก${W}จากคลัง — จัดเข้าหลายหน่วยในครั้งเดียว`, wide: true, okText: "ใช้ที่เลือก",
-    body: `<p class="muted small" style="margin-top:0">เลือกหน่วยให้แต่ละข้อ หรือเลือกหน่วยให้ทั้งมาตรฐานจากหัวกลุ่ม · "+ หน่วยใหม่" = สร้างหน่วยใหม่ 1 หน่วยต่อมาตรฐาน · ข้อที่เลือก "ไม่ใช้" จะเอาออกจากโครงสร้าง</p>
-      <input type="search" class="pick-find" placeholder="ค้นหารหัสหรือข้อความ" aria-label="ค้นหา${W}">
-      ${groups.map(([label, l], gi) => { const h = groupHead(label, groups[gi - 1]?.[0]); return `${h.strand}<div class="pick-group pick-std"><div class="pick-head"><b>${esc(label)}</b> <span class="muted small">${l.length} ข้อ</span>
-          <label class="pick-all">ทั้งกลุ่ม →<select data-gset aria-label="จัด${esc(label)}ทั้งกลุ่มเข้าหน่วย"><option value="-">เลือกหน่วย…</option>${opts("-", false)}</select></label></div>${h.text}
-          <div class="pick-rows">${l.map((b) => { const i = idx++; flat.push(b); const cur = at.get(itemKey(b)) || "";
-            return `<div class="pick-urow" data-row><span><b>${esc(b.code || "")}</b> ${esc(b.title)}${kindTag(b)}</span>
-              <select name="a${i}" aria-label="หน่วยของ ${esc(b.code || b.title.slice(0, 30))}" class="${cur ? "on" : ""}">${opts(cur, cur === "loose")}</select></div>`; }).join("")}</div></div>`; }).join("")}`,
-    onOpen: (d) => {
-      const mark = (s) => s.classList.toggle("on", !!s.value);
-      for (const s of d.querySelectorAll("select[name]")) s.onchange = () => mark(s);
-      for (const g of d.querySelectorAll("[data-gset]")) g.onchange = () => {
-        if (g.value === "-") return;
-        for (const s of g.closest(".pick-std").querySelectorAll("select[name]")) { if (s.closest("[data-row]").hidden) continue; s.value = g.value; mark(s); }
-        g.value = "-";
-      };
-      findBox(d);
-    },
+    title: `เลือก${W} — ภาคเรียนที่ ${B.term}`, wide: true, okText: "ใช้ที่เลือก",
+    body: `${groups.length ? `<p class="muted small" style="margin-top:0">ติ๊กข้อที่ใช้ในภาคนี้ · ข้อที่ติ๊กออกจะเอาออกจากโครงสร้าง (คะแนนเต็มของข้อเดิมคงไว้)</p>
+        <input type="search" class="pick-find" placeholder="ค้นหารหัสหรือข้อความ" aria-label="ค้นหา${W}">` + groups.map(([label, l], gi) => { const h = groupHead(label, groups[gi - 1]?.[0]); return `${h.strand}<div class="pick-group pick-std"><div class="pick-head"><b>${esc(label)}</b> <span class="muted small">${l.length} ข้อ</span>
+          <button type="button" class="btn small" data-gall>เลือกทั้งกลุ่ม</button></div>${h.text}
+          <div style="display:grid;gap:6px">${l.map((b) => { flatList.push(b); const i = idx++;
+            return `<label class="check pick-row" data-row><input type="checkbox" name="p${i}" ${mine.has(itemKey(b)) ? "checked" : ""}><span><b>${esc(b.code || "")}</b> ${esc(b.title)}${kindTag(b)}</span></label>`; }).join("")}</div></div>`; }).join("")
+        : `<p class="muted">ยังไม่มี${W}ของวิชานี้ในคลัง</p>`}
+      <details class="pick-group" ${groups.length ? "" : "open"}><summary>พิมพ์${W}เอง (ไม่มีในคลัง)</summary>
+        <p class="muted small">บรรทัดละ 1 ข้อ เช่น <code>ท 1.1 ป.4/1 อ่านออกเสียงบทร้อยแก้ว…</code></p>
+        <textarea name="typed" placeholder="รหัส ข้อความ"></textarea></details>`,
+    onOpen: (d) => { for (const b of d.querySelectorAll("[data-gall]")) b.onclick = () => { for (const x of b.closest(".pick-std").querySelectorAll("input[type=checkbox]")) if (!x.closest("[data-row]").hidden) x.checked = true; }; findBox(d); },
   });
   if (!res.ok) return;
-  const old = new Map([...B.units.flatMap((u) => u.items), ...B.loose].map((it) => [itemKey(it), it]));
-  const units = B.units.map((u) => ({ ...u, items: [] })), loose = [], newUnits = new Map(); // มาตรฐาน → หน่วยใหม่
-  flat.forEach((b, i) => {
-    const dest = res.data[`a${i}`] || "";
-    if (!dest) return;
-    const it = old.get(itemKey(b)) || { id: null, code: b.code || "", title: b.title, max: "" };
-    if (dest === "loose") loose.push(it);
-    else if (dest === "new") { const k = stdOf(b.code) || b.kind || "-"; if (!newUnits.has(k)) newUnits.set(k, emptyUnit()); newUnits.get(k).items.push(it); }
-    else units[Number(dest.slice(1))].items.push(it);
-  });
-  // ข้อเดิมที่ยังอยู่ในหน่วยเดิม คงลำดับเดิม; ข้อที่เพิ่มใหม่ต่อท้าย
-  units.forEach((u, i) => { const before = B.units[i].items.map(itemKey); u.items.sort((a, b) => { const x = before.indexOf(itemKey(a)), y = before.indexOf(itemKey(b)); return (x < 0 ? 1e9 : x) - (y < 0 ? 1e9 : y); }); });
-  B.units = [...units.filter((u, i) => i < units.length), ...newUnits.values()];
-  B.loose = loose;
+  const keep = new Set(flatList.filter((b, i) => res.data[`p${i}`]).map(itemKey));
+  for (const r of parseIndicatorLines(res.data.typed || "")) keep.add(itemKey({ code: r.code || "", title: r.title }));
+  // เอาออกเฉพาะข้อที่อยู่ในรายการและถูกติ๊กออก
+  const drop = (list) => list.filter((it) => keep.has(itemKey(it)) || !flatList.some((b) => itemKey(b) === itemKey(it)));
+  B.units.forEach((u) => { u.items = drop(u.items); });
+  B.mark.items = drop(B.mark.items); B.loose = drop(B.loose);
+  const have = new Set(allInd(B).map(itemKey));
+  flatList.forEach((b, i) => { if (res.data[`p${i}`] && !have.has(itemKey(b))) { B.mark.items.push({ id: null, code: b.code || "", title: b.title, max: "" }); have.add(itemKey(b)); } });
+  for (const r of parseIndicatorLines(res.data.typed || "")) { const it = { id: null, code: r.code || "", title: r.title, max: "" }; if (!have.has(itemKey(it))) { B.mark.items.push(it); have.add(itemKey(it)); } }
   markDirty(); drawBuilder();
-  toast(`จัด${W}เข้าหน่วยแล้ว${newUnits.size ? ` · เพิ่ม ${newUnits.size} หน่วยใหม่ (พิมพ์ชื่อหน่วยด้วย)` : ""}`);
 }
 
 // แยกข้อความที่คัดลอกจาก Excel/Word (คั่นด้วย tab · เซลล์ที่มีหลายบรรทัดอยู่ใน "…")
@@ -1225,95 +1187,47 @@ function parseTSV(text) {
   return rows.map((r) => r.map((c) => c.trim())).filter((r) => r.some(Boolean));
 }
 
-// วางหลายหน่วยจาก Excel/Word: ชื่อหน่วย | ชั่วโมง | ภาระงาน | รหัส${W} | คะแนนเต็ม
-async function pasteUnits() {
+// วางจาก Excel/Word: แถวละ 1 ข้อ — รหัส${W} | คะแนนเต็ม (ช่องรหัสใส่หลายข้อคั่น , ได้)
+async function pasteIndicators() {
   const B = builder;
   const res = await dialog({
-    title: "วางโครงสร้างจาก Excel/Word", wide: true, okText: "ตรวจและเพิ่ม",
-    body: `<p class="muted small" style="margin-top:0">คัดลอกตารางจาก Excel หรือ Word มาวาง (แถวละ 1 หน่วย) เรียงคอลัมน์:
-        <b>ชื่อหน่วย · ชั่วโมง · ภาระงาน · รหัส${W} · คะแนนเต็ม</b><br>
-        รหัส${W}หลายข้อคั่นด้วย , หรือขึ้นบรรทัดใหม่ในเซลล์ · คะแนนเต็มใส่ตัวเดียว = ทุกข้อเท่ากัน หรือคั่น , ตามลำดับรหัส · แถวหัวตารางข้ามให้เอง</p>
-      <textarea name="tsv" rows="9" placeholder="ภาษาไทยของเรา	6	ใบงานการอ่าน	ท 1.1 ป.4/1, ท 1.1 ป.4/2	5"></textarea>
-      <label class="check" style="margin-top:8px"><input type="checkbox" name="replace" ${B.units.some((u) => String(u.title).trim() || u.items.length) ? "" : "checked"}> แทนที่หน่วยที่มีอยู่ทั้งหมด (ไม่ติ๊ก = เพิ่มต่อท้าย)</label>`,
+    title: "วาง${W}จาก Excel/Word", wide: true, okText: "ตรวจและเพิ่ม",
+    body: `<p class="muted small" style="margin-top:0">คัดลอกตารางจาก Excel หรือ Word มาวาง เรียงคอลัมน์: <b>รหัส${W} · คะแนนเต็ม</b><br>
+        แถวละ 1 ข้อ (หรือหลายรหัสคั่นด้วย , — คะแนนเต็มใส่ตัวเดียว = ทุกข้อเท่ากัน หรือคั่น , ตามลำดับ) · แถวหัวตารางข้ามให้เอง</p>
+      <textarea name="tsv" rows="9" placeholder="ท 1.1 ป.4/1	3"></textarea>
+      <label class="check" style="margin-top:8px"><input type="checkbox" name="replace" ${allInd(B).length ? "" : "checked"}> แทนที่${W}ที่มีอยู่ทั้งหมด (ไม่ติ๊ก = เพิ่มต่อท้าย)</label>`,
   });
   if (!res.ok) return;
   let rows = parseTSV(res.data.tsv || "");
-  if (rows.length && /หน่วย|ชื่อ/.test(rows[0][0] || "") && !/\d/.test(rows[0][1] || "")) rows = rows.slice(1);
+  if (rows.length && /รหัส|ตัวชี้วัด|ผลการเรียนรู้/.test(rows[0][0] || "") && !/\d/.test(rows[0][1] || "")) rows = rows.slice(1);
   if (!rows.length) { toast("ไม่พบข้อมูลที่วาง", "bad"); return; }
   const byCode = new Map(bankCache.filter((b) => b.code).map((b) => [normCode(b.code), b]));
-  const existing = new Map([...B.units.flatMap((u) => u.items), ...B.loose].map((it) => [normCode(it.code) || itemKey(it), it]));
-  const errs = [], units = [], used = new Set();
+  const existing = new Map(allInd(B).map((it) => [normCode(it.code) || itemKey(it), it]));
+  const errs = [], got = [], used = new Set();
   rows.forEach((r, ri) => {
-    const [title = "", hours = "", task = "", codes = "", maxes = ""] = r;
+    const [codes = "", maxes = ""] = r;
     const line = `แถว ${ri + 1}`;
-    if (hours && !(Number(hours) >= 0)) errs.push(`${line}: ชั่วโมง "${hours}" ไม่ใช่ตัวเลข`);
     const cs = codes.split(/[,\n;]+/).map(normCode).filter(Boolean);
     const ms = maxes.split(/[,\n;]+/).map((x) => x.trim()).filter(Boolean);
     if (ms.some((m) => !(Number(m) > 0))) errs.push(`${line}: คะแนนเต็ม "${maxes}" ไม่ถูกต้อง`);
     if (ms.length > 1 && ms.length !== cs.length) errs.push(`${line}: คะแนนเต็ม ${ms.length} ค่า แต่${W} ${cs.length} ข้อ`);
-    const items = [];
     cs.forEach((c, ci) => {
       if (used.has(c)) { errs.push(`${line}: ${c} ซ้ำกับแถวก่อนหน้า`); return; }
       used.add(c);
       const b = byCode.get(c), ex = existing.get(c);
       if (!b && !ex) { errs.push(`${line}: ไม่พบ ${c} ในคลังของวิชานี้`); return; }
-      const src = ex || { id: null, code: b.code, title: b.title, max: "" };
-      items.push({ ...src, max: ms.length ? String(ms.length > 1 ? ms[ci] : ms[0]) : src.max });
+      got.push({ ex, src: ex || { id: null, code: b.code, title: b.title, max: "" }, max: ms.length ? String(ms.length > 1 ? ms[ci] : ms[0]) : null });
     });
-    units.push({ id: null, title, hours, task, items });
   });
   if (errs.length) {
     await dialog({ title: "ยังเพิ่มไม่ได้", okText: "", cancelText: "กลับไปแก้", body: `<p>แก้ข้อมูลใน Excel/Word แล้ววางใหม่ (ยังไม่มีอะไรถูกเปลี่ยน)</p><ul>${errs.slice(0, 15).map((e) => `<li>${esc(e)}</li>`).join("")}</ul>${errs.length > 15 ? `<p class="muted small">และอีก ${errs.length - 15} รายการ</p>` : ""}` });
     return;
   }
-  const keys = new Set(units.flatMap((u) => u.items.map(itemKey)));
-  if (res.data.replace) {
-    // หน่วยเดิมที่ชื่อตรงกันใช้ id เดิม · ข้อเดิมที่ไม่อยู่ในที่วาง → ย้ายไป "ยังไม่อยู่ในหน่วยใด" (ไม่ลบ)
-    const oldU = [...B.units]; for (const u of units) { const m = oldU.findIndex((o) => o.id && o.title.trim() === u.title.trim()); if (m >= 0) { u.id = oldU[m].id; oldU.splice(m, 1); } }
-    B.loose = [...B.units.flatMap((u) => u.items), ...B.loose].filter((it) => !keys.has(itemKey(it)));
-    B.units = units;
-  } else {
-    for (const u of B.units) u.items = u.items.filter((it) => !keys.has(itemKey(it)));
-    B.loose = B.loose.filter((it) => !keys.has(itemKey(it)));
-    B.units = [...B.units.filter((u) => String(u.title).trim() || u.items.length || u.id), ...units];
-  }
+  const keys = new Set(got.map((g) => itemKey(g.src)));
+  if (res.data.replace) { const drop = (l) => l.filter((it) => keys.has(itemKey(it))); B.units.forEach((u) => { u.items = drop(u.items); }); B.mark.items = drop(B.mark.items); B.loose = drop(B.loose); }
+  for (const g of got) { if (g.max != null) g.src.max = g.max; if (!g.ex) B.mark.items.push(g.src); }
   markDirty(); drawBuilder();
-  toast(`เพิ่ม ${units.length} หน่วย ${units.reduce((a, u) => a + u.items.length, 0)} ${W}แล้ว — ตรวจแล้วกดบันทึกโครงสร้าง`);
-}
-
-async function pickIndicators(ui) {
-  const B = builder, u = B.units[ui];
-  const where = new Map(); // itemKey → ข้อความบอกว่าอยู่ที่ไหน
-  B.units.forEach((x, i) => { if (i !== ui) for (const it of x.items) where.set(itemKey(it), `หน่วยที่ ${i + 1}`); });
-  const mine = new Set(u.items.map(itemKey)), loose = new Set(B.loose.map(itemKey));
-  // ตัวชี้วัดที่เคยบันทึกในรายวิชาแต่ไม่อยู่ในคลัง ก็ให้เห็นในรายการด้วย
-  const extra = [...u.items, ...B.loose].filter((it) => !bankCache.some((b) => itemKey(b) === itemKey(it))).map((it) => ({ code: it.code, title: it.title, kind: "" }));
-  const list = [...bankCache, ...extra];
-  const groups = bankGroups(list);
-  const row = (b, i) => { const k = itemKey(b), other = where.get(k);
-    return `<label class="check pick-row" data-row><input type="checkbox" name="p${i}" ${mine.has(k) ? "checked" : ""} ${other ? "disabled" : ""}>
-      <span><b>${esc(b.code || "")}</b> ${esc(b.title)}${kindTag(b)}${other ? ` <span class="tag">อยู่ใน${other}</span>` : loose.has(k) ? ' <span class="tag warn">ยังไม่อยู่ในหน่วย</span>' : ""}</span></label>`; };
-  let idx = 0; const flatList = [];
-  const res = await dialog({
-    title: `เลือก${W} — หน่วยที่ ${ui + 1}${u.title ? ` ${u.title}` : ""}`, wide: true, okText: "ใช้ที่เลือก",
-    body: `${groups.length ? `<input type="search" class="pick-find" placeholder="ค้นหารหัสหรือข้อความ" aria-label="ค้นหา${W}">` + groups.map(([label, l], gi) => { const h = groupHead(label, groups[gi - 1]?.[0]); return `${h.strand}<div class="pick-group pick-std"><div class="pick-head"><b>${esc(label)}</b> <span class="muted small">${l.length} ข้อ</span>
-          <button type="button" class="btn small" data-gall>เลือกทั้งกลุ่ม</button></div>${h.text}
-          <div style="display:grid;gap:6px">${l.map((b) => { flatList.push(b); return row(b, idx++); }).join("")}</div></div>`; }).join("")
-        : `<p class="muted">ยังไม่มี${W}ของวิชานี้ในคลัง</p>`}
-      <details class="pick-group" ${groups.length ? "" : "open"}><summary>พิมพ์${W}เอง (ไม่มีในคลัง)</summary>
-        <p class="muted small">บรรทัดละ 1 ข้อ เช่น <code>ท 1.1 ป.4/1 อ่านออกเสียงบทร้อยแก้ว…</code></p>
-        <textarea name="typed" placeholder="รหัส ข้อความ"></textarea></details>`,
-    onOpen: (d) => { for (const b of d.querySelectorAll("[data-gall]")) b.onclick = () => { for (const x of b.closest(".pick-std").querySelectorAll("input[type=checkbox]:not(:disabled)")) x.checked = true; }; findBox(d); },
-  });
-  if (!res.ok) return;
-  const chosen = flatList.filter((b, i) => res.data[`p${i}`]);
-  const keepKeys = new Set(chosen.map(itemKey));
-  const old = new Map([...u.items, ...B.loose].map((it) => [itemKey(it), it]));
-  // ตัวชี้วัดที่ติ๊กออกจากหน่วยนี้ → ลบออกจากโครงสร้าง · ที่เลือกจากกลุ่มยังไม่อยู่ในหน่วย → ย้ายเข้าหน่วยนี้ (คงคะแนนเต็มเดิม)
-  u.items = chosen.map((b) => old.get(itemKey(b)) || { id: null, code: b.code || "", title: b.title, max: "" });
-  B.loose = B.loose.filter((it) => !keepKeys.has(itemKey(it)));
-  for (const r of parseIndicatorLines(res.data.typed || "")) if (!u.items.some((x) => itemKey(x) === itemKey(r))) u.items.push({ id: null, code: r.code || "", title: r.title, max: "" });
-  markDirty(); drawBuilder();
+  toast(`ได้ ${got.length} ${W} — ตรวจแล้วกดบันทึกโครงสร้าง`);
 }
 
 // ป.4–6 มีตัวชี้วัดปลายทาง → สอบปลายภาควัดเฉพาะปลายทาง · ป.1–3 (ผลการเรียนรู้/ผลลัพธ์) ไม่แบ่งประเภท
@@ -1325,19 +1239,19 @@ async function pickFinalIndicators(fi) {
   const pool = new Map();
   const add = (x) => { const k = itemKey(x); if (!pool.has(k)) pool.set(k, { code: x.code || "", title: x.title, kind: bankKindOf(x) }); };
   for (const b of bankCache) if (!hasFinalKind() || b.kind === "ปลายทาง") add(b);
-  // ปลายทางที่ใช้ในหน่วยของภาคนี้ (กรณีพิมพ์เอง ไม่มีในคลัง) และที่เคยเลือกไว้
-  for (const it of [...B.units.flatMap((u) => u.items), ...B.loose]) if (!hasFinalKind() || bankKindOf(it) === "ปลายทาง" || !bankKindOf(it)) add(it);
+  // ปลายทางที่ใช้ในภาคนี้ (กรณีพิมพ์เอง ไม่มีในคลัง) และที่เคยเลือกไว้
+  for (const it of allInd(B)) if (!hasFinalKind() || bankKindOf(it) === "ปลายทาง" || !bankKindOf(it)) add(it);
   for (const x of f.inds || []) add(x);
   const list = [...pool.values()];
-  const inTerm = new Set([...B.units.flatMap((u) => u.items), ...B.loose].map(itemKey));
+  const inTerm = new Set(allInd(B).map(itemKey));
   const chosen = new Set((f.inds || []).map(itemKey));
   const res = await dialog({
     title: `${W}${finalKindLabel()}ที่วัดด้วย${f.title || "สอบปลายภาค"}`, wide: true, okText: "ใช้ที่เลือก",
-    body: list.length ? `<div class="actions" style="margin-bottom:8px"><button type="button" class="btn small" data-term>เฉพาะที่อยู่ในหน่วยของภาคนี้</button>
+    body: list.length ? `<div class="actions" style="margin-bottom:8px"><button type="button" class="btn small" data-term>เฉพาะที่อยู่ในโครงสร้างภาคนี้</button>
         <button type="button" class="btn small" data-all>เลือกทั้งหมด</button><button type="button" class="btn small" data-none>ล้าง</button></div>
       <div style="display:grid;gap:6px">${list.map((b, i) => `<label class="check pick-row"><input type="checkbox" name="f${i}" data-in="${inTerm.has(itemKey(b)) ? 1 : 0}" ${chosen.has(itemKey(b)) ? "checked" : ""}>
-        <span><b>${esc(b.code)}</b> ${esc(b.title)}${inTerm.has(itemKey(b)) ? ' <span class="tag ok">อยู่ในหน่วยของภาคนี้</span>' : ""}</span></label>`).join("")}</div>`
-      : `<p class="muted">ยังไม่มี${W}${finalKindLabel()}ของวิชานี้ในคลัง — เลือก${W}ในหน่วยการเรียนรู้ก่อน แล้วกลับมาเลือกที่นี่</p>`,
+        <span><b>${esc(b.code)}</b> ${esc(b.title)}${inTerm.has(itemKey(b)) ? ' <span class="tag ok">อยู่ในโครงสร้างภาคนี้</span>' : ""}</span></label>`).join("")}</div>`
+      : `<p class="muted">ยังไม่มี${W}${finalKindLabel()}ของวิชานี้ในคลัง — เลือก${W}ของภาคนี้ก่อน แล้วกลับมาเลือกที่นี่</p>`,
     onOpen: (d) => {
       const boxes = () => [...d.querySelectorAll("input[type=checkbox]")];
       d.querySelector("[data-all]")?.addEventListener("click", () => boxes().forEach((x) => { x.checked = true; }));
@@ -1352,18 +1266,17 @@ async function pickFinalIndicators(fi) {
 
 async function saveBuilder(confirm = false) {
   const B = builder;
-  // แถวว่างทั้งแถว (เพิ่มไว้แต่ไม่ได้ใช้) ไม่ต้องบันทึก
-  const blank = (u) => !String(u.title).trim() && !String(u.hours).trim() && !String(u.task).trim() && !u.items.length;
-  if (B.units.some(blank)) { B.units = B.units.filter((u) => !blank(u)); if (!B.units.length) B.units.push(emptyUnit()); drawBuilder(); }
   const noInd = B.finals.findIndex((f) => !(f.inds || []).length);
   if (noInd >= 0) { toast(`เลือก${W}${finalKindLabel()}ที่วัดด้วย "${B.finals[noInd].title || "สอบปลายภาค"}" ก่อนบันทึก`, "bad"); view.querySelector(`[data-fpick="${noInd}"]`)?.scrollIntoView({ block: "center" }); return; }
-  const bad = B.units.findIndex((u) => !String(u.title).trim());
-  if (bad >= 0) { toast(`กรุณาพิมพ์ชื่อหน่วยการเรียนรู้ที่ ${bad + 1}`, "bad"); view.querySelector(`[data-uf="${bad}:title"]`)?.focus(); return; }
-  const noMax = [...B.units.flatMap((u) => u.items), ...B.loose, ...B.finals].find((it) => !(Number(it.max) > 0));
+  const hrs = String(B.mark.hours ?? "").trim();
+  if (hrs && !(Number(hrs) >= 0 && Number(hrs) <= 400)) { toast("ชั่วโมงเรียนต้องเป็นตัวเลข 0–400", "bad"); document.getElementById("bHours")?.focus(); return; }
+  const noMax = [...allInd(B), ...B.finals].find((it) => !(Number(it.max) > 0));
   if (noMax) { toast(`ใส่คะแนนเต็มของ "${(noMax.code || noMax.title).slice(0, 30)}" ก่อน`, "bad"); return; }
   const it = (x) => ({ id: x.id, code: x.code, title: x.title, max_score: x.max });
-  const body = { term: B.term, confirm, units: B.units.map((u) => ({ id: u.id, title: u.title, hours: u.hours, task: u.task, items: u.items.map(it) })), loose: B.loose.map(it),
-    finals: B.finals.map((f) => ({ ...it(f), indicators: f.inds || [] })) };
+  const body = { term: B.term, confirm,
+    units: [...B.units.map((u) => ({ id: u.id, title: u.title, hours: u.hours, task: u.task, items: u.items.map(it) })),
+      { id: B.mark.id, title: TERM_UNIT, hours: hrs, task: B.mark.task || "", items: B.mark.items.map(it) }],
+    loose: B.loose.map(it), finals: B.finals.map((f) => ({ ...it(f), indicators: f.inds || [] })) };
   await flush();
   try {
     data = await api(`/api/courses/${courseId}/structure`, { method: "PUT", body });
