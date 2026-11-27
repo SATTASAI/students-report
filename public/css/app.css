@@ -938,3 +938,34 @@ body.framed > :not(.sidebar):not(.mobilebar):not(.scrim):not(.sr-frame):not(dial
   table.b-table tfoot td { display: flex; justify-content: space-between; }
   table.b-table tfoot td:empty { display: none; }
 }
+
+/* ---------- PC: ตารางพอดีจอ ไม่เลื่อนซ้ายขวา · แถบแท็บขึ้นบรรทัดใหม่แทนการเลื่อน ----------
+   ตารางใช้ table-layout: fixed กว้างเท่ากรอบ คอลัมน์แบ่งพื้นที่กันเอง ข้อความยาวถูกตัด (…)
+   เอาเมาส์ชี้แล้วขึ้นข้อความเต็ม (ตั้ง title ใน app.js) */
+@media screen and (min-width: 1024px) {
+  .tabs { flex-wrap: wrap; overflow-x: visible; }
+  .table-wrap, .sheet-wrap, .b-scroll { overflow-x: hidden; }
+  .table-wrap > table, .sheet-wrap > table, .b-scroll > table { width: 100%; min-width: 0 !important; table-layout: fixed; }
+  .table-wrap > table th, .table-wrap > table td,
+  .sheet-wrap > table th, .sheet-wrap > table td,
+  .b-scroll > table th, .b-scroll > table td { min-width: 0 !important; max-width: none; overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; }
+  .table-wrap > table th, .sheet-wrap > table th, .b-scroll > table th { white-space: normal; }
+  table.list th, table.list td { padding-left: 8px; padding-right: 8px; }
+  table.list td.nm { white-space: nowrap; }
+  .sheet thead th { padding: 6px 2px; }
+  .sheet .no { width: 40px; }
+  .sheet .name { left: 40px; width: 160px; max-width: none; padding: 0 8px; }
+  .sheet td.cell input, .sheet .level-select, .sheet td input, .sheet td select { width: 100%; min-width: 0; padding-left: 2px; padding-right: 2px; text-overflow: ellipsis; }
+  .sheet td.calc { padding: 0 1px; text-align: center; font-size: 12px; letter-spacing: -.3px; }
+  .sheet td.cell input { font-size: 13.5px; padding-left: 1px; padding-right: 1px; letter-spacing: -.2px; }
+  .sheet .grade { min-width: 0; max-width: 100%; padding: 0 4px; }
+  .sheet td.att-sum, .log-sheet tfoot td, .sheet tfoot td { padding: 0 1px; font-size: 12px; letter-spacing: -.2px; }
+  .att-sheet th.att-day, .att-sheet td.att, .att-sheet .att-sum, .log-sheet thead th.att-day.log-off { width: auto; padding-left: 0; padding-right: 0; }
+  .att-sheet th.att-day b { font-size: 13px; }
+  .att-sheet th.att-day .wd { font-size: 10px; }
+  .log-sheet .col-all { font-size: 9px; padding: 1px 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .log-sheet td.log-off span { font-size: 11px; }
+  .table-wrap > table td :is(input:not([type=checkbox]):not([type=radio]), select, textarea),
+  .b-scroll > table td :is(input:not([type=checkbox]):not([type=radio]), select, textarea) { width: 100% !important; min-width: 0 !important; max-width: 100%; }
+  .b-table .c-ind, .hr-sheet .hr-topics, .sar-table td:first-child { min-width: 0; }
+}

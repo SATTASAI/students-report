@@ -9,6 +9,18 @@ export const EMBED = !!HOST;
 // เปลี่ยนหน้าทั้งหน้าต่าง (ออกจากระบบ, หมดเวลาเข้าระบบ, สลับภาค) ต้องเปลี่ยนที่หน้าต่างบนสุด
 const topLoc = () => (EMBED ? window.parent.location : location);
 
+// PC: ตารางพอดีจอแล้วข้อความยาวถูกตัด (…) — เอาเมาส์ชี้ช่องที่ถูกตัดให้ขึ้นข้อความเต็ม
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest?.("td, th, input, select, button, a, span");
+  if (!el || !el.closest("table") || el.hasAttribute("title")) return;
+  const cut = el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+  const cell = el.closest("td, th");
+  const box = cut ? el : cell && (cell.scrollWidth > cell.clientWidth + 1 || cell.scrollHeight > cell.clientHeight + 1) ? cell : null;
+  if (!box) return;
+  const text = (el.tagName === "INPUT" ? el.value : el.tagName === "SELECT" ? el.selectedOptions[0]?.text : box.innerText || "").replace(/\s+/g, " ").trim();
+  if (text) el.title = text;
+}, { passive: true });
+
 export class ApiError extends Error {
   constructor(status, data) { super(data?.error || `เกิดข้อผิดพลาด (${status})`); this.status = status; this.data = data; }
 }
